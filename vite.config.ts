@@ -77,26 +77,22 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp'
     },
   },
-  // preview: {
-  //   host: '0.0.0.0',
-  //   https: {
-  //     key: fs.readFileSync('./cert/server.key'),
-  //     cert: fs.readFileSync('./cert/server.crt'),
-  //   },
-  //   headers: {
-  //     'Cross-Origin-Opener-Policy': 'same-origin',
-  //     'Cross-Origin-Embedder-Policy': 'require-corp'
-  //   },
-  // },
   preview: {
     host: '0.0.0.0',
+    // https: {
+    //   key: fs.readFileSync('./cert/server.key'),
+    //   cert: fs.readFileSync('./cert/server.crt'),
+    // },
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'
     },
   },
   optimizeDeps: {
-    exclude: ['@sqlite.org/sqlite-wasm']
+    exclude: [
+      'sqlite-wasm',
+      'workers'
+    ]
   },
   test: {
     globals: true,
