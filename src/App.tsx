@@ -13,6 +13,7 @@ import {
   CounterpartiesPage,
   CurrenciesPage,
   ExportPage,
+  DownloadPage,
 } from './pages'
 
 function AppContent() {
@@ -56,6 +57,7 @@ function AppContent() {
         <Route path="/settings/counterparties" element={<CounterpartiesPage />} />
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
         <Route path="/settings/export" element={<ExportPage />} />
+        <Route path="/settings/download" element={<DownloadPage />} />
       </Routes>
     </AppLayout>
   )

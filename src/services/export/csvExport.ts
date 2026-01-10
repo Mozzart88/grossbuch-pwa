@@ -58,8 +58,12 @@ export async function exportTransactionsToCSV(startDate?: string, endDate?: stri
 
 export function downloadCSV(content: string, filename: string): void {
   const blob = new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8;' })
+  downloadFile(blob, filename)
+}
+
+export function downloadFile(data: File | Blob, filename: string): void {
   const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
+  link.href = URL.createObjectURL(data)
   link.download = filename
   document.body.appendChild(link)
   link.click()

@@ -9,6 +9,7 @@ const settingsLinks = [
   { to: '/settings/counterparties', label: 'Counterparties', icon: '👥', description: 'Track who you transact with' },
   { to: '/settings/currencies', label: 'Currencies', icon: '💱', description: 'Manage currency options' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
+  { to: '/settings/download', label: 'Download DB', icon: '📤', description: 'Download Raw Sqlite DB' },
 ]
 
 export function SettingsPage() {
@@ -27,11 +28,10 @@ export function SettingsPage() {
               <button
                 key={t}
                 onClick={() => setTheme(t)}
-                className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                  theme === t
-                    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
+                className={`px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${theme === t
+                  ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
               >
                 {t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
