@@ -13,6 +13,7 @@ vi.mock('../../pages', () => ({
   CounterpartiesPage: () => <div data-testid="counterparties-page">Counterparties</div>,
   CurrenciesPage: () => <div data-testid="currencies-page">Currencies</div>,
   ExportPage: () => <div data-testid="export-page">Export</div>,
+  DownloadPage: () => <div data-testid="download-page">Export</div>,
 }))
 
 // Mock TabBar

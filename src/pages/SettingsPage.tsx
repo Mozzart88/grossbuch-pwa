@@ -9,7 +9,7 @@ const settingsLinks = [
   { to: '/settings/counterparties', label: 'Counterparties', icon: '👥', description: 'Track who you transact with' },
   { to: '/settings/currencies', label: 'Currencies', icon: '💱', description: 'Manage currency options' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
-  { to: '/settings/download', label: 'Download DB', icon: '📤', description: 'Download Raw Sqlite DB' },
+  { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
 ]
 
 export function SettingsPage() {
