@@ -48,8 +48,24 @@ Object.defineProperty(URL, 'revokeObjectURL', {
   value: vi.fn(),
 })
 
+// Suppress console output during tests
+const originalConsoleError = console.error
+const originalConsoleWarn = console.warn
+const originalConsoleLog = console.log
+
+beforeAll(() => {
+  console.error = vi.fn()
+  console.warn = vi.fn()
+  console.log = vi.fn()
+})
+
+afterAll(() => {
+  console.error = originalConsoleError
+  console.warn = originalConsoleWarn
+  console.log = originalConsoleLog
+})
+
 // Reset mocks between tests
-// @ts-ignore
 beforeEach(() => {
   localStorageMock.clear()
   vi.clearAllMocks()
