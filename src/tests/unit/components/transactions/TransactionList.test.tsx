@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { TransactionList } from '../../../../components/transactions/TransactionList'
-import type { Transaction } from '../../../../types'
+import type { TransactionView } from '../../../../types'
 
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
@@ -13,11 +13,8 @@ vi.mock('../../../../services/repositories', () => ({
   accountRepository: {
     getTotalBalance: vi.fn(),
   },
-  settingsRepository: {
-    get: vi.fn(),
-  },
   currencyRepository: {
-    findById: vi.fn(),
+    findDefault: vi.fn(),
   },
 }))
 
@@ -33,54 +30,41 @@ vi.mock('../../../../utils/dateUtils', async () => {
 import {
   transactionRepository,
   accountRepository,
-  settingsRepository,
   currencyRepository,
 } from '../../../../services/repositories'
 
 const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
-const mockSettingsRepository = vi.mocked(settingsRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 
-const sampleTransaction: Transaction = {
-  id: 1,
-  type: 'expense',
-  amount: 50,
-  currency_id: 1,
-  account_id: 1,
-  category_id: 1,
-  counterparty_id: null,
-  to_account_id: null,
-  to_amount: null,
-  to_currency_id: null,
-  exchange_rate: null,
-  date_time: '2025-01-09 14:30:00',
-  notes: null,
+const sampleTransaction: TransactionView = {
+  id: new Uint8Array(16),
   created_at: '2025-01-09 14:30:00',
-  updated_at: '2025-01-09 14:30:00',
-  category_name: 'Food',
-  category_icon: '🍔',
-  account_name: 'Cash',
-  currency_symbol: '$',
+  counterparty: null,
+  wallet: 'Cash',
+  currency: 'USD',
+  tags: 'food',
+  real_amount: -5000, // -50.00
+  actual_amount: -5000,
 }
 
 describe('TransactionList', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockSettingsRepository.get.mockResolvedValue(1)
-    mockCurrencyRepository.findById.mockResolvedValue({
+    mockCurrencyRepository.findDefault.mockResolvedValue({
       id: 1,
       code: 'USD',
       name: 'US Dollar',
       symbol: '$',
       decimal_places: 2,
-      is_preset: 1,
-      created_at: '2025-01-01 00:00:00',
-      updated_at: '2025-01-01 00:00:00',
+      created_at: 1704067200,
+      updated_at: 1704067200,
+      is_default: true,
+      is_fiat: true,
     })
     mockTransactionRepository.findByMonth.mockResolvedValue([sampleTransaction])
-    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 1000, expenses: 500 })
-    mockAccountRepository.getTotalBalance.mockResolvedValue(1500)
+    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000, expenses: 50000 })
+    mockAccountRepository.getTotalBalance.mockResolvedValue({ real: 150000, actual: 150000 })
   })
 
   const renderWithRouter = () => {
@@ -103,7 +87,7 @@ describe('TransactionList', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getAllByText('Food').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('food').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -127,17 +111,18 @@ describe('TransactionList', () => {
   })
 
   it('groups transactions by date', async () => {
-    const transactions = [
-      { ...sampleTransaction, id: 1, date_time: '2025-01-09 14:30:00' },
-      { ...sampleTransaction, id: 2, date_time: '2025-01-09 16:00:00' },
-      { ...sampleTransaction, id: 3, date_time: '2025-01-10 08:00:00' },
+    const transactions: TransactionView[] = [
+      { ...sampleTransaction, id: new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), created_at: '2025-01-09 14:30:00' },
+      { ...sampleTransaction, id: new Uint8Array([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), created_at: '2025-01-09 16:00:00' },
+      { ...sampleTransaction, id: new Uint8Array([3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), created_at: '2025-01-10 08:00:00' },
     ]
     mockTransactionRepository.findByMonth.mockResolvedValue(transactions)
 
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getAllByText('Food').length).toBe(6) // 3 transactions x 2 (title + description)
+      // 3 transactions showing 'food' tag
+      expect(screen.getAllByText('food').length).toBe(3)
     })
   })
 
@@ -150,7 +135,7 @@ describe('TransactionList', () => {
   })
 
   it('handles currency not found', async () => {
-    mockCurrencyRepository.findById.mockResolvedValue(null)
+    mockCurrencyRepository.findDefault.mockResolvedValue(null)
 
     renderWithRouter()
 
@@ -160,14 +145,60 @@ describe('TransactionList', () => {
     })
   })
 
-  it('handles settings not found', async () => {
-    mockSettingsRepository.get.mockResolvedValue(null)
+  it('displays total balance', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      // Total balance: 150000 / 100 = 1500.00
+      expect(screen.getByText('$1,500.00')).toBeInTheDocument()
+    })
+  })
+
+  it('uses currency decimal places for formatting', async () => {
+    mockCurrencyRepository.findDefault.mockResolvedValue({
+      id: 1,
+      code: 'BTC',
+      name: 'Bitcoin',
+      symbol: '₿',
+      decimal_places: 8,
+      created_at: 1704067200,
+      updated_at: 1704067200,
+      is_default: true,
+      is_crypto: true,
+    })
+    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000000, expenses: 50000000 })
+    mockAccountRepository.getTotalBalance.mockResolvedValue({ real: 150000000, actual: 150000000 })
 
     renderWithRouter()
 
     await waitFor(() => {
-      // Should use default currency id 1
-      expect(mockCurrencyRepository.findById).toHaveBeenCalledWith(1)
+      // With 8 decimal places: 100000000 / 10^8 = 1.00000000
+      expect(screen.getByText('+₿1.00000000')).toBeInTheDocument()
+    })
+  })
+
+  it('renders transaction items with correct props', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      // Transaction shows wallet name when no counterparty
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+      // Transaction amount
+      expect(screen.getByText('-$50.00')).toBeInTheDocument()
+    })
+  })
+
+  it('shows counterparty when available', async () => {
+    const withCounterparty: TransactionView = {
+      ...sampleTransaction,
+      counterparty: 'Supermarket',
+    }
+    mockTransactionRepository.findByMonth.mockResolvedValue([withCounterparty])
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Supermarket')).toBeInTheDocument()
     })
   })
 })

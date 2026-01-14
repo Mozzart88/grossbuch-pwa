@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Transaction } from '../../../../types'
+import type { TransactionLog } from '../../../../types'
 
 // Mock transactionRepository
 vi.mock('../../../../services/repositories', () => ({
@@ -18,23 +18,15 @@ describe('csvExport', () => {
     vi.clearAllMocks()
   })
 
-  const sampleTransaction: Partial<Transaction> = {
-    id: 1,
-    type: 'expense',
-    amount: 50.25,
-    currency_id: 1,
-    account_id: 1,
-    category_id: 1,
-    counterparty_id: null,
-    to_account_id: null,
-    to_amount: null,
-    to_currency_id: null,
-    exchange_rate: null,
-    date_time: '2025-01-09 14:30:00',
-    notes: 'Lunch',
-    category_name: 'Food',
-    account_name: 'Cash',
-    currency_code: 'USD',
+  const sampleTransaction: TransactionLog = {
+    id: new Uint8Array(16),
+    created_at: '2025-01-09 14:30:00',
+    wallet: 'Cash',
+    currency: 'USD',
+    tags: 'food',
+    real_amount: -5025, // -50.25 stored as integer
+    actual_amount: -5025,
+    counterparty: 'Supermarket',
   }
 
   describe('exportTransactionsToCSV', () => {
@@ -45,21 +37,16 @@ describe('csvExport', () => {
 
       expect(result).toContain('Date')
       expect(result).toContain('Time')
-      expect(result).toContain('Type')
-      expect(result).toContain('Amount')
+      expect(result).toContain('Wallet')
       expect(result).toContain('Currency')
-      expect(result).toContain('Account')
-      expect(result).toContain('Category')
+      expect(result).toContain('Tags')
+      expect(result).toContain('Real Amount')
+      expect(result).toContain('Actual Amount')
       expect(result).toContain('Counterparty')
-      expect(result).toContain('Notes')
-      expect(result).toContain('To Account')
-      expect(result).toContain('To Amount')
-      expect(result).toContain('To Currency')
-      expect(result).toContain('Exchange Rate')
     })
 
     it('includes transaction data in CSV', async () => {
-      mockFindAllForExport.mockResolvedValue([sampleTransaction as Transaction])
+      mockFindAllForExport.mockResolvedValue([sampleTransaction])
 
       const result = await exportTransactionsToCSV()
       const lines = result.split('\n')
@@ -67,69 +54,63 @@ describe('csvExport', () => {
       expect(lines.length).toBe(2) // Header + 1 transaction
       expect(lines[1]).toContain('2025-01-09')
       expect(lines[1]).toContain('14:30')
-      expect(lines[1]).toContain('expense')
-      expect(lines[1]).toContain('50.25')
-      expect(lines[1]).toContain('USD')
       expect(lines[1]).toContain('Cash')
-      expect(lines[1]).toContain('Food')
-      expect(lines[1]).toContain('Lunch')
+      expect(lines[1]).toContain('USD')
+      expect(lines[1]).toContain('food')
+      expect(lines[1]).toContain('-50.25')
+      expect(lines[1]).toContain('Supermarket')
     })
 
     it('handles transfer transactions', async () => {
-      const transfer: Partial<Transaction> = {
+      const transfer: TransactionLog = {
         ...sampleTransaction,
-        type: 'transfer',
-        to_account_id: 2,
-        to_account_name: 'Bank',
+        tags: 'transfer',
+        real_amount: -10000,
+        actual_amount: -10000,
       }
-      mockFindAllForExport.mockResolvedValue([transfer as Transaction])
+      mockFindAllForExport.mockResolvedValue([transfer])
 
       const result = await exportTransactionsToCSV()
 
       expect(result).toContain('transfer')
-      expect(result).toContain('Bank')
+      expect(result).toContain('-100.00')
     })
 
-    it('handles exchange transactions', async () => {
-      const exchange: Partial<Transaction> = {
+    it('handles income transactions (positive amounts)', async () => {
+      const income: TransactionLog = {
         ...sampleTransaction,
-        type: 'exchange',
-        to_account_id: 2,
-        to_account_name: 'EUR Wallet',
-        to_amount: 45.5,
-        to_currency_id: 2,
-        to_currency_code: 'EUR',
-        exchange_rate: 0.9,
+        tags: 'sale',
+        real_amount: 100000, // +1000.00
+        actual_amount: 100000,
+        counterparty: 'Client',
       }
-      mockFindAllForExport.mockResolvedValue([exchange as Transaction])
+      mockFindAllForExport.mockResolvedValue([income])
 
       const result = await exportTransactionsToCSV()
 
-      expect(result).toContain('exchange')
-      expect(result).toContain('EUR Wallet')
-      expect(result).toContain('45.5')
-      expect(result).toContain('EUR')
-      expect(result).toContain('0.9')
+      expect(result).toContain('sale')
+      expect(result).toContain('1000.00')
+      expect(result).toContain('Client')
     })
 
     it('escapes fields with commas', async () => {
-      const withComma: Partial<Transaction> = {
+      const withComma: TransactionLog = {
         ...sampleTransaction,
-        notes: 'Food, drinks, and snacks',
+        tags: 'food, transport, house',
       }
-      mockFindAllForExport.mockResolvedValue([withComma as Transaction])
+      mockFindAllForExport.mockResolvedValue([withComma])
 
       const result = await exportTransactionsToCSV()
 
-      expect(result).toContain('"Food, drinks, and snacks"')
+      expect(result).toContain('"food, transport, house"')
     })
 
     it('escapes fields with quotes', async () => {
-      const withQuotes: Partial<Transaction> = {
+      const withQuotes: TransactionLog = {
         ...sampleTransaction,
-        notes: 'Said "Hello"',
+        counterparty: 'Said "Hello"',
       }
-      mockFindAllForExport.mockResolvedValue([withQuotes as Transaction])
+      mockFindAllForExport.mockResolvedValue([withQuotes])
 
       const result = await exportTransactionsToCSV()
 
@@ -137,47 +118,56 @@ describe('csvExport', () => {
     })
 
     it('escapes fields with newlines', async () => {
-      const withNewline: Partial<Transaction> = {
+      const withNewline: TransactionLog = {
         ...sampleTransaction,
-        notes: 'Line 1\nLine 2',
+        tags: 'Line 1\nLine 2',
       }
-      mockFindAllForExport.mockResolvedValue([withNewline as Transaction])
+      mockFindAllForExport.mockResolvedValue([withNewline])
 
       const result = await exportTransactionsToCSV()
 
       expect(result).toContain('"Line 1\nLine 2"')
     })
 
-    it('handles null values', async () => {
-      const withNulls: Partial<Transaction> = {
+    it('handles null counterparty', async () => {
+      const withNull: TransactionLog = {
         ...sampleTransaction,
-        notes: null,
-        counterparty_name: undefined,
+        counterparty: null,
       }
-      mockFindAllForExport.mockResolvedValue([withNulls as Transaction])
+      mockFindAllForExport.mockResolvedValue([withNull])
 
       const result = await exportTransactionsToCSV()
       const lines = result.split('\n')
 
-      // Should not throw and should have empty fields for nulls
+      // Should not throw and should have empty field for null
       expect(lines.length).toBe(2)
+      expect(lines[1]).not.toContain('null')
     })
 
-    it('passes date filters to repository', async () => {
+    it('converts date strings to timestamps for repository call', async () => {
       mockFindAllForExport.mockResolvedValue([])
 
       await exportTransactionsToCSV('2025-01-01', '2025-12-31')
 
-      expect(mockFindAllForExport).toHaveBeenCalledWith('2025-01-01', '2025-12-31')
+      // Should convert date strings to unix timestamps
+      expect(mockFindAllForExport).toHaveBeenCalledWith(
+        expect.any(Number), // start timestamp
+        expect.any(Number)  // end timestamp
+      )
+
+      const [startTs, endTs] = mockFindAllForExport.mock.calls[0]
+      // Verify timestamps are reasonable (2025-01-01 should be around 1735689600)
+      expect(startTs).toBeGreaterThan(1735600000)
+      expect(endTs).toBeGreaterThan(startTs as number)
     })
 
     it('handles multiple transactions', async () => {
       const transactions = [
-        { ...sampleTransaction, id: 1 },
-        { ...sampleTransaction, id: 2, amount: 100 },
-        { ...sampleTransaction, id: 3, amount: 200 },
+        { ...sampleTransaction },
+        { ...sampleTransaction, real_amount: -10000, actual_amount: -10000 },
+        { ...sampleTransaction, real_amount: -20000, actual_amount: -20000 },
       ]
-      mockFindAllForExport.mockResolvedValue(transactions as Transaction[])
+      mockFindAllForExport.mockResolvedValue(transactions)
 
       const result = await exportTransactionsToCSV()
       const lines = result.split('\n')
@@ -185,20 +175,17 @@ describe('csvExport', () => {
       expect(lines.length).toBe(4) // Header + 3 transactions
     })
 
-    it('handles income transactions', async () => {
-      const income: Partial<Transaction> = {
+    it('formats amounts with specified decimal places', async () => {
+      const transaction: TransactionLog = {
         ...sampleTransaction,
-        type: 'income',
-        amount: 1000,
-        category_name: 'Salary',
+        real_amount: -123456, // Will be -1234.56 with 2 decimals
+        actual_amount: -123456,
       }
-      mockFindAllForExport.mockResolvedValue([income as Transaction])
+      mockFindAllForExport.mockResolvedValue([transaction])
 
-      const result = await exportTransactionsToCSV()
+      const result = await exportTransactionsToCSV(undefined, undefined, 2)
 
-      expect(result).toContain('income')
-      expect(result).toContain('1000')
-      expect(result).toContain('Salary')
+      expect(result).toContain('-1234.56')
     })
   })
 

@@ -1,31 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Account, AccountInput } from '../../../types'
+import type { Account, AccountInput, ExchangeRate } from '../../../types'
+import { SYSTEM_TAGS } from '../../../types'
 
 // Mock the database module
 vi.mock('../../../services/database', () => ({
   execSQL: vi.fn(),
   querySQL: vi.fn(),
   queryOne: vi.fn(),
-  runSQL: vi.fn(),
   getLastInsertId: vi.fn(),
 }))
 
-// Mock transactionRepository for getTotalBalance
-vi.mock('../../../services/repositories/transactionRepository', () => ({
-  transactionRepository: {
-    getExchangeRates: vi.fn(),
+// Mock currencyRepository for convertAmount
+vi.mock('../../../services/repositories/currencyRepository', () => ({
+  currencyRepository: {
+    getExchangeRate: vi.fn(),
   },
 }))
 
 import { accountRepository } from '../../../services/repositories/accountRepository'
-import { transactionRepository } from '../../../services/repositories/transactionRepository'
+import { currencyRepository } from '../../../services/repositories/currencyRepository'
 import { execSQL, querySQL, queryOne, getLastInsertId } from '../../../services/database'
 
 const mockExecSQL = vi.mocked(execSQL)
 const mockQuerySQL = vi.mocked(querySQL)
 const mockQueryOne = vi.mocked(queryOne)
 const mockGetLastInsertId = vi.mocked(getLastInsertId)
-const mockGetExchangeRates = vi.mocked(transactionRepository.getExchangeRates)
+const mockGetExchangeRate = vi.mocked(currencyRepository.getExchangeRate)
 
 describe('accountRepository', () => {
   beforeEach(() => {
@@ -34,30 +34,28 @@ describe('accountRepository', () => {
 
   const sampleAccount: Account = {
     id: 1,
-    name: 'Cash',
+    wallet_id: 1,
     currency_id: 1,
-    initial_balance: 1000,
-    icon: '💵',
-    color: '#00FF00',
-    is_active: 1,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    currency_code: 'USD',
-    currency_symbol: '$',
-    currency_decimal_places: 2,
-    current_balance: 1500,
+    real_balance: 100000, // 1000.00 (integer, divide by 100)
+    actual_balance: 100000,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    wallet: 'Main Wallet',
+    currency: 'USD',
+    is_default: true,
   }
 
   describe('findAll', () => {
-    it('returns all active accounts with calculated balances', async () => {
-      mockQuerySQL.mockResolvedValue([sampleAccount])
+    it('returns all accounts from accounts view', async () => {
+      const accounts = [
+        { id: 1, wallet: 'Main', currency: 'USD', tags: 'default', real_balance: 100000, actual_balance: 100000, created_at: 0, updated_at: 0 },
+      ]
+      mockQuerySQL.mockResolvedValue(accounts)
 
       const result = await accountRepository.findAll()
 
-      expect(mockQuerySQL).toHaveBeenCalledWith(expect.stringContaining('SELECT'))
-      expect(mockQuerySQL).toHaveBeenCalledWith(expect.stringContaining('is_active = 1'))
-      expect(result).toEqual([sampleAccount])
+      expect(mockQuerySQL).toHaveBeenCalledWith('SELECT * FROM accounts')
+      expect(result).toEqual(accounts)
     })
 
     it('returns empty array when no accounts exist', async () => {
@@ -67,31 +65,23 @@ describe('accountRepository', () => {
 
       expect(result).toEqual([])
     })
-
-    it('includes balance calculation in query', async () => {
-      mockQuerySQL.mockResolvedValue([sampleAccount])
-
-      await accountRepository.findAll()
-
-      expect(mockQuerySQL).toHaveBeenCalledWith(expect.stringContaining('current_balance'))
-    })
   })
 
   describe('findById', () => {
-    it('returns account with calculated balance', async () => {
-      mockQuerySQL.mockResolvedValue([sampleAccount])
+    it('returns account with wallet and currency info when found', async () => {
+      mockQueryOne.mockResolvedValue(sampleAccount)
 
       const result = await accountRepository.findById(1)
 
-      expect(mockQuerySQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('WHERE a.id = ?'),
-        [1]
+        [SYSTEM_TAGS.DEFAULT, 1]
       )
       expect(result).toEqual(sampleAccount)
     })
 
     it('returns null when account not found', async () => {
-      mockQuerySQL.mockResolvedValue([])
+      mockQueryOne.mockResolvedValue(null)
 
       const result = await accountRepository.findById(999)
 
@@ -99,113 +89,114 @@ describe('accountRepository', () => {
     })
   })
 
+  describe('findByWalletId', () => {
+    it('returns accounts for wallet ordered by default status', async () => {
+      const accounts = [sampleAccount, { ...sampleAccount, id: 2, currency: 'EUR', is_default: false }]
+      mockQuerySQL.mockResolvedValue(accounts)
+
+      const result = await accountRepository.findByWalletId(1)
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE a.wallet_id = ?'),
+        [SYSTEM_TAGS.DEFAULT, 1]
+      )
+      expect(result).toEqual(accounts)
+    })
+  })
+
+  describe('findByCurrencyId', () => {
+    it('returns accounts with specific currency', async () => {
+      mockQuerySQL.mockResolvedValue([sampleAccount])
+
+      const result = await accountRepository.findByCurrencyId(1)
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE a.currency_id = ?'),
+        [SYSTEM_TAGS.DEFAULT, 1]
+      )
+      expect(result).toEqual([sampleAccount])
+    })
+  })
+
+  describe('findByWalletAndCurrency', () => {
+    it('returns account for wallet-currency combination', async () => {
+      mockQueryOne.mockResolvedValue(sampleAccount)
+
+      const result = await accountRepository.findByWalletAndCurrency(1, 1)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE a.wallet_id = ? AND a.currency_id = ?'),
+        [SYSTEM_TAGS.DEFAULT, 1, 1]
+      )
+      expect(result).toEqual(sampleAccount)
+    })
+
+    it('returns null when combination not found', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await accountRepository.findByWalletAndCurrency(1, 99)
+
+      expect(result).toBeNull()
+    })
+  })
+
   describe('create', () => {
-    it('creates account with all fields', async () => {
+    it('creates account for wallet and currency', async () => {
       const input: AccountInput = {
-        name: 'New Account',
-        currency_id: 1,
-        initial_balance: 500,
-        icon: '🏦',
-        color: '#0000FF',
+        wallet_id: 1,
+        currency_id: 2,
       }
 
+      mockQueryOne
+        .mockResolvedValueOnce(null) // findByWalletAndCurrency check
+        .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2 }) // findById
       mockGetLastInsertId.mockResolvedValue(2)
-      mockQuerySQL.mockResolvedValue([{ ...sampleAccount, id: 2, ...input }])
 
       const result = await accountRepository.create(input)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO accounts'),
-        ['New Account', 1, 500, '🏦', '#0000FF']
+        'INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)',
+        [1, 2]
       )
-      expect(result.name).toBe('New Account')
+      expect(result.currency_id).toBe(2)
     })
 
-    it('creates account with default values', async () => {
+    it('throws error if wallet already has account with same currency', async () => {
       const input: AccountInput = {
-        name: 'Simple Account',
+        wallet_id: 1,
         currency_id: 1,
       }
 
-      mockGetLastInsertId.mockResolvedValue(3)
-      mockQuerySQL.mockResolvedValue([{ ...sampleAccount, id: 3 }])
+      mockQueryOne.mockResolvedValueOnce(sampleAccount) // Already exists
 
-      await accountRepository.create(input)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO accounts'),
-        ['Simple Account', 1, 0, null, null]
+      await expect(accountRepository.create(input)).rejects.toThrow(
+        'This wallet already has an account with this currency'
       )
     })
 
     it('throws error if creation fails', async () => {
-      mockGetLastInsertId.mockResolvedValue(2)
-      mockQuerySQL.mockResolvedValue([])
+      const input: AccountInput = {
+        wallet_id: 1,
+        currency_id: 3,
+      }
 
-      await expect(accountRepository.create({ name: 'Test', currency_id: 1 })).rejects.toThrow(
-        'Failed to create account'
-      )
+      mockQueryOne
+        .mockResolvedValueOnce(null) // findByWalletAndCurrency check
+        .mockResolvedValueOnce(null) // findById returns null
+      mockGetLastInsertId.mockResolvedValue(3)
+
+      await expect(accountRepository.create(input)).rejects.toThrow('Failed to create account')
     })
   })
 
-  describe('update', () => {
-    it('updates account name', async () => {
-      mockQuerySQL.mockResolvedValue([{ ...sampleAccount, name: 'Updated Name' }])
-
-      const result = await accountRepository.update(1, { name: 'Updated Name' })
+  describe('setDefault', () => {
+    it('sets account as default via tag', async () => {
+      await accountRepository.setDefault(1)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('name = ?'),
-        expect.arrayContaining(['Updated Name', 1])
+        'INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.DEFAULT]
       )
-      expect(result.name).toBe('Updated Name')
-    })
-
-    it('updates currency_id', async () => {
-      mockQuerySQL.mockResolvedValue([{ ...sampleAccount, currency_id: 2 }])
-
-      await accountRepository.update(1, { currency_id: 2 })
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('currency_id = ?'),
-        expect.arrayContaining([2])
-      )
-    })
-
-    it('updates initial_balance', async () => {
-      mockQuerySQL.mockResolvedValue([{ ...sampleAccount, initial_balance: 2000 }])
-
-      await accountRepository.update(1, { initial_balance: 2000 })
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('initial_balance = ?'),
-        expect.arrayContaining([2000])
-      )
-    })
-
-    it('updates icon and color', async () => {
-      mockQuerySQL.mockResolvedValue([{ ...sampleAccount, icon: '💰', color: '#FF0000' }])
-
-      await accountRepository.update(1, { icon: '💰', color: '#FF0000' })
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('icon = ?'),
-        expect.arrayContaining(['💰', '#FF0000'])
-      )
-    })
-
-    it('does not execute SQL if no fields provided', async () => {
-      mockQuerySQL.mockResolvedValue([sampleAccount])
-
-      await accountRepository.update(1, {})
-
-      expect(mockExecSQL).not.toHaveBeenCalled()
-    })
-
-    it('throws error if account not found', async () => {
-      mockQuerySQL.mockResolvedValue([])
-
-      await expect(accountRepository.update(999, { name: 'Test' })).rejects.toThrow('Account not found')
     })
   })
 
@@ -215,7 +206,7 @@ describe('accountRepository', () => {
 
       await accountRepository.delete(1)
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM accounts WHERE id = ?', [1])
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM account WHERE id = ?', [1])
     })
 
     it('throws error when transactions exist', async () => {
@@ -226,85 +217,89 @@ describe('accountRepository', () => {
       )
     })
 
-    it('checks both source and destination transactions', async () => {
+    it('checks trx_base table for transactions', async () => {
       mockQueryOne.mockResolvedValue({ count: 0 })
 
       await accountRepository.delete(1)
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('account_id = ? OR to_account_id = ?'),
-        [1, 1]
-      )
-    })
-  })
-
-  describe('archive', () => {
-    it('sets is_active to 0', async () => {
-      await accountRepository.archive(1)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('is_active = 0'),
+        'SELECT COUNT(*) as count FROM trx_base WHERE account_id = ?',
         [1]
-      )
-    })
-
-    it('updates updated_at timestamp', async () => {
-      await accountRepository.archive(1)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("updated_at = datetime('now')"),
-        expect.anything()
       )
     })
   })
 
   describe('getTotalBalance', () => {
-    it('calculates total balance with exchange rates', async () => {
-      const accounts = [
-        { ...sampleAccount, currency_id: 1, current_balance: 1000 },
-        { ...sampleAccount, id: 2, currency_id: 2, current_balance: 500 },
-      ]
-      mockQuerySQL.mockResolvedValue(accounts)
+    it('returns sum of all account balances', async () => {
+      mockQueryOne.mockResolvedValue({ real_total: 250000, actual_total: 250000 })
 
-      const rates = new Map([[1, 1], [2, 1.5]])
-      mockGetExchangeRates.mockResolvedValue(rates)
+      const result = await accountRepository.getTotalBalance()
 
-      const result = await accountRepository.getTotalBalance(1)
-
-      expect(mockGetExchangeRates).toHaveBeenCalledWith(1)
-      expect(result).toBe(1000 * 1 + 500 * 1.5) // 1750
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('SUM(real_balance)')
+      )
+      expect(result).toEqual({ real: 250000, actual: 250000 })
     })
 
     it('returns 0 for empty accounts', async () => {
-      mockQuerySQL.mockResolvedValue([])
+      mockQueryOne.mockResolvedValue(null)
 
-      const result = await accountRepository.getTotalBalance(1)
+      const result = await accountRepository.getTotalBalance()
 
-      expect(result).toBe(0)
+      expect(result).toEqual({ real: 0, actual: 0 })
+    })
+  })
+
+  describe('getWalletBalance', () => {
+    it('returns sum of balances for specific wallet', async () => {
+      mockQueryOne.mockResolvedValue({ real_total: 150000, actual_total: 150000 })
+
+      const result = await accountRepository.getWalletBalance(1)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE wallet_id = ?'),
+        [1]
+      )
+      expect(result).toEqual({ real: 150000, actual: 150000 })
     })
 
-    it('uses rate of 1 for missing exchange rates', async () => {
-      const accounts = [
-        { ...sampleAccount, currency_id: 3, current_balance: 100 },
-      ]
-      mockQuerySQL.mockResolvedValue(accounts)
-      mockGetExchangeRates.mockResolvedValue(new Map())
+    it('returns 0 for empty wallet', async () => {
+      mockQueryOne.mockResolvedValue(null)
 
-      const result = await accountRepository.getTotalBalance(1)
+      const result = await accountRepository.getWalletBalance(99)
 
-      expect(result).toBe(100) // Uses default rate of 1
+      expect(result).toEqual({ real: 0, actual: 0 })
+    })
+  })
+
+  describe('convertAmount', () => {
+    it('returns same amount when currencies match', async () => {
+      const result = await accountRepository.convertAmount(10000, 1, 1)
+
+      expect(result).toBe(10000)
+      expect(mockGetExchangeRate).not.toHaveBeenCalled()
     })
 
-    it('handles undefined current_balance', async () => {
-      const accounts = [
-        { ...sampleAccount, current_balance: undefined },
-      ]
-      mockQuerySQL.mockResolvedValue(accounts)
-      mockGetExchangeRates.mockResolvedValue(new Map([[1, 1]]))
+    it('converts using exchange rates', async () => {
+      const fromRate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 0 } // EUR rate
+      const toRate: ExchangeRate = { currency_id: 1, rate: 10000, updated_at: 0 } // USD rate (base)
 
-      const result = await accountRepository.getTotalBalance(1)
+      mockGetExchangeRate
+        .mockResolvedValueOnce(fromRate)
+        .mockResolvedValueOnce(toRate)
 
-      expect(result).toBe(0)
+      const result = await accountRepository.convertAmount(10000, 2, 1)
+
+      // 10000 * 11500 / 10000 = 11500
+      expect(result).toBe(11500)
+    })
+
+    it('returns original amount when no exchange rates available', async () => {
+      mockGetExchangeRate.mockResolvedValue(null)
+
+      const result = await accountRepository.convertAmount(10000, 2, 1)
+
+      expect(result).toBe(10000)
     })
   })
 })

@@ -1,147 +1,176 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Account, AccountInput } from '../../types'
-import { transactionRepository } from './transactionRepository'
+import { SYSTEM_TAGS } from '../../types'
+import { currencyRepository } from './currencyRepository'
+
+// Interface for the 'accounts' view
+interface AccountView {
+  id: number
+  wallet: string
+  currency: string
+  tags: string | null
+  real_balance: number
+  actual_balance: number
+  created_at: number
+  updated_at: number
+}
 
 export const accountRepository = {
-  async findAll(): Promise<Account[]> {
-    return querySQL<Account>(`
-      SELECT
-        a.*,
-        c.code as currency_code,
-        c.symbol as currency_symbol,
-        c.decimal_places as currency_decimal_places,
-        a.initial_balance + COALESCE(
-          (SELECT SUM(
-            CASE
-              WHEN t.type = 'income' AND t.account_id = a.id THEN t.amount
-              WHEN t.type = 'expense' AND t.account_id = a.id THEN -t.amount
-              WHEN t.type = 'transfer' AND t.account_id = a.id THEN -t.amount
-              WHEN t.type = 'transfer' AND t.to_account_id = a.id THEN t.amount
-              WHEN t.type = 'exchange' AND t.account_id = a.id THEN -t.amount
-              WHEN t.type = 'exchange' AND t.to_account_id = a.id THEN t.to_amount
-              ELSE 0
-            END
-          ) FROM transactions t
-          WHERE t.account_id = a.id OR t.to_account_id = a.id), 0
-        ) as current_balance
-      FROM accounts a
-      JOIN currencies c ON a.currency_id = c.id
-      WHERE a.is_active = 1
-      ORDER BY a.sort_order ASC, a.name ASC
-    `)
+  // Get all accounts using the view
+  async findAll(): Promise<AccountView[]> {
+    return querySQL<AccountView>('SELECT * FROM accounts')
   },
 
   async findById(id: number): Promise<Account | null> {
-    const accounts = await querySQL<Account>(`
+    const account = await queryOne<Account>(`
       SELECT
         a.*,
-        c.code as currency_code,
-        c.symbol as currency_symbol,
-        c.decimal_places as currency_decimal_places,
-        a.initial_balance + COALESCE(
-          (SELECT SUM(
-            CASE
-              WHEN t.type = 'income' AND t.account_id = a.id THEN t.amount
-              WHEN t.type = 'expense' AND t.account_id = a.id THEN -t.amount
-              WHEN t.type = 'transfer' AND t.account_id = a.id THEN -t.amount
-              WHEN t.type = 'transfer' AND t.to_account_id = a.id THEN t.amount
-              WHEN t.type = 'exchange' AND t.account_id = a.id THEN -t.amount
-              WHEN t.type = 'exchange' AND t.to_account_id = a.id THEN t.to_amount
-              ELSE 0
-            END
-          ) FROM transactions t
-          WHERE t.account_id = a.id OR t.to_account_id = a.id), 0
-        ) as current_balance
-      FROM accounts a
-      JOIN currencies c ON a.currency_id = c.id
+        w.name as wallet,
+        c.code as currency,
+        c.decimal_places,
+        EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
+      FROM account a
+      JOIN wallet w ON a.wallet_id = w.id
+      JOIN currency c ON a.currency_id = c.id
       WHERE a.id = ?
-    `, [id])
-    return accounts[0] || null
+    `, [SYSTEM_TAGS.DEFAULT, id])
+    return account
+  },
+
+  async findByWalletId(walletId: number): Promise<Account[]> {
+    return querySQL<Account>(`
+      SELECT
+        a.*,
+        w.name as wallet,
+        c.code as currency,
+        c.decimal_places,
+        EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
+      FROM account a
+      JOIN wallet w ON a.wallet_id = w.id
+      JOIN currency c ON a.currency_id = c.id
+      WHERE a.wallet_id = ?
+      ORDER BY is_default DESC, c.code ASC
+    `, [SYSTEM_TAGS.DEFAULT, walletId])
+  },
+
+  async findByCurrencyId(currencyId: number): Promise<Account[]> {
+    return querySQL<Account>(`
+      SELECT
+        a.*,
+        w.name as wallet,
+        c.code as currency,
+        c.decimal_places,
+        EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
+      FROM account a
+      JOIN wallet w ON a.wallet_id = w.id
+      JOIN currency c ON a.currency_id = c.id
+      WHERE a.currency_id = ?
+      ORDER BY w.name ASC
+    `, [SYSTEM_TAGS.DEFAULT, currencyId])
+  },
+
+  async findByWalletAndCurrency(walletId: number, currencyId: number): Promise<Account | null> {
+    return queryOne<Account>(`
+      SELECT
+        a.*,
+        w.name as wallet,
+        c.code as currency,
+        c.decimal_places,
+        EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
+      FROM account a
+      JOIN wallet w ON a.wallet_id = w.id
+      JOIN currency c ON a.currency_id = c.id
+      WHERE a.wallet_id = ? AND a.currency_id = ?
+    `, [SYSTEM_TAGS.DEFAULT, walletId, currencyId])
   },
 
   async create(input: AccountInput): Promise<Account> {
+    // Check if this wallet already has an account with this currency
+    const existing = await this.findByWalletAndCurrency(input.wallet_id, input.currency_id)
+    if (existing) {
+      throw new Error('This wallet already has an account with this currency')
+    }
+
     await execSQL(
-      `INSERT INTO accounts (name, currency_id, initial_balance, icon, color) VALUES (?, ?, ?, ?, ?)`,
-      [input.name, input.currency_id, input.initial_balance ?? 0, input.icon ?? null, input.color ?? null]
+      'INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)',
+      [input.wallet_id, input.currency_id]
     )
     const id = await getLastInsertId()
+
     const account = await this.findById(id)
     if (!account) throw new Error('Failed to create account')
     return account
   },
 
-  async update(id: number, input: Partial<AccountInput>): Promise<Account> {
-    const fields: string[] = []
-    const values: unknown[] = []
-
-    if (input.name !== undefined) {
-      fields.push('name = ?')
-      values.push(input.name)
-    }
-    if (input.currency_id !== undefined) {
-      fields.push('currency_id = ?')
-      values.push(input.currency_id)
-    }
-    if (input.initial_balance !== undefined) {
-      fields.push('initial_balance = ?')
-      values.push(input.initial_balance)
-    }
-    if (input.icon !== undefined) {
-      fields.push('icon = ?')
-      values.push(input.icon)
-    }
-    if (input.color !== undefined) {
-      fields.push('color = ?')
-      values.push(input.color)
-    }
-
-    if (fields.length > 0) {
-      fields.push("updated_at = datetime('now')")
-      values.push(id)
-      await execSQL(`UPDATE accounts SET ${fields.join(', ')} WHERE id = ?`, values)
-    }
-
-    const account = await this.findById(id)
-    if (!account) throw new Error('Account not found')
-    return account
+  async setDefault(id: number): Promise<void> {
+    // The trigger handles removing default from other accounts in same wallet
+    await execSQL('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
   },
 
   async delete(id: number): Promise<void> {
-    // Check if account has transactions
+    // Check if account has transactions (will fail due to RESTRICT on foreign key)
     const txCount = await queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM transactions WHERE account_id = ? OR to_account_id = ?',
-      [id, id]
+      'SELECT COUNT(*) as count FROM trx_base WHERE account_id = ?',
+      [id]
     )
     if (txCount && txCount.count > 0) {
       throw new Error(`Cannot delete: ${txCount.count} transactions linked to this account`)
     }
 
-    await execSQL('DELETE FROM accounts WHERE id = ?', [id])
+    // Triggers handle: setting new default, deleting wallet if last account
+    await execSQL('DELETE FROM account WHERE id = ?', [id])
   },
 
-  async archive(id: number): Promise<void> {
-    await execSQL("UPDATE accounts SET is_active = 0, updated_at = datetime('now') WHERE id = ?", [id])
+  // Calculate total balance across all accounts in default currency
+  async getTotalBalance(): Promise<{ real: number; actual: number }> {
+    const result = await queryOne<{ real_total: number; actual_total: number }>(`
+      SELECT
+        COALESCE(SUM(real_balance), 0) as real_total,
+        COALESCE(SUM(actual_balance), 0) as actual_total
+      FROM account
+    `)
+
+    return {
+      real: result?.real_total ?? 0,
+      actual: result?.actual_total ?? 0,
+    }
   },
 
-  // Calculate total balance across all accounts converted to display currency
-  async getTotalBalance(displayCurrencyId: number): Promise<number> {
-    // Get all account balances with their currency
-    const accounts = await this.findAll()
+  // Get total balance for a specific wallet
+  async getWalletBalance(walletId: number): Promise<{ real: number; actual: number }> {
+    const result = await queryOne<{ real_total: number; actual_total: number }>(`
+      SELECT
+        COALESCE(SUM(real_balance), 0) as real_total,
+        COALESCE(SUM(actual_balance), 0) as actual_total
+      FROM account
+      WHERE wallet_id = ?
+    `, [walletId])
 
-    if (accounts.length === 0) return 0
+    return {
+      real: result?.real_total ?? 0,
+      actual: result?.actual_total ?? 0,
+    }
+  },
 
-    // Get exchange rates to convert to display currency
-    const rates = await transactionRepository.getExchangeRates(displayCurrencyId)
-
-    let totalBalance = 0
-
-    for (const account of accounts) {
-      const balance = account.current_balance ?? 0
-      const rate = rates.get(account.currency_id) ?? 1 // Default to 1 if no rate found
-
-      totalBalance += balance * rate
+  // Convert amount from one currency to another using exchange rates
+  async convertAmount(
+    amount: number,
+    fromCurrencyId: number,
+    toCurrencyId: number
+  ): Promise<number> {
+    if (fromCurrencyId === toCurrencyId) {
+      return amount
     }
 
-    return totalBalance
+    const fromRate = await currencyRepository.getExchangeRate(fromCurrencyId)
+    const toRate = await currencyRepository.getExchangeRate(toCurrencyId)
+
+    if (!fromRate || !toRate) {
+      // No exchange rate available, return original amount
+      return amount
+    }
+
+    // Convert: amount * (fromRate / toRate)
+    return Math.round((amount * fromRate.rate) / toRate.rate)
   },
 }

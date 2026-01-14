@@ -22,8 +22,8 @@ describe('pages index', () => {
     expect(pages.AccountsPage).toBeDefined()
   })
 
-  it('exports CategoriesPage', () => {
-    expect(pages.CategoriesPage).toBeDefined()
+  it('exports TagsPage', () => {
+    expect(pages.TagsPage).toBeDefined()
   })
 
   it('exports CounterpartiesPage', () => {
@@ -36,5 +36,9 @@ describe('pages index', () => {
 
   it('exports ExportPage', () => {
     expect(pages.ExportPage).toBeDefined()
+  })
+
+  it('exports DownloadPage', () => {
+    expect(pages.DownloadPage).toBeDefined()
   })
 })

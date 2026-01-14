@@ -2,18 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { AccountsPage } from '../../../pages/AccountsPage'
-import type { Account, Currency } from '../../../types'
+import type { Wallet, Currency, Account } from '../../../types'
 
 // Mock dependencies
 vi.mock('../../../services/repositories', () => ({
-  accountRepository: {
+  walletRepository: {
     findAll: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    addAccount: vi.fn(),
   },
   currencyRepository: {
     findAll: vi.fn(),
+  },
+  accountRepository: {
+    delete: vi.fn(),
   },
 }))
 
@@ -26,26 +30,34 @@ vi.mock('../../../components/ui', async () => {
   }
 })
 
-import { accountRepository, currencyRepository } from '../../../services/repositories'
+import { walletRepository, currencyRepository, accountRepository } from '../../../services/repositories'
 
-const mockAccountRepository = vi.mocked(accountRepository)
+const mockWalletRepository = vi.mocked(walletRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
+const mockAccountRepository = vi.mocked(accountRepository)
 
-const mockAccounts: Account[] = [
+const mockAccount: Account = {
+  id: 1,
+  wallet_id: 1,
+  currency_id: 1,
+  real_balance: 150000,
+  actual_balance: 150000,
+  created_at: 1704067200,
+  updated_at: 1704067200,
+  wallet: 'Cash',
+  currency: 'USD',
+}
+
+const mockWallets: Wallet[] = [
   {
     id: 1,
     name: 'Cash',
-    currency_id: 1,
-    initial_balance: 1000,
-    icon: null,
-    color: null,
-    is_active: 1,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    currency_code: 'USD',
-    currency_symbol: '$',
-    current_balance: 1500,
+    icon: '💰',
+    color: '#3B82F6',
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_default: true,
+    accounts: [mockAccount],
   },
 ]
 
@@ -56,16 +68,27 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_preset: 1,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_default: true,
+    is_fiat: true,
+  },
+  {
+    id: 2,
+    code: 'EUR',
+    name: 'Euro',
+    symbol: '€',
+    decimal_places: 2,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_fiat: true,
   },
 ]
 
 describe('AccountsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockAccountRepository.findAll.mockResolvedValue(mockAccounts)
+    mockWalletRepository.findAll.mockResolvedValue(mockWallets)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
   })
 
@@ -79,7 +102,7 @@ describe('AccountsPage', () => {
 
   it('displays loading spinner initially', () => {
     // Delay resolution to see loading state
-    mockAccountRepository.findAll.mockImplementation(
+    mockWalletRepository.findAll.mockImplementation(
       () => new Promise(() => {})
     )
 
@@ -88,54 +111,51 @@ describe('AccountsPage', () => {
     expect(container.querySelector('.animate-spin')).toBeTruthy()
   })
 
-  it('displays accounts after loading', async () => {
+  it('displays wallets after loading', async () => {
     renderWithRouter()
 
     await waitFor(() => {
       expect(screen.getByText('Cash')).toBeInTheDocument()
     })
-
-    expect(screen.getByText('USD')).toBeInTheDocument()
-    expect(screen.getByText('$1,500.00')).toBeInTheDocument()
   })
 
   it('displays page title', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Accounts')).toBeInTheDocument()
+      expect(screen.getByText('Wallets & Accounts')).toBeInTheDocument()
     })
   })
 
-  it('displays Add button', async () => {
+  it('displays Add Wallet button', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Add')).toBeInTheDocument()
+      expect(screen.getByText('Add Wallet')).toBeInTheDocument()
     })
   })
 
-  it('displays empty state when no accounts', async () => {
-    mockAccountRepository.findAll.mockResolvedValue([])
+  it('displays empty state when no wallets', async () => {
+    mockWalletRepository.findAll.mockResolvedValue([])
 
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('No accounts yet')).toBeInTheDocument()
+      expect(screen.getByText('No wallets yet')).toBeInTheDocument()
     })
   })
 
-  it('opens modal when Add button is clicked', async () => {
+  it('opens wallet modal when Add Wallet button is clicked', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Add')).toBeInTheDocument()
+      expect(screen.getByText('Add Wallet')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByText('Add'))
+    fireEvent.click(screen.getByText('Add Wallet'))
 
     await waitFor(() => {
-      expect(screen.getByText('Add Account')).toBeInTheDocument()
+      expect(screen.getByText('Add Wallet', { selector: 'h2' })).toBeInTheDocument()
     })
   })
 
@@ -149,7 +169,23 @@ describe('AccountsPage', () => {
     fireEvent.click(screen.getByText('Edit'))
 
     await waitFor(() => {
-      expect(screen.getByText('Edit Account')).toBeInTheDocument()
+      expect(screen.getByText('Edit Wallet')).toBeInTheDocument()
+    })
+  })
+
+  it('displays wallet with icon', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('💰')).toBeInTheDocument()
+    })
+  })
+
+  it('displays account currency', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('USD')).toBeInTheDocument()
     })
   })
 
@@ -157,21 +193,24 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      const balance = screen.getByText('$1,500.00')
-      expect(balance.className).toContain('text-green-600')
+      const balance = screen.getByText('$1500.00')
+      expect(balance.className).toContain('text-green')
     })
   })
 
   it('displays account balance with correct color for negative', async () => {
-    mockAccountRepository.findAll.mockResolvedValue([
-      { ...mockAccounts[0], current_balance: -500 },
+    mockWalletRepository.findAll.mockResolvedValue([
+      {
+        ...mockWallets[0],
+        accounts: [{ ...mockAccount, actual_balance: -50000 }],
+      },
     ])
 
     renderWithRouter()
 
     await waitFor(() => {
       const balance = screen.getByText('-$500.00')
-      expect(balance.className).toContain('text-red-600')
+      expect(balance.className).toContain('text-red')
     })
   })
 
@@ -179,65 +218,80 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(mockAccountRepository.findAll).toHaveBeenCalled()
+      expect(mockWalletRepository.findAll).toHaveBeenCalled()
       expect(mockCurrencyRepository.findAll).toHaveBeenCalled()
     })
   })
 
-  describe('Create account', () => {
+  it('displays Default badge for default wallet', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Default')).toBeInTheDocument()
+    })
+  })
+
+  it('displays account count', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('1 account(s)')).toBeInTheDocument()
+    })
+  })
+
+  describe('Create wallet', () => {
     beforeEach(() => {
-      mockAccountRepository.create.mockResolvedValue(2)
+      mockWalletRepository.create.mockResolvedValue(2)
     })
 
-    it('creates account when form submitted', async () => {
+    it('creates wallet when form submitted', async () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add')).toBeInTheDocument()
+        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add'))
+      fireEvent.click(screen.getByText('Add Wallet'))
 
       await waitFor(() => {
-        expect(screen.getByText('Add Account')).toBeInTheDocument()
+        expect(screen.getByLabelText('Name')).toBeInTheDocument()
       })
 
       const nameInput = screen.getByLabelText('Name')
-      fireEvent.change(nameInput, { target: { value: 'New Account' } })
+      fireEvent.change(nameInput, { target: { value: 'New Wallet' } })
 
       const submitButton = screen.getByRole('button', { name: 'Save' })
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockAccountRepository.create).toHaveBeenCalledWith(
+        expect(mockWalletRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
-            name: 'New Account',
-            currency_id: 1,
+            name: 'New Wallet',
           })
         )
       })
 
-      expect(mockShowToast).toHaveBeenCalledWith('Account created', 'success')
+      expect(mockShowToast).toHaveBeenCalledWith('Wallet created', 'success')
     })
 
     it('shows error when create fails', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockAccountRepository.create.mockRejectedValue(new Error('Create failed'))
+      mockWalletRepository.create.mockRejectedValue(new Error('Create failed'))
 
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add')).toBeInTheDocument()
+        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add'))
+      fireEvent.click(screen.getByText('Add Wallet'))
 
       await waitFor(() => {
-        expect(screen.getByText('Add Account')).toBeInTheDocument()
+        expect(screen.getByLabelText('Name')).toBeInTheDocument()
       })
 
       const nameInput = screen.getByLabelText('Name')
-      fireEvent.change(nameInput, { target: { value: 'New Account' } })
+      fireEvent.change(nameInput, { target: { value: 'New Wallet' } })
 
       const submitButton = screen.getByRole('button', { name: 'Save' })
       fireEvent.click(submitButton)
@@ -253,28 +307,28 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add')).toBeInTheDocument()
+        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add'))
+      fireEvent.click(screen.getByText('Add Wallet'))
 
       await waitFor(() => {
-        expect(screen.getByText('Add Account')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
       })
 
       const submitButton = screen.getByRole('button', { name: 'Save' })
       fireEvent.click(submitButton)
 
-      expect(mockAccountRepository.create).not.toHaveBeenCalled()
+      expect(mockWalletRepository.create).not.toHaveBeenCalled()
     })
   })
 
-  describe('Update account', () => {
+  describe('Update wallet', () => {
     beforeEach(() => {
-      mockAccountRepository.update.mockResolvedValue(undefined)
+      mockWalletRepository.update.mockResolvedValue(undefined)
     })
 
-    it('updates account when form submitted', async () => {
+    it('updates wallet when form submitted', async () => {
       renderWithRouter()
 
       await waitFor(() => {
@@ -284,7 +338,7 @@ describe('AccountsPage', () => {
       fireEvent.click(screen.getByText('Edit'))
 
       await waitFor(() => {
-        expect(screen.getByText('Edit Account')).toBeInTheDocument()
+        expect(screen.getByText('Edit Wallet')).toBeInTheDocument()
       })
 
       const nameInput = screen.getByLabelText('Name')
@@ -294,7 +348,7 @@ describe('AccountsPage', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockAccountRepository.update).toHaveBeenCalledWith(
+        expect(mockWalletRepository.update).toHaveBeenCalledWith(
           1,
           expect.objectContaining({
             name: 'Updated Cash',
@@ -302,17 +356,17 @@ describe('AccountsPage', () => {
         )
       })
 
-      expect(mockShowToast).toHaveBeenCalledWith('Account updated', 'success')
+      expect(mockShowToast).toHaveBeenCalledWith('Wallet updated', 'success')
     })
   })
 
-  describe('Delete account', () => {
+  describe('Delete wallet', () => {
     beforeEach(() => {
-      mockAccountRepository.delete.mockResolvedValue(undefined)
+      mockWalletRepository.delete.mockResolvedValue(undefined)
       vi.spyOn(window, 'confirm').mockImplementation(() => true)
     })
 
-    it('deletes account when confirmed', async () => {
+    it('deletes wallet when confirmed', async () => {
       renderWithRouter()
 
       await waitFor(() => {
@@ -322,10 +376,10 @@ describe('AccountsPage', () => {
       fireEvent.click(screen.getByText('Delete'))
 
       await waitFor(() => {
-        expect(mockAccountRepository.delete).toHaveBeenCalledWith(1)
+        expect(mockWalletRepository.delete).toHaveBeenCalledWith(1)
       })
 
-      expect(mockShowToast).toHaveBeenCalledWith('Account deleted', 'success')
+      expect(mockShowToast).toHaveBeenCalledWith('Wallet deleted', 'success')
     })
 
     it('does not delete when cancelled', async () => {
@@ -339,12 +393,12 @@ describe('AccountsPage', () => {
 
       fireEvent.click(screen.getByText('Delete'))
 
-      expect(mockAccountRepository.delete).not.toHaveBeenCalled()
+      expect(mockWalletRepository.delete).not.toHaveBeenCalled()
     })
 
     it('shows error when delete fails', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockAccountRepository.delete.mockRejectedValue(new Error('Delete failed'))
+      mockWalletRepository.delete.mockRejectedValue(new Error('Delete failed'))
 
       renderWithRouter()
 
@@ -362,25 +416,92 @@ describe('AccountsPage', () => {
     })
   })
 
+  describe('Add currency to wallet', () => {
+    beforeEach(() => {
+      mockWalletRepository.addAccount.mockResolvedValue(2)
+    })
+
+    it('opens add currency modal', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('+ Currency')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('+ Currency'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+    })
+
+    it('adds currency to wallet', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('+ Currency')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('+ Currency'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      // Submit the form (EUR should be pre-selected as it's not in the wallet)
+      const addButton = screen.getByRole('button', { name: 'Add' })
+      fireEvent.click(addButton)
+
+      await waitFor(() => {
+        expect(mockWalletRepository.addAccount).toHaveBeenCalled()
+      })
+
+      expect(mockShowToast).toHaveBeenCalledWith('Currency added to wallet', 'success')
+    })
+  })
+
+  describe('Delete account', () => {
+    beforeEach(() => {
+      mockAccountRepository.delete.mockResolvedValue(undefined)
+      vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    })
+
+    it('removes account when confirmed', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Remove')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Remove'))
+
+      await waitFor(() => {
+        expect(mockAccountRepository.delete).toHaveBeenCalledWith(1)
+      })
+
+      expect(mockShowToast).toHaveBeenCalledWith('Account removed', 'success')
+    })
+  })
+
   describe('Modal behavior', () => {
     it('closes modal when Cancel clicked', async () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add')).toBeInTheDocument()
+        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add'))
+      fireEvent.click(screen.getByText('Add Wallet'))
 
       await waitFor(() => {
-        expect(screen.getByText('Add Account')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
       })
 
       const cancelButton = screen.getByRole('button', { name: 'Cancel' })
       fireEvent.click(cancelButton)
 
       await waitFor(() => {
-        expect(screen.queryByText('Add Account')).not.toBeInTheDocument()
+        expect(screen.queryByText('Add Wallet', { selector: 'h2' })).not.toBeInTheDocument()
       })
     })
 
@@ -403,7 +524,7 @@ describe('AccountsPage', () => {
   describe('Error handling', () => {
     it('handles load error gracefully', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockAccountRepository.findAll.mockRejectedValue(new Error('Load failed'))
+      mockWalletRepository.findAll.mockRejectedValue(new Error('Load failed'))
 
       renderWithRouter()
 

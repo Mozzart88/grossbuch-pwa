@@ -9,11 +9,13 @@ import {
   EditTransactionPage,
   SettingsPage,
   AccountsPage,
-  CategoriesPage,
+  // CategoriesPage,
   CounterpartiesPage,
   CurrenciesPage,
   ExportPage,
   DownloadPage,
+  TagsPage,
+  BudgetsPage,
 } from './pages'
 
 function AppContent() {
@@ -53,11 +55,13 @@ function AppContent() {
         <Route path="/transaction/:id" element={<EditTransactionPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/accounts" element={<AccountsPage />} />
-        <Route path="/settings/categories" element={<CategoriesPage />} />
+        {/* <Route path="/settings/categories" element={<CategoriesPage />} /> */}
         <Route path="/settings/counterparties" element={<CounterpartiesPage />} />
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
         <Route path="/settings/export" element={<ExportPage />} />
         <Route path="/settings/download" element={<DownloadPage />} />
+        <Route path="/settings/tags" element={<TagsPage />} />
+        <Route path="/settings/budgets" element={<BudgetsPage />} />
       </Routes>
     </AppLayout>
   )

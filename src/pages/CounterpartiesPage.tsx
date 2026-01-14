@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
-import { counterpartyRepository, categoryRepository } from '../services/repositories'
-import type { Counterparty, CounterpartyInput, Category } from '../types'
+import { counterpartyRepository, tagRepository } from '../services/repositories'
+import type { Counterparty, CounterpartyInput, Tag } from '../types'
 
 export function CounterpartiesPage() {
   const { showToast } = useToast()
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+  const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingCounterparty, setEditingCounterparty] = useState<Counterparty | null>(null)
 
   // Form state
   const [name, setName] = useState('')
-  const [notes, setNotes] = useState('')
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([])
+  const [note, setNote] = useState('')
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([])
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -24,12 +24,12 @@ export function CounterpartiesPage() {
 
   const loadData = async () => {
     try {
-      const [cps, cats] = await Promise.all([
+      const [cps, userTags] = await Promise.all([
         counterpartyRepository.findAll(),
-        categoryRepository.findAll(),
+        tagRepository.findUserTags(),
       ])
       setCounterparties(cps)
-      setCategories(cats)
+      setTags(userTags)
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
@@ -41,13 +41,13 @@ export function CounterpartiesPage() {
     if (counterparty) {
       setEditingCounterparty(counterparty)
       setName(counterparty.name)
-      setNotes(counterparty.notes || '')
-      setSelectedCategoryIds(counterparty.category_ids || [])
+      setNote(counterparty.note || '')
+      setSelectedTagIds(counterparty.tag_ids || [])
     } else {
       setEditingCounterparty(null)
       setName('')
-      setNotes('')
-      setSelectedCategoryIds([])
+      setNote('')
+      setSelectedTagIds([])
     }
     setModalOpen(true)
   }
@@ -57,11 +57,11 @@ export function CounterpartiesPage() {
     setEditingCounterparty(null)
   }
 
-  const toggleCategory = (categoryId: number) => {
-    setSelectedCategoryIds((prev) =>
-      prev.includes(categoryId)
-        ? prev.filter((id) => id !== categoryId)
-        : [...prev, categoryId]
+  const toggleTag = (tagId: number) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId)
+        ? prev.filter((id) => id !== tagId)
+        : [...prev, tagId]
     )
   }
 
@@ -73,8 +73,8 @@ export function CounterpartiesPage() {
     try {
       const data: CounterpartyInput = {
         name: name.trim(),
-        notes: notes || undefined,
-        category_ids: selectedCategoryIds,
+        note: note || undefined,
+        tag_ids: selectedTagIds,
       }
 
       if (editingCounterparty) {
@@ -115,10 +115,10 @@ export function CounterpartiesPage() {
     }
   }
 
-  const getCategoryNames = (categoryIds?: number[]) => {
-    if (!categoryIds || categoryIds.length === 0) return 'All categories'
-    const names = categoryIds
-      .map((id) => categories.find((c) => c.id === id)?.name)
+  const getTagNames = (tagIds?: number[]) => {
+    if (!tagIds || tagIds.length === 0) return 'All tags'
+    const names = tagIds
+      .map((id) => tags.find((t) => t.id === id)?.name)
       .filter(Boolean)
     return names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ')
   }
@@ -156,8 +156,13 @@ export function CounterpartiesPage() {
                 <div>
                   <p className="font-medium text-gray-900 dark:text-gray-100">{cp.name}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {getCategoryNames(cp.category_ids)}
+                    {getTagNames(cp.tag_ids)}
                   </p>
+                  {cp.note && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 italic">
+                      {cp.note}
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -189,31 +194,31 @@ export function CounterpartiesPage() {
             required
           />
           <Input
-            label="Notes (optional)"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            label="Note (optional)"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
             placeholder="Additional info..."
           />
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Linked Categories (optional)
+              Linked Tags (optional)
             </label>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              If selected, this counterparty will only appear for these categories
+              If selected, this counterparty will only appear for these tags
             </p>
             <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-              {categories.map((category) => (
+              {tags.map((tag) => (
                 <button
-                  key={category.id}
+                  key={tag.id}
                   type="button"
-                  onClick={() => toggleCategory(category.id)}
+                  onClick={() => toggleTag(tag.id)}
                   className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                    selectedCategoryIds.includes(category.id)
+                    selectedTagIds.includes(tag.id)
                       ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
                       : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
                   }`}
                 >
-                  {category.icon} {category.name}
+                  {tag.name}
                 </button>
               ))}
             </div>

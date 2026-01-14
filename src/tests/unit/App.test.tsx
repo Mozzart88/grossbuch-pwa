@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import '@testing-library/jest-dom'
 import { render, screen } from '@testing-library/react'
 import App from '../../App'
 
@@ -9,11 +10,12 @@ vi.mock('../../pages', () => ({
   EditTransactionPage: () => <div data-testid="edit-transaction-page">Edit Transaction</div>,
   SettingsPage: () => <div data-testid="settings-page">Settings</div>,
   AccountsPage: () => <div data-testid="accounts-page">Accounts</div>,
-  CategoriesPage: () => <div data-testid="categories-page">Categories</div>,
+  TagsPage: () => <div data-testid="tags-page">Tags</div>,
   CounterpartiesPage: () => <div data-testid="counterparties-page">Counterparties</div>,
   CurrenciesPage: () => <div data-testid="currencies-page">Currencies</div>,
   ExportPage: () => <div data-testid="export-page">Export</div>,
   DownloadPage: () => <div data-testid="download-page">Export</div>,
+  BudgetsPage: () => <div data-testid="budgets-page">Budgets</div>,
 }))
 
 // Mock TabBar

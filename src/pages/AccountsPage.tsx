@@ -1,23 +1,31 @@
 import { useState, useEffect } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast } from '../components/ui'
-import { accountRepository, currencyRepository } from '../services/repositories'
-import { formatCurrency } from '../utils/formatters'
-import type { Account, AccountInput, Currency } from '../types'
+import { walletRepository, currencyRepository, accountRepository } from '../services/repositories'
+import type { Wallet, WalletInput, Currency, Account } from '../types'
 
 export function AccountsPage() {
   const { showToast } = useToast()
-  const [accounts, setAccounts] = useState<Account[]>([])
+  const [wallets, setWallets] = useState<Wallet[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [loading, setLoading] = useState(true)
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
 
-  // Form state
-  const [name, setName] = useState('')
-  const [currencyId, setCurrencyId] = useState('')
-  const [initialBalance, setInitialBalance] = useState('')
+  // Wallet modal state
+  const [walletModalOpen, setWalletModalOpen] = useState(false)
+  const [editingWallet, setEditingWallet] = useState<Wallet | null>(null)
+  const [walletName, setWalletName] = useState('')
+  const [walletIcon, setWalletIcon] = useState('')
+  const [walletColor, setWalletColor] = useState('')
+
+  // Add currency modal state
+  const [currencyModalOpen, setCurrencyModalOpen] = useState(false)
+  const [targetWallet, setTargetWallet] = useState<Wallet | null>(null)
+  const [selectedCurrencyId, setSelectedCurrencyId] = useState('')
+
   const [submitting, setSubmitting] = useState(false)
+
+  const WALLET_ICONS = ['💰', '🏦', '💳', '💵', '🪙', '📊', '💎', '🎯']
+  const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6']
 
   useEffect(() => {
     loadData()
@@ -25,11 +33,11 @@ export function AccountsPage() {
 
   const loadData = async () => {
     try {
-      const [accs, curs] = await Promise.all([
-        accountRepository.findAll(),
+      const [ws, curs] = await Promise.all([
+        walletRepository.findAll(),
         currencyRepository.findAll(),
       ])
-      setAccounts(accs)
+      setWallets(ws)
       setCurrencies(curs)
     } catch (error) {
       console.error('Failed to load data:', error)
@@ -38,68 +46,125 @@ export function AccountsPage() {
     }
   }
 
-  const openModal = (account?: Account) => {
-    if (account) {
-      setEditingAccount(account)
-      setName(account.name)
-      setCurrencyId(account.currency_id.toString())
-      setInitialBalance(account.initial_balance.toString())
+  // Wallet modal handlers
+  const openWalletModal = (wallet?: Wallet) => {
+    if (wallet) {
+      setEditingWallet(wallet)
+      setWalletName(wallet.name)
+      setWalletIcon(wallet.icon || '')
+      setWalletColor(wallet.color || '')
     } else {
-      setEditingAccount(null)
-      setName('')
-      setCurrencyId(currencies[0]?.id.toString() || '')
-      setInitialBalance('0')
+      setEditingWallet(null)
+      setWalletName('')
+      setWalletIcon('')
+      setWalletColor('')
     }
-    setModalOpen(true)
+    setWalletModalOpen(true)
   }
 
-  const closeModal = () => {
-    setModalOpen(false)
-    setEditingAccount(null)
+  const closeWalletModal = () => {
+    setWalletModalOpen(false)
+    setEditingWallet(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleWalletSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !currencyId) return
+    if (!walletName.trim()) return
 
     setSubmitting(true)
     try {
-      const data: AccountInput = {
-        name: name.trim(),
-        currency_id: parseInt(currencyId),
-        initial_balance: parseFloat(initialBalance) || 0,
+      const data: WalletInput = {
+        name: walletName.trim(),
+        icon: walletIcon || undefined,
+        color: walletColor || undefined,
       }
 
-      if (editingAccount) {
-        await accountRepository.update(editingAccount.id, data)
-        showToast('Account updated', 'success')
+      if (editingWallet) {
+        await walletRepository.update(editingWallet.id, data)
+        showToast('Wallet updated', 'success')
       } else {
-        await accountRepository.create(data)
-        showToast('Account created', 'success')
+        await walletRepository.create(data)
+        showToast('Wallet created', 'success')
       }
 
-      closeModal()
+      closeWalletModal()
       loadData()
     } catch (error) {
-      console.error('Failed to save account:', error)
+      console.error('Failed to save wallet:', error)
       showToast(error instanceof Error ? error.message : 'Failed to save', 'error')
     } finally {
       setSubmitting(false)
     }
   }
 
-  const handleDelete = async (account: Account) => {
-    if (!confirm(`Delete "${account.name}"? This cannot be undone.`)) return
+  const handleDeleteWallet = async (wallet: Wallet) => {
+    if (!confirm(`Delete wallet "${wallet.name}" and all its accounts? This cannot be undone.`)) return
+
+    try {
+      await walletRepository.delete(wallet.id)
+      showToast('Wallet deleted', 'success')
+      loadData()
+    } catch (error) {
+      console.error('Failed to delete wallet:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to delete', 'error')
+    }
+  }
+
+  // Currency modal handlers
+  const openCurrencyModal = (wallet: Wallet) => {
+    setTargetWallet(wallet)
+    // Find first currency not already in this wallet
+    const existingCurrencyIds = new Set(wallet.accounts?.map(a => a.currency_id) || [])
+    const availableCurrency = currencies.find(c => !existingCurrencyIds.has(c.id))
+    setSelectedCurrencyId(availableCurrency?.id.toString() || '')
+    setCurrencyModalOpen(true)
+  }
+
+  const closeCurrencyModal = () => {
+    setCurrencyModalOpen(false)
+    setTargetWallet(null)
+  }
+
+  const handleAddCurrency = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!targetWallet || !selectedCurrencyId) return
+
+    setSubmitting(true)
+    try {
+      await walletRepository.addAccount(targetWallet.id, parseInt(selectedCurrencyId))
+      showToast('Currency added to wallet', 'success')
+      closeCurrencyModal()
+      loadData()
+    } catch (error) {
+      console.error('Failed to add currency:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to add currency', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDeleteAccount = async (account: Account, walletName: string) => {
+    if (!confirm(`Remove ${account.currency} from "${walletName}"? This cannot be undone.`)) return
 
     try {
       await accountRepository.delete(account.id)
-      showToast('Account deleted', 'success')
+      showToast('Account removed', 'success')
       loadData()
     } catch (error) {
       console.error('Failed to delete account:', error)
       showToast(error instanceof Error ? error.message : 'Failed to delete', 'error')
     }
   }
+
+  const formatBalance = (balance: number, currency: Currency | undefined) => {
+    if (!currency) return balance.toString()
+    const decimals = currency.decimal_places
+    const displayAmount = Math.abs(balance) / Math.pow(10, decimals)
+    const sign = balance < 0 ? '-' : ''
+    return `${sign}${currency.symbol}${displayAmount.toFixed(decimals)}`
+  }
+
+  const getCurrency = (currencyId: number) => currencies.find(c => c.id === currencyId)
 
   if (loading) {
     return (
@@ -112,89 +177,184 @@ export function AccountsPage() {
   return (
     <div>
       <PageHeader
-        title="Accounts"
+        title="Wallets & Accounts"
         showBack
         rightAction={
-          <Button size="sm" onClick={() => openModal()}>
-            Add
+          <Button size="sm" onClick={() => openWalletModal()}>
+            Add Wallet
           </Button>
         }
       />
 
-      <div className="p-4 space-y-3">
-        {accounts.length === 0 ? (
+      <div className="p-4 space-y-4">
+        {wallets.length === 0 ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            <p>No accounts yet</p>
-            <p className="text-sm mt-1">Add your first account to get started</p>
+            <p>No wallets yet</p>
+            <p className="text-sm mt-1">Add your first wallet to get started</p>
           </div>
         ) : (
-          accounts.map((account) => (
-            <Card key={account.id} className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">{account.name}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {account.currency_code}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className={`font-semibold ${(account.current_balance || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {formatCurrency(account.current_balance || 0, account.currency_symbol || '$')}
-                  </p>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={() => openModal(account)}
-                      className="text-xs text-primary-600 dark:text-primary-400"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(account)}
-                      className="text-xs text-red-600 dark:text-red-400"
-                    >
-                      Delete
-                    </button>
+          wallets.map((wallet) => (
+            <Card key={wallet.id} className="overflow-hidden">
+              {/* Wallet header */}
+              <div
+                className="p-4 flex items-center justify-between"
+                style={{ borderLeft: wallet.color ? `4px solid ${wallet.color}` : undefined }}
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{wallet.icon || '💰'}</span>
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">
+                      {wallet.name}
+                      {wallet.is_default && (
+                        <span className="ml-2 text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
+                          Default
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {wallet.accounts?.length || 0} account(s)
+                    </p>
                   </div>
                 </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => openCurrencyModal(wallet)}
+                    className="text-xs text-primary-600 dark:text-primary-400"
+                  >
+                    + Currency
+                  </button>
+                  <button
+                    onClick={() => openWalletModal(wallet)}
+                    className="text-xs text-primary-600 dark:text-primary-400"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteWallet(wallet)}
+                    className="text-xs text-red-600 dark:text-red-400"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
+
+              {/* Accounts list */}
+              {wallet.accounts && wallet.accounts.length > 0 && (
+                <div className="border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
+                  {wallet.accounts.map((account) => {
+                    const currency = getCurrency(account.currency_id)
+                    return (
+                      <div key={account.id} className="px-4 py-3 flex items-center justify-between bg-gray-50 dark:bg-gray-800/50">
+                        <div>
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {account.currency}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            Real: {formatBalance(account.real_balance, currency)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-sm font-semibold ${account.actual_balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {formatBalance(account.actual_balance, currency)}
+                          </p>
+                          <button
+                            onClick={() => handleDeleteAccount(account, wallet.name)}
+                            className="text-xs text-red-600 dark:text-red-400 mt-1"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </Card>
           ))
         )}
       </div>
 
-      <Modal isOpen={modalOpen} onClose={closeModal} title={editingAccount ? 'Edit Account' : 'Add Account'}>
-        <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Wallet Modal */}
+      <Modal isOpen={walletModalOpen} onClose={closeWalletModal} title={editingWallet ? 'Edit Wallet' : 'Add Wallet'}>
+        <form onSubmit={handleWalletSubmit} className="space-y-4">
           <Input
             label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            value={walletName}
+            onChange={(e) => setWalletName(e.target.value)}
             placeholder="e.g., Cash, Bank Account"
             required
           />
-          <Select
-            label="Currency"
-            value={currencyId}
-            onChange={(e) => setCurrencyId(e.target.value)}
-            options={currencies.map((c) => ({
-              value: c.id,
-              label: `${c.code} - ${c.name}`,
-            }))}
-            disabled={!!editingAccount}
-          />
-          <Input
-            label="Initial Balance"
-            type="number"
-            step="0.01"
-            value={initialBalance}
-            onChange={(e) => setInitialBalance(e.target.value)}
-            placeholder="0.00"
-          />
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Icon</label>
+            <div className="flex flex-wrap gap-2">
+              {WALLET_ICONS.map((icon) => (
+                <button
+                  key={icon}
+                  type="button"
+                  onClick={() => setWalletIcon(icon)}
+                  className={`w-10 h-10 text-xl rounded-lg border-2 transition-colors ${
+                    walletIcon === icon
+                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Color</label>
+            <div className="flex flex-wrap gap-2">
+              {WALLET_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setWalletColor(color)}
+                  className={`w-8 h-8 rounded-full border-2 transition-all ${
+                    walletColor === color
+                      ? 'border-gray-900 dark:border-white scale-110'
+                      : 'border-transparent hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </div>
           <div className="flex gap-3 pt-2">
-            <Button type="button" variant="secondary" onClick={closeModal} className="flex-1">
+            <Button type="button" variant="secondary" onClick={closeWalletModal} className="flex-1">
               Cancel
             </Button>
             <Button type="submit" disabled={submitting} className="flex-1">
               {submitting ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Add Currency Modal */}
+      <Modal isOpen={currencyModalOpen} onClose={closeCurrencyModal} title="Add Currency to Wallet">
+        <form onSubmit={handleAddCurrency} className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Add a new currency account to <strong>{targetWallet?.name}</strong>
+          </p>
+          <Select
+            label="Currency"
+            value={selectedCurrencyId}
+            onChange={(e) => setSelectedCurrencyId(e.target.value)}
+            options={currencies
+              .filter(c => !targetWallet?.accounts?.some(a => a.currency_id === c.id))
+              .map((c) => ({
+                value: c.id,
+                label: `${c.code} - ${c.name}`,
+              }))}
+          />
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={closeCurrencyModal} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || !selectedCurrencyId} className="flex-1">
+              {submitting ? 'Adding...' : 'Add'}
             </Button>
           </div>
         </form>

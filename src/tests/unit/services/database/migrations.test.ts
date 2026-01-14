@@ -25,17 +25,17 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      // Should run all migration statements
+      // Should run migration statements
       expect(mockExecSQL).toHaveBeenCalled()
-      // First migration creates currencies table
+      // Migration v1 creates old schema first (for new DBs to migrate through)
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('CREATE TABLE IF NOT EXISTS currencies')
       )
     })
 
     it('skips migrations when already at current version', async () => {
-      // Already at version 1
-      mockQueryOne.mockResolvedValue({ value: '1' })
+      // Already at version 2 (current)
+      mockQueryOne.mockResolvedValue({ value: '2' })
 
       await runMigrations()
 
@@ -43,75 +43,113 @@ describe('migrations', () => {
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
-    it('creates currencies table with correct schema', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('runs migration v2 when at version 1', async () => {
+      // At version 1, need to run v2
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
+      // Should run migration v2 statements
+      expect(mockExecSQL).toHaveBeenCalled()
+      // Migration v2 creates new tables
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('currencies')
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS tag')
       )
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('code TEXT NOT NULL UNIQUE')
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS wallet')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS trx')
       )
     })
 
-    it('creates accounts table with foreign key', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates tag table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE TABLE IF NOT EXISTS accounts')
-      )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('FOREIGN KEY (currency_id) REFERENCES currencies(id)')
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS tag')
       )
     })
 
-    it('creates categories table with type constraint', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates tag_to_tag junction table for hierarchy', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE TABLE IF NOT EXISTS categories')
-      )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("type IN ('income', 'expense', 'both')")
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS tag_to_tag')
       )
     })
 
-    it('creates counterparties table', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates currency table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE TABLE IF NOT EXISTS counterparties')
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS currency')
       )
     })
 
-    it('creates counterparty_categories junction table', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates currency_to_tags junction table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE TABLE IF NOT EXISTS counterparty_categories')
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS currency_to_tags')
       )
     })
 
-    it('creates transactions table with type constraint', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates wallet table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE TABLE IF NOT EXISTS transactions')
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS wallet')
       )
+    })
+
+    it('creates account table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("type IN ('income', 'expense', 'transfer', 'exchange')")
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS account')
+      )
+    })
+
+    it('creates counterparty table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS counterparty')
+      )
+    })
+
+    it('creates trx (transaction header) table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS trx')
+      )
+    })
+
+    it('creates trx_base (transaction line items) table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS trx_base')
       )
     })
 
@@ -125,62 +163,66 @@ describe('migrations', () => {
       )
     })
 
-    it('inserts default settings', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('seeds system tags in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
+      // System tags should be seeded
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("INSERT OR IGNORE INTO settings (key, value) VALUES ('db_version', '1')")
-      )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("INSERT OR IGNORE INTO settings (key, value) VALUES ('default_currency_id', '1')")
-      )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'system')")
+        expect.stringContaining("INSERT INTO tag (name) VALUES")
       )
     })
 
-    it('creates indexes for accounts', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates accounts view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_accounts_currency')
-      )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_accounts_active')
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS accounts AS')
       )
     })
 
-    it('creates indexes for categories', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates transactions view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_categories_type')
-      )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_categories_parent')
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS transactions AS')
       )
     })
 
-    it('creates indexes for transactions', async () => {
-      mockQueryOne.mockRejectedValue(new Error('no such table'))
+    it('creates trx_log view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_transactions_date')
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS trx_log AS')
       )
+    })
+
+    it('creates balance update trigger for trx_base', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_transactions_type')
+        expect.stringContaining('CREATE TRIGGER trg_add_trx_base')
       )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('CREATE INDEX IF NOT EXISTS idx_transactions_month')
-      )
+    })
+
+    it('drops old tables in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      // Old tables should be dropped
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS counterparty_categories')
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS transactions')
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS categories')
     })
 
     it('handles query returning null', async () => {
@@ -194,23 +236,422 @@ describe('migrations', () => {
     })
 
     it('parses db_version correctly', async () => {
-      // Already at version 1
-      mockQueryOne.mockResolvedValue({ value: '1' })
+      // Already at version 2
+      mockQueryOne.mockResolvedValue({ value: '2' })
 
       await runMigrations()
 
-      // No migrations should run since we're at version 1
+      // No migrations should run since we're at version 2
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
-    it('runs all statements for a migration version', async () => {
+    it('runs many statements for full migration', async () => {
       mockQueryOne.mockRejectedValue(new Error('no such table'))
 
       await runMigrations()
 
-      // Version 1 has many statements - ensure all were called
-      // Count should be >= 20 (tables, indexes, default settings)
-      expect(mockExecSQL.mock.calls.length).toBeGreaterThanOrEqual(20)
+      // Full migration (v1 + v2) has many statements
+      // Should be >= 50 (tables, views, triggers, indexes, seeds, etc.)
+      expect(mockExecSQL.mock.calls.length).toBeGreaterThanOrEqual(50)
+    })
+
+    it('updates db_version to 2 after migration', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("UPDATE settings SET value = ?"),
+        ['2']
+      )
+    })
+
+    // ----- BUDGET TABLE TESTS -----
+
+    it('creates budget table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS budget')
+      )
+    })
+
+    it('budget table has correct columns', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      // Budget table should have randomblob(16) default for id
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringMatching(/CREATE TABLE IF NOT EXISTS budget.*id BLOB.*PRIMARY KEY.*DEFAULT.*randomblob/s)
+      )
+    })
+
+    // ----- EXCHANGE RATE TABLE TESTS -----
+
+    it('creates exchange_rate table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS exchange_rate')
+      )
+    })
+
+    // ----- TRX_NOTE TABLE TESTS -----
+
+    it('creates trx_note table for transaction notes', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS trx_note')
+      )
+    })
+
+    // ----- JUNCTION TABLES TESTS -----
+
+    it('creates wallet_to_tags junction table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS wallet_to_tags')
+      )
+    })
+
+    it('creates account_to_tags junction table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS account_to_tags')
+      )
+    })
+
+    it('creates counterparty_to_tags junction table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS counterparty_to_tags')
+      )
+    })
+
+    it('creates trx_to_counterparty junction table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS trx_to_counterparty')
+      )
+    })
+
+    // ----- TRIGGER TESTS -----
+
+    it('creates trigger to prevent deleting system tags', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_delete_system_tag')
+      )
+    })
+
+    it('creates default currency trigger', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_default_currency')
+      )
+    })
+
+    it('creates default wallet trigger', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_default_wallet')
+      )
+    })
+
+    it('creates trigger for default wallet on delete', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_default_wallet_on_delete')
+      )
+    })
+
+    it('creates trigger for first account in wallet', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_add_first_account')
+      )
+    })
+
+    it('creates trigger for setting default account', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_set_default_account')
+      )
+    })
+
+    it('creates trigger for deleting default account', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_del_default_account')
+      )
+    })
+
+    it('creates trigger for deleting last account in wallet', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_del_last_in_wallet_account')
+      )
+    })
+
+    it('creates trigger for deleting trx_base (balance rollback)', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_del_trx_base')
+      )
+    })
+
+    it('creates trigger for updating trx_base', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_update_trx_base')
+      )
+    })
+
+    // ----- VIEW TESTS -----
+
+    it('creates transaction_view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS transaction_view AS')
+      )
+    })
+
+    it('creates exchanges view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS exchanges AS')
+      )
+    })
+
+    it('creates transfers view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS transfers AS')
+      )
+    })
+
+    it('creates tags_graph view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS tags_graph AS')
+      )
+    })
+
+    it('creates tags_hierarchy view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS tags_hierarchy AS')
+      )
+    })
+
+    it('creates budget_subtags view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS budget_subtags AS')
+      )
+    })
+
+    it('creates summary view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS summary AS')
+      )
+    })
+
+    it('creates counterparties_summary view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS counterparties_summary AS')
+      )
+    })
+
+    it('creates tags_summary view in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE VIEW IF NOT EXISTS tags_summary AS')
+      )
+    })
+
+    // ----- TAG HIERARCHY TESTS -----
+
+    it('seeds system tag hierarchy in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO tag_to_tag (child_id, parent_id) VALUES')
+      )
+    })
+
+    // ----- DATA MIGRATION TESTS -----
+
+    it('migrates currencies from old schema', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO currency (id, code, name, symbol, decimal_places')
+      )
+    })
+
+    it('migrates wallets from old accounts table', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO wallet (id, name, icon, color')
+      )
+    })
+
+    it('migrates counterparties from old schema', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO counterparty (id, name, note')
+      )
+    })
+
+    // ----- OLD TABLE CLEANUP TESTS -----
+
+    it('drops old accounts table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS accounts')
+    })
+
+    it('drops old currencies table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS currencies')
+    })
+
+    it('drops old counterparties table in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS counterparties')
+    })
+
+    it('drops old views before recreating in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS accounts')
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS transactions')
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS transfers')
+      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS exchanges')
+    })
+
+    // ----- BALANCE RECALCULATION TESTS -----
+
+    it('recalculates account balances in migration v2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE account SET')
+      )
+    })
+
+    // ----- TRIGGER FOR COUNTERPARTY VIEW -----
+
+    it('creates trigger for adding counterparty via view', async () => {
+      mockQueryOne.mockResolvedValue({ value: '1' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_trx_add_counterparty')
+      )
     })
   })
 })

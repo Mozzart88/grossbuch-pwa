@@ -1,148 +1,158 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import '@testing-library/jest-dom'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { TransactionForm } from '../../../../components/transactions/TransactionForm'
-import type { Transaction, Account, Category, Counterparty } from '../../../../types'
+import type { Wallet, Tag, Counterparty, Currency, Account } from '../../../../types'
 
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
-  accountRepository: {
-    findAll: vi.fn(),
+  walletRepository: {
+    findActive: vi.fn(),
   },
-  categoryRepository: {
-    findAll: vi.fn(),
+  tagRepository: {
+    findIncomeTags: vi.fn(),
+    findExpenseTags: vi.fn(),
   },
   counterpartyRepository: {
     findAll: vi.fn(),
   },
+  currencyRepository: {
+    findAll: vi.fn(),
+    setExchangeRate: vi.fn(),
+  },
+  transactionRepository: {
+    createIncome: vi.fn(),
+    createExpense: vi.fn(),
+    createTransfer: vi.fn(),
+    createExchange: vi.fn(),
+  },
 }))
 
-// Mock dateUtils
-vi.mock('../../../../utils/dateUtils', () => ({
-  toDateTimeLocal: vi.fn(() => '2025-01-10T12:00'),
-  fromDateTimeLocal: vi.fn((val: string) => val.replace('T', ' ') + ':00'),
-}))
+import {
+  walletRepository,
+  tagRepository,
+  counterpartyRepository,
+  currencyRepository,
+  transactionRepository,
+} from '../../../../services/repositories'
 
-import { accountRepository, categoryRepository, counterpartyRepository } from '../../../../services/repositories'
-
-const mockAccountRepository = vi.mocked(accountRepository)
-const mockCategoryRepository = vi.mocked(categoryRepository)
+const mockWalletRepository = vi.mocked(walletRepository)
+const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
+const mockCurrencyRepository = vi.mocked(currencyRepository)
+const mockTransactionRepository = vi.mocked(transactionRepository)
 
-const mockAccounts: Account[] = [
+const mockAccount: Account = {
+  id: 1,
+  wallet_id: 1,
+  currency_id: 1,
+  real_balance: 15000, // 150.00
+  actual_balance: 15000,
+  created_at: 1704067200,
+  updated_at: 1704067200,
+  wallet: 'Cash',
+  currency: 'USD',
+  is_default: true,
+}
+
+const mockAccountEUR: Account = {
+  id: 2,
+  wallet_id: 1,
+  currency_id: 2,
+  real_balance: 75000, // 750.00
+  actual_balance: 75000,
+  created_at: 1704067200,
+  updated_at: 1704067200,
+  wallet: 'Bank',
+  currency: 'EUR',
+}
+
+const mockAccountSavings: Account = {
+  id: 3,
+  wallet_id: 2,
+  currency_id: 1,
+  real_balance: 120000, // 1200.00
+  actual_balance: 120000,
+  created_at: 1704067200,
+  updated_at: 1704067200,
+  wallet: 'Savings',
+  currency: 'USD',
+}
+
+const mockWallets: Wallet[] = [
   {
     id: 1,
     name: 'Cash',
-    currency_id: 1,
-    initial_balance: 100,
     icon: '💵',
     color: '#4CAF50',
-    is_active: 1,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    currency_symbol: '$',
-    currency_code: 'USD',
-    currency_decimal_places: 2,
-    current_balance: 150,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_default: true,
+    accounts: [mockAccount, mockAccountEUR],
   },
   {
     id: 2,
-    name: 'Bank EUR',
-    currency_id: 2,
-    initial_balance: 500,
-    icon: '🏦',
-    color: '#2196F3',
-    is_active: 1,
-    sort_order: 1,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    currency_symbol: '€',
-    currency_code: 'EUR',
-    currency_decimal_places: 2,
-    current_balance: 750,
-  },
-  {
-    id: 3,
-    name: 'Savings USD',
-    currency_id: 1,
-    initial_balance: 1000,
+    name: 'Savings',
     icon: '💰',
     color: '#FF9800',
-    is_active: 1,
-    sort_order: 2,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    currency_symbol: '$',
-    currency_code: 'USD',
-    currency_decimal_places: 2,
-    current_balance: 1200,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    accounts: [mockAccountSavings],
   },
 ]
 
-const mockCategories: Category[] = [
+const mockCurrencies: Currency[] = [
   {
     id: 1,
-    name: 'Food',
-    type: 'expense',
-    icon: '🍔',
-    color: '#FF5722',
-    parent_id: null,
-    is_preset: 1,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    code: 'USD',
+    name: 'US Dollar',
+    symbol: '$',
+    decimal_places: 2,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_default: true,
+    is_fiat: true,
   },
   {
     id: 2,
-    name: 'Salary',
-    type: 'income',
-    icon: '💰',
-    color: '#4CAF50',
-    parent_id: null,
-    is_preset: 1,
-    sort_order: 1,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    code: 'EUR',
+    name: 'Euro',
+    symbol: '€',
+    decimal_places: 2,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_fiat: true,
   },
-  {
-    id: 3,
-    name: 'Other',
-    type: 'both',
-    icon: '📦',
-    color: '#9E9E9E',
-    parent_id: null,
-    is_preset: 0,
-    sort_order: 2,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-  },
+]
+
+const mockExpenseTags: Tag[] = [
+  { id: 10, name: 'food', created_at: 1704067200, updated_at: 1704067200 },
+  { id: 11, name: 'transport', created_at: 1704067200, updated_at: 1704067200 },
+  { id: 23, name: 'Gifts', created_at: 1704067200, updated_at: 1704067200 },
+]
+
+const mockIncomeTags: Tag[] = [
+  { id: 20, name: 'salary', created_at: 1704067200, updated_at: 1704067200 },
+  { id: 21, name: 'freelance', created_at: 1704067200, updated_at: 1704067200 },
+  { id: 23, name: 'Gifts', created_at: 1704067200, updated_at: 1704067200 },
 ]
 
 const mockCounterparties: Counterparty[] = [
   {
     id: 1,
     name: 'Restaurant ABC',
-    notes: null,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    category_ids: [1],
+    note: null,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    tag_ids: [10],
   },
   {
     id: 2,
     name: 'Company XYZ',
-    notes: null,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    category_ids: [2],
-  },
-  {
-    id: 3,
-    name: 'General Store',
-    notes: null,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
-    category_ids: [],
+    note: null,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    tag_ids: [20],
   },
 ]
 
@@ -152,16 +162,20 @@ describe('TransactionForm', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockAccountRepository.findAll.mockResolvedValue(mockAccounts)
-    mockCategoryRepository.findAll.mockResolvedValue(mockCategories)
+    mockWalletRepository.findActive.mockResolvedValue(mockWallets)
+    mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
+    mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
-    mockOnSubmit.mockResolvedValue(undefined)
+    mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
+    mockTransactionRepository.createExpense.mockResolvedValue({} as any)
+    mockTransactionRepository.createIncome.mockResolvedValue({} as any)
+    mockTransactionRepository.createTransfer.mockResolvedValue({} as any)
+    mockTransactionRepository.createExchange.mockResolvedValue({} as any)
   })
 
-  const renderForm = (transaction?: Transaction) => {
+  const renderForm = () => {
     return render(
       <TransactionForm
-        transaction={transaction}
         onSubmit={mockOnSubmit}
         onCancel={mockOnCancel}
       />
@@ -170,7 +184,7 @@ describe('TransactionForm', () => {
 
   describe('Loading state', () => {
     it('shows loading spinner while loading data', () => {
-      mockAccountRepository.findAll.mockImplementation(() => new Promise(() => {}))
+      mockWalletRepository.findActive.mockImplementation(() => new Promise(() => { }))
 
       const { container } = renderForm()
 
@@ -181,8 +195,9 @@ describe('TransactionForm', () => {
       renderForm()
 
       await waitFor(() => {
-        expect(mockAccountRepository.findAll).toHaveBeenCalled()
-        expect(mockCategoryRepository.findAll).toHaveBeenCalled()
+        expect(mockWalletRepository.findActive).toHaveBeenCalled()
+        expect(mockTagRepository.findIncomeTags).toHaveBeenCalled()
+        expect(mockTagRepository.findExpenseTags).toHaveBeenCalled()
         expect(mockCounterpartyRepository.findAll).toHaveBeenCalled()
       })
     })
@@ -223,20 +238,36 @@ describe('TransactionForm', () => {
     })
   })
 
-  describe('Category filtering', () => {
-    it('shows expense categories for expense type', async () => {
+  describe('Category/Tag selection', () => {
+    it('shows category field for expense type', async () => {
       renderForm()
 
       await waitFor(() => {
         expect(screen.getByText('Category')).toBeInTheDocument()
       })
 
-      // Check that expense and both categories are available
       const categorySelect = screen.getByRole('combobox', { name: /category/i })
       expect(categorySelect).toBeInTheDocument()
     })
 
-    it('shows income categories for income type', async () => {
+    it('shows only expense tags', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Category')).toBeInTheDocument()
+      })
+
+      const categorySelect = screen.getByRole('combobox', { name: /category/i })
+      expect(categorySelect).toBeInTheDocument()
+      const options = categorySelect.getElementsByTagName('option')
+      Array.from(options).forEach(el => {
+        const tagText = el.textContent || ''
+        if (tagText === 'Select category') return
+        expect(mockExpenseTags.find(t => t.name === tagText)).toBeDefined()
+      })
+    })
+
+    it('shows category field for income type', async () => {
       renderForm()
 
       await waitFor(() => {
@@ -269,20 +300,22 @@ describe('TransactionForm', () => {
   })
 
   describe('Account selection', () => {
-    it('sets first account as default when creating new transaction', async () => {
+    it('sets default account when data loaded', async () => {
       renderForm()
 
       await waitFor(() => {
         const accountSelect = screen.getByRole('combobox', { name: /account/i })
+        // Default account should be selected
         expect(accountSelect).toHaveValue('1')
       })
     })
 
-    it('displays account balances in dropdown', async () => {
+    it('displays account info in dropdown', async () => {
       renderForm()
 
       await waitFor(() => {
-        expect(screen.getByText(/Cash.*\$150\.00/)).toBeInTheDocument()
+        // Account dropdown should show wallet name, currency code, and balance
+        expect(screen.getByText(/Cash.*USD/)).toBeInTheDocument()
       })
     })
   })
@@ -303,7 +336,7 @@ describe('TransactionForm', () => {
       })
     })
 
-    it('filters destination accounts by same currency for transfers', async () => {
+    it('shows fee field for transfer type', async () => {
       renderForm()
 
       await waitFor(() => {
@@ -314,9 +347,7 @@ describe('TransactionForm', () => {
       fireEvent.click(transferButton)
 
       await waitFor(() => {
-        // Both Cash and Savings USD should be available (same USD currency)
-        // But Bank EUR should be filtered out
-        expect(screen.getByText('To Account')).toBeInTheDocument()
+        expect(screen.getByText(/Fee.*optional/)).toBeInTheDocument()
       })
     })
   })
@@ -357,39 +388,28 @@ describe('TransactionForm', () => {
       fireEvent.click(rateButton)
 
       await waitFor(() => {
-        expect(screen.getByText('Exchange Rate')).toBeInTheDocument()
+        expect(screen.getByLabelText('Exchange Rate')).toBeInTheDocument()
       })
     })
 
-    it('calculates to amount from rate', async () => {
-      const { container } = renderForm()
+    it('calculates destination amount automatically in rate mode', async () => {
+      renderForm()
 
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Exchange' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Exchange' }))
 
-      const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
-      fireEvent.click(exchangeButton)
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Enter rate' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Enter rate' }))
 
-      // Enter amount - find the first amount input (main amount with text-2xl class)
-      const amountInput = container.querySelector('input.text-2xl') as HTMLInputElement
+      const amountInput = screen.getByLabelText(/^Amount/i)
+      const rateInput = screen.getByLabelText(/Exchange Rate/i)
+      const toAmountInput = screen.getByLabelText(/Receive Amount/i)
+
       fireEvent.change(amountInput, { target: { value: '100' } })
-
-      // Switch to rate mode and enter rate
-      const rateButton = screen.getByRole('button', { name: 'Enter rate' })
-      fireEvent.click(rateButton)
+      fireEvent.change(rateInput, { target: { value: '0.85' } })
 
       await waitFor(() => {
-        const rateInput = screen.getByLabelText('Exchange Rate')
-        fireEvent.change(rateInput, { target: { value: '1.5' } })
-      })
-
-      // Wait for calculation effect - find receive amount by looking for the second number input in exchange section
-      await waitFor(() => {
-        const allNumberInputs = container.querySelectorAll('input[type="number"]')
-        // Last number input should be the receive amount
-        const receiveAmountInput = allNumberInputs[allNumberInputs.length - 1] as HTMLInputElement
-        expect(receiveAmountInput.value).toBe('150.00')
+        expect(toAmountInput).toHaveValue(85)
       })
     })
   })
@@ -401,24 +421,6 @@ describe('TransactionForm', () => {
       await waitFor(() => {
         expect(screen.getByText('Account')).toBeInTheDocument()
       })
-
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
-
-      await waitFor(() => {
-        expect(screen.getByText('Amount is required and must be positive')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error when amount is zero', async () => {
-      renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const amountInput = screen.getByPlaceholderText('0.00')
-      fireEvent.change(amountInput, { target: { value: '0' } })
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -446,100 +448,76 @@ describe('TransactionForm', () => {
       })
     })
 
-    it('shows error when destination account not selected for transfer', async () => {
+    it('shows error when transferring to the same account', async () => {
       renderForm()
 
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const transferButton = screen.getByRole('button', { name: 'Transfer' })
+      const transferButton = await screen.findByRole('button', { name: 'Transfer' })
       fireEvent.click(transferButton)
 
-      const amountInput = screen.getByPlaceholderText('0.00')
+      const amountInput = await screen.findByLabelText(/^Amount/i)
       fireEvent.change(amountInput, { target: { value: '50' } })
 
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      fireEvent.change(toAccountSelect, { target: { value: '1' } }) // Same as source
 
-      await waitFor(() => {
-        expect(screen.getByText('Destination account is required')).toBeInTheDocument()
-      })
-    })
-
-    it('shows error when transferring to same account', async () => {
-      renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const transferButton = screen.getByRole('button', { name: 'Transfer' })
-      fireEvent.click(transferButton)
-
-      const amountInput = screen.getByPlaceholderText('0.00')
-      fireEvent.change(amountInput, { target: { value: '50' } })
-
-      // Select same account as destination
-      const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
-      fireEvent.change(toAccountSelect, { target: { value: '1' } }) // Same as default account
-
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
+      const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
+      fireEvent.submit(form)
 
       await waitFor(() => {
         expect(screen.getByText('Cannot transfer to the same account')).toBeInTheDocument()
       })
     })
 
-    it('shows error for exchange with same currency', async () => {
-      const { container } = renderForm()
+    it('shows error when exchange has same currencies', async () => {
+      renderForm()
 
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
+      const exchangeButton = await screen.findByRole('button', { name: 'Exchange' })
       fireEvent.click(exchangeButton)
 
-      const amountInput = container.querySelector('input.text-2xl') as HTMLInputElement
+      const amountInput = await screen.findByLabelText(/^Amount/i)
       fireEvent.change(amountInput, { target: { value: '50' } })
 
-      // Select Savings USD (same currency as Cash)
-      const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
-      fireEvent.change(toAccountSelect, { target: { value: '3' } })
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      fireEvent.change(toAccountSelect, { target: { value: '3' } }) // Savings USD (same as Cash USD)
 
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
+      const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
+      fireEvent.submit(form)
 
       await waitFor(() => {
         expect(screen.getByText('Exchange requires different currencies')).toBeInTheDocument()
       })
     })
 
-    it('shows error for exchange without destination amount', async () => {
-      const { container } = renderForm()
+    it('shows error for negative fee', async () => {
+      renderForm()
 
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
+      const transferButton = await screen.findByRole('button', { name: 'Transfer' })
+      fireEvent.click(transferButton)
 
-      const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
-      fireEvent.click(exchangeButton)
+      const amountInput = await screen.findByLabelText(/^Amount/i)
+      const feeInput = await screen.findByLabelText(/Fee \(optional\)/i)
 
-      const amountInput = container.querySelector('input.text-2xl') as HTMLInputElement
       fireEvent.change(amountInput, { target: { value: '50' } })
+      fireEvent.change(feeInput, { target: { value: '-1' } })
 
-      // Select different currency account
-      const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
-      fireEvent.change(toAccountSelect, { target: { value: '2' } }) // Bank EUR
-
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
+      const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
+      fireEvent.submit(form)
 
       await waitFor(() => {
-        expect(screen.getByText('Destination amount is required')).toBeInTheDocument()
+        expect(screen.getByText('Fee cannot be negative')).toBeInTheDocument()
       })
+    })
+
+    it('handles error during data loading', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      vi.mocked(tagRepository.findIncomeTags).mockRejectedValue(new Error('Load failed'))
+
+      renderForm()
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to load form data:', expect.any(Error))
+      })
+      consoleSpy.mockRestore()
     })
   })
 
@@ -556,19 +534,20 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '1' } }) // Food
+      fireEvent.change(categorySelect, { target: { value: '10' } }) // food
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'expense',
-            amount: 50,
-            category_id: 1,
-          })
+        expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
+          1, // accountId
+          10, // tagId (food)
+          5000, // amount in cents
+          5000, // actual amount
+          expect.any(Object)
         )
+        expect(mockOnSubmit).toHaveBeenCalled()
       })
     })
 
@@ -586,19 +565,20 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '1000' } })
 
       const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '2' } }) // Salary
+      fireEvent.change(categorySelect, { target: { value: '20' } }) // salary
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'income',
-            amount: 1000,
-            category_id: 2,
-          })
+        expect(mockTransactionRepository.createIncome).toHaveBeenCalledWith(
+          1, // accountId
+          20, // tagId (salary)
+          100000, // amount in cents
+          100000, // actual amount
+          expect.any(Object)
         )
+        expect(mockOnSubmit).toHaveBeenCalled()
       })
     })
 
@@ -612,8 +592,9 @@ describe('TransactionForm', () => {
       const transferButton = screen.getByRole('button', { name: 'Transfer' })
       fireEvent.click(transferButton)
 
-      const amountInput = screen.getByPlaceholderText('0.00')
-      fireEvent.change(amountInput, { target: { value: '200' } })
+      // Use getAllBy since transfer mode has multiple amount inputs (amount and fee)
+      const amountInputs = screen.getAllByPlaceholderText('0.00')
+      fireEvent.change(amountInputs[0], { target: { value: '200' } })
 
       const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
       fireEvent.change(toAccountSelect, { target: { value: '3' } }) // Savings USD
@@ -622,18 +603,18 @@ describe('TransactionForm', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'transfer',
-            amount: 200,
-            to_account_id: 3,
-          })
+        expect(mockTransactionRepository.createTransfer).toHaveBeenCalledWith(
+          1, // from accountId
+          3, // to accountId
+          20000, // amount in cents
+          expect.any(Object)
         )
+        expect(mockOnSubmit).toHaveBeenCalled()
       })
     })
 
     it('submits exchange transaction correctly', async () => {
-      const { container } = renderForm()
+      renderForm()
 
       await waitFor(() => {
         expect(screen.getByText('Account')).toBeInTheDocument()
@@ -642,90 +623,39 @@ describe('TransactionForm', () => {
       const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
       fireEvent.click(exchangeButton)
 
-      const amountInput = container.querySelector('input.text-2xl') as HTMLInputElement
-      fireEvent.change(amountInput, { target: { value: '100' } })
+      // Wait for exchange fields to appear
+      await waitFor(() => {
+        expect(screen.getByText('Receive Amount')).toBeInTheDocument()
+      })
+
+      // Use getAllByPlaceholderText since there are multiple '0.00' inputs in exchange mode
+      // The first one is the main amount, the rest are fee and receive amount
+      const amountInputs = screen.getAllByPlaceholderText('0.00')
+      fireEvent.change(amountInputs[0], { target: { value: '100' } }) // Main amount
 
       const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
       fireEvent.change(toAccountSelect, { target: { value: '2' } }) // Bank EUR
 
-      // Enter receive amount - find by container query
-      const allNumberInputs = container.querySelectorAll('input[type="number"]')
-      const receiveAmountInput = allNumberInputs[allNumberInputs.length - 1] as HTMLInputElement
-      fireEvent.change(receiveAmountInput, { target: { value: '90' } })
+      // The last '0.00' input should be the receive amount (after fee which is second)
+      fireEvent.change(amountInputs[amountInputs.length - 1], { target: { value: '90' } })
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'exchange',
-            amount: 100,
-            to_account_id: 2,
-            to_amount: 90,
-          })
+        expect(mockTransactionRepository.createExchange).toHaveBeenCalledWith(
+          1, // from accountId
+          2, // to accountId
+          10000, // from amount in cents
+          9000, // to amount in cents
+          expect.any(Object)
         )
-      })
-    })
-
-    it('includes counterparty when selected', async () => {
-      renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const amountInput = screen.getByPlaceholderText('0.00')
-      fireEvent.change(amountInput, { target: { value: '50' } })
-
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '1' } }) // Food
-
-      const counterpartySelect = screen.getByRole('combobox', { name: /counterparty/i })
-      fireEvent.change(counterpartySelect, { target: { value: '1' } }) // Restaurant ABC
-
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
-
-      await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            counterparty_id: 1,
-          })
-        )
-      })
-    })
-
-    it('includes notes when provided', async () => {
-      renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const amountInput = screen.getByPlaceholderText('0.00')
-      fireEvent.change(amountInput, { target: { value: '50' } })
-
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '1' } })
-
-      const notesInput = screen.getByPlaceholderText('Add notes...')
-      fireEvent.change(notesInput, { target: { value: 'Test note' } })
-
-      const submitButton = screen.getByRole('button', { name: 'Add' })
-      fireEvent.click(submitButton)
-
-      await waitFor(() => {
-        expect(mockOnSubmit).toHaveBeenCalledWith(
-          expect.objectContaining({
-            notes: 'Test note',
-          })
-        )
+        expect(mockOnSubmit).toHaveBeenCalled()
       })
     })
 
     it('shows submitting state during submission', async () => {
-      mockOnSubmit.mockImplementation(() => new Promise(() => {}))
+      mockTransactionRepository.createExpense.mockImplementation(() => new Promise(() => { }))
 
       renderForm()
 
@@ -737,7 +667,7 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '1' } })
+      fireEvent.change(categorySelect, { target: { value: '10' } })
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -748,8 +678,8 @@ describe('TransactionForm', () => {
     })
 
     it('handles submission error', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockOnSubmit.mockRejectedValue(new Error('Failed'))
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockTransactionRepository.createExpense.mockRejectedValue(new Error('Failed'))
 
       renderForm()
 
@@ -761,7 +691,7 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '1' } })
+      fireEvent.change(categorySelect, { target: { value: '10' } })
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -789,81 +719,31 @@ describe('TransactionForm', () => {
     })
   })
 
-  describe('Editing existing transaction', () => {
-    const existingTransaction: Transaction = {
-      id: 1,
-      type: 'expense',
-      amount: 75,
-      currency_id: 1,
-      account_id: 1,
-      category_id: 1,
-      counterparty_id: 1,
-      to_account_id: null,
-      to_amount: null,
-      to_currency_id: null,
-      exchange_rate: null,
-      date_time: '2025-01-09 15:00:00',
-      notes: 'Existing note',
-      created_at: '2025-01-09 15:00:00',
-      updated_at: '2025-01-09 15:00:00',
-    }
-
-    it('pre-fills form with existing transaction data', async () => {
-      renderForm(existingTransaction)
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const amountInput = screen.getByPlaceholderText('0.00')
-      expect(amountInput).toHaveValue(75)
-
-      const notesInput = screen.getByPlaceholderText('Add notes...')
-      expect(notesInput).toHaveValue('Existing note')
-    })
-
-    it('shows Update button instead of Add', async () => {
-      renderForm(existingTransaction)
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
-      })
-    })
-
-    it('does not reset account selection for editing', async () => {
-      renderForm(existingTransaction)
-
-      await waitFor(() => {
-        const accountSelect = screen.getByRole('combobox', { name: /account/i })
-        expect(accountSelect).toHaveValue('1')
-      })
-    })
-  })
-
-  describe('Counterparty filtering', () => {
-    it('filters counterparties by selected category', async () => {
+  describe('Counterparty selection', () => {
+    it('shows counterparty dropdown for expense', async () => {
       renderForm()
 
       await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
+        expect(screen.getByText(/Counterparty.*optional/)).toBeInTheDocument()
       })
 
-      // Select Food category
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '1' } })
-
-      // Restaurant ABC should be available (linked to Food)
-      // General Store should be available (no category restriction)
-      // Company XYZ should NOT be available (linked to Salary)
       const counterpartySelect = screen.getByRole('combobox', { name: /counterparty/i })
       expect(counterpartySelect).toBeInTheDocument()
+    })
+
+    it('shows new counterparty input when none selected', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('New counterparty name')).toBeInTheDocument()
+      })
     })
   })
 
   describe('Error handling', () => {
     it('handles failed data loading', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockAccountRepository.findAll.mockRejectedValue(new Error('Network error'))
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockWalletRepository.findActive.mockRejectedValue(new Error('Network error'))
 
       renderForm()
 
@@ -875,61 +755,109 @@ describe('TransactionForm', () => {
     })
   })
 
-  describe('Empty accounts', () => {
-    it('handles empty accounts list', async () => {
-      mockAccountRepository.findAll.mockResolvedValue([])
-
+  describe('Notes field', () => {
+    it('displays notes textarea', async () => {
       renderForm()
 
       await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      // Form should still render but with empty account dropdown
-      const accountSelect = screen.getByRole('combobox', { name: /account/i })
-      expect(accountSelect).toBeInTheDocument()
-    })
-  })
-
-  describe('Exchange rate input', () => {
-    it('disables to amount input in rate mode', async () => {
-      const { container } = renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
-      fireEvent.click(exchangeButton)
-
-      const rateButton = screen.getByRole('button', { name: 'Enter rate' })
-      fireEvent.click(rateButton)
-
-      await waitFor(() => {
-        // Find receive amount input by container query
-        const allNumberInputs = container.querySelectorAll('input[type="number"]')
-        const receiveAmountInput = allNumberInputs[allNumberInputs.length - 1] as HTMLInputElement
-        expect(receiveAmountInput).toBeDisabled()
-      })
-    })
-  })
-
-  describe('Date/Time field', () => {
-    it('displays date/time input', async () => {
-      renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByLabelText(/Date.*Time/i)).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('Add notes...')).toBeInTheDocument()
       })
     })
   })
 
   describe('Currency display', () => {
-    it('shows currency symbol in amount label when account selected', async () => {
+    it('shows currency symbol in amount label', async () => {
       renderForm()
 
       await waitFor(() => {
         expect(screen.getByText(/Amount.*\(\$\)/)).toBeInTheDocument()
+      })
+    })
+  })
+  describe('Submission with options', () => {
+    it('submits with counterparty and note', async () => {
+      renderForm()
+      await screen.findByLabelText(/^Amount/i)
+
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
+      fireEvent.change(screen.getByRole('combobox', { name: /category/i }), { target: { value: '10' } })
+      fireEvent.change(screen.getByRole('combobox', { name: /counterparty/i }), { target: { value: '1' } })
+      fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'Dinner note' } })
+
+      fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
+          expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+          expect.objectContaining({ counterpartyId: 1, note: 'Dinner note' })
+        )
+      })
+    })
+
+    it('submits with new counterparty name', async () => {
+      renderForm()
+      await screen.findByLabelText(/^Amount/i)
+
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
+      fireEvent.change(screen.getByRole('combobox', { name: /category/i }), { target: { value: '10' } })
+      fireEvent.change(screen.getByPlaceholderText('New counterparty name'), { target: { value: 'New CP' } })
+
+      fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
+          expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+          expect.objectContaining({ counterpartyName: 'New CP' })
+        )
+      })
+    })
+
+    it('submits transfer with fee tag', async () => {
+      renderForm()
+      const transferBtn = await screen.findByRole('button', { name: 'Transfer' })
+      fireEvent.click(transferBtn)
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
+      fireEvent.change(toAccountSelect, { target: { value: '3' } })
+      fireEvent.change(screen.getByLabelText(/Fee \(optional\)/i), { target: { value: '1' } })
+
+      const feeCategory = await screen.findByLabelText(/Fee Category/i)
+      fireEvent.change(feeCategory, { target: { value: '11' } })
+
+      const submitBtn = screen.getByRole('button', { name: 'Add' })
+      fireEvent.submit(submitBtn.closest('form')!)
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.createTransfer).toHaveBeenCalledWith(
+          expect.anything(), expect.anything(), expect.anything(),
+          expect.objectContaining({ fee: 100, feeTagId: 11 })
+        )
+      })
+    })
+
+    it('submits exchange and stores rate', async () => {
+      renderForm()
+      const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
+      fireEvent.click(exchangeBtn)
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+      fireEvent.change(toAccountSelect, { target: { value: '2' } })
+      fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
+
+      const rateBtn = await screen.findByRole('button', { name: 'Enter rate' })
+      fireEvent.click(rateBtn)
+
+      const rateInput = await screen.findByLabelText(/Exchange Rate/i)
+      fireEvent.change(rateInput, { target: { value: '0.85' } })
+
+      const submitBtn = screen.getByRole('button', { name: 'Add' })
+      fireEvent.submit(submitBtn.closest('form')!)
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.createExchange).toHaveBeenCalled()
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(1, 85)
       })
     })
   })

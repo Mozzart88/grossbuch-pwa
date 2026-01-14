@@ -91,13 +91,13 @@ describe('SettingsPage', () => {
       renderPage()
 
       expect(screen.getByText('Accounts')).toBeInTheDocument()
-      expect(screen.getByText('Manage your accounts and balances')).toBeInTheDocument()
+      expect(screen.getByText('Manage your wallets and accounts')).toBeInTheDocument()
     })
 
-    it('renders Categories link', () => {
+    it('renders Tags link', () => {
       renderPage()
 
-      expect(screen.getByText('Categories')).toBeInTheDocument()
+      expect(screen.getByText('Tags')).toBeInTheDocument()
       expect(screen.getByText('Organize your transactions')).toBeInTheDocument()
     })
 
@@ -122,6 +122,20 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Export transactions to CSV')).toBeInTheDocument()
     })
 
+    it('renders Download DB link', () => {
+      renderPage()
+
+      expect(screen.getByText('Download DB')).toBeInTheDocument()
+      expect(screen.getByText('Download Raw Sqlite DB')).toBeInTheDocument()
+    })
+    it('renders Budgets link', () => {
+      renderPage()
+
+      expect(screen.getByText('Budgets')).toBeInTheDocument()
+      expect(screen.getByText('Manage your budgets')).toBeInTheDocument()
+    })
+
+
     it('links to accounts page', () => {
       renderPage()
 
@@ -129,11 +143,11 @@ describe('SettingsPage', () => {
       expect(accountsLink).toHaveAttribute('href', '/settings/accounts')
     })
 
-    it('links to categories page', () => {
+    it('links to tags page', () => {
       renderPage()
 
-      const categoriesLink = screen.getByRole('link', { name: /Categories/i })
-      expect(categoriesLink).toHaveAttribute('href', '/settings/categories')
+      const tagsLink = screen.getByRole('link', { name: /Tags/i })
+      expect(tagsLink).toHaveAttribute('href', '/settings/tags')
     })
 
     it('links to counterparties page', () => {
@@ -156,6 +170,19 @@ describe('SettingsPage', () => {
       const exportLink = screen.getByRole('link', { name: /Export Data/i })
       expect(exportLink).toHaveAttribute('href', '/settings/export')
     })
+
+    it('links to download page', () => {
+      renderPage()
+
+      const downloadLink = screen.getByRole('link', { name: /Download DB/i })
+      expect(downloadLink).toHaveAttribute('href', '/settings/download')
+    })
+    it('links to budgets page', () => {
+      renderPage()
+
+      const downloadLink = screen.getByRole('link', { name: /Budgets/i })
+      expect(downloadLink).toHaveAttribute('href', '/settings/budgets')
+    })
   })
 
   describe('Icons', () => {
@@ -165,10 +192,10 @@ describe('SettingsPage', () => {
       expect(screen.getByText('🏦')).toBeInTheDocument()
     })
 
-    it('renders categories icon', () => {
+    it('renders tags icon', () => {
       renderPage()
 
-      expect(screen.getByText('📁')).toBeInTheDocument()
+      expect(screen.getByText('🏷️')).toBeInTheDocument()
     })
 
     it('renders counterparties icon', () => {
@@ -187,6 +214,17 @@ describe('SettingsPage', () => {
       renderPage()
 
       expect(screen.getByText('📤')).toBeInTheDocument()
+    })
+
+    it('renders download icon', () => {
+      renderPage()
+
+      expect(screen.getByText('🗄️')).toBeInTheDocument()
+    })
+    it('renders budgets icon', () => {
+      renderPage()
+
+      expect(screen.getByText('💰')).toBeInTheDocument()
     })
   })
 

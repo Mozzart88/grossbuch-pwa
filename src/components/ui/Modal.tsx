@@ -40,7 +40,11 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
       />
 
       {/* Modal content */}
-      <div className="relative w-full sm:max-w-lg max-h-[90vh] overflow-auto bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-xl animate-slide-up sm:animate-none">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative w-full sm:max-w-lg max-h-[90vh] overflow-auto bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-xl animate-slide-up sm:animate-none"
+      >
         {title && (
           <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">

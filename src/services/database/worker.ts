@@ -33,7 +33,7 @@ async function initDatabase() {
     throw new Error('OPFS not available. Make sure COOP/COEP headers are set.')
   }
 
-  db = new sqlite3.oo1.OpfsDb('/expense-tracker.sqlite3', 'c')
+  db = new sqlite3.oo1.OpfsDb('/expense-tracker.sqlite3', 'cwt')
   db.exec('PRAGMA foreign_keys = ON')
 }
 

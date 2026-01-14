@@ -1,5 +1,5 @@
 import { transactionRepository } from '../repositories'
-import type { Transaction } from '../../types'
+import type { TransactionLog } from '../../types'
 
 function escapeCsvField(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return ''
@@ -18,39 +18,39 @@ function formatTime(dateTime: string): string {
   return dateTime.slice(11, 16)
 }
 
-export async function exportTransactionsToCSV(startDate?: string, endDate?: string): Promise<string> {
-  const transactions = await transactionRepository.findAllForExport(startDate, endDate)
+export async function exportTransactionsToCSV(
+  startDate?: string,
+  endDate?: string,
+  decimalPlaces: number = 2
+): Promise<string> {
+  // Convert date strings to unix timestamps if provided
+  const startTs = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : undefined
+  const endTs = endDate ? Math.floor(new Date(endDate + 'T23:59:59').getTime() / 1000) : undefined
+
+  const transactions = await transactionRepository.findAllForExport(startTs, endTs)
 
   const headers = [
     'Date',
     'Time',
-    'Type',
-    'Amount',
+    'Wallet',
     'Currency',
-    'Account',
-    'Category',
+    'Tags',
+    'Real Amount',
+    'Actual Amount',
     'Counterparty',
-    'Notes',
-    'To Account',
-    'To Amount',
-    'To Currency',
-    'Exchange Rate',
   ]
 
-  const rows = transactions.map((t: Transaction) => [
-    escapeCsvField(formatDate(t.date_time)),
-    escapeCsvField(formatTime(t.date_time)),
-    escapeCsvField(t.type),
-    escapeCsvField(t.amount),
-    escapeCsvField(t.currency_code),
-    escapeCsvField(t.account_name),
-    escapeCsvField(t.category_name),
-    escapeCsvField(t.counterparty_name),
-    escapeCsvField(t.notes),
-    escapeCsvField(t.to_account_name),
-    escapeCsvField(t.to_amount),
-    escapeCsvField(t.to_currency_code),
-    escapeCsvField(t.exchange_rate),
+  const divisor = Math.pow(10, decimalPlaces)
+
+  const rows = transactions.map((t: TransactionLog) => [
+    escapeCsvField(formatDate(t.created_at)),
+    escapeCsvField(formatTime(t.created_at)),
+    escapeCsvField(t.wallet),
+    escapeCsvField(t.currency),
+    escapeCsvField(t.tags),
+    escapeCsvField((t.real_amount / divisor).toFixed(decimalPlaces)),
+    escapeCsvField((t.actual_amount / divisor).toFixed(decimalPlaces)),
+    escapeCsvField(t.counterparty),
   ])
 
   return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
