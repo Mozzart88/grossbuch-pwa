@@ -9,11 +9,6 @@
       "DOM.Iterable"
     ],
     "module": "ESNext",
-    "types": [
-      "vite/client",
-      "vitest/globals",
-      "@testing-library/jest-dom"
-    ],
     "skipLibCheck": true,
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -31,6 +26,7 @@
     "noUncheckedSideEffectImports": true
   },
   "include": [
+    "vitest.d.ts",
     "src"
   ],
   "exclude": [

@@ -1,71 +1,108 @@
-import type { TransactionView } from '../../types'
+import { SYSTEM_TAGS, type Transaction, type TransactionView } from '../../types'
+import { formatCurrency } from '../../utils/formatters'
 import { formatTime } from '../../utils/dateUtils'
 
 interface TransactionItemProps {
-  transaction: TransactionView
+  transaction: TransactionView[]
   onClick: () => void
-  decimalPlaces?: number
-  currencySymbol?: string
 }
 
-export function TransactionItem({
-  transaction,
-  onClick,
-  decimalPlaces = 2,
-  currencySymbol = '$'
-}: TransactionItemProps) {
-  // Format amount for display (stored as integer)
-  const formatAmount = (amount: number) => {
-    const displayAmount = Math.abs(amount) / Math.pow(10, decimalPlaces)
-    return displayAmount.toFixed(decimalPlaces)
+type transactionT = 'exchange' | 'transfer' | 'expense' | 'income'
+
+function isTypeOf(trx: TransactionView[], t: transactionT): boolean {
+  return trx.some(l => {
+    return l.tags.includes(t)
+  })
+}
+
+const getTransactionType = (trx: TransactionView[]): transactionT => {
+  if (isTypeOf(trx, 'exchange')) {
+    return 'exchange'
   }
+  if (isTypeOf(trx, 'transfer')) {
+    return 'transfer'
+  }
+  return trx[0].real_amount < 0 ? 'expense' : 'income'
+}
 
+const getDecimalPlaces = (p: number): number => {
+  return Math.pow(10, p)
+}
+
+export function TransactionItem({ transaction, onClick }: TransactionItemProps) {
   const getAmountDisplay = () => {
-    const amount = transaction.actual_amount
-    const isPositive = amount > 0
+    const symbol = transaction[0].symbol
+    const decimalPlaces = transaction[0].decimal_places
 
-    if (isPositive) {
-      return {
-        text: `+${currencySymbol}${formatAmount(amount)}`,
-        color: 'text-green-600 dark:text-green-400',
-      }
-    } else {
-      return {
-        text: `-${currencySymbol}${formatAmount(amount)}`,
-        color: 'text-red-600 dark:text-red-400',
-      }
+    const amount = transaction.reduce((acc, l) => acc + l.real_amount, 0) / getDecimalPlaces(decimalPlaces)
+    switch (getTransactionType(transaction)) {
+      case 'income':
+        return {
+          text: `${formatCurrency(amount, symbol)}`,
+          color: 'text-green-600 dark:text-green-400',
+        }
+      case 'transfer':
+        return {
+          text: formatCurrency(transaction[0].real_amount / getDecimalPlaces(decimalPlaces), symbol),
+          color: 'text-blue-600 dark:text-blue-400',
+        }
+      case 'exchange':
+        const from = transaction.find(l => l.real_amount < 0 && l.tags.includes('exchange'))!
+        const to = transaction.find(l => l.real_amount >= 0 && l.tags.includes('exchange'))!
+        return {
+          text: `${formatCurrency(from.real_amount / getDecimalPlaces(from.decimal_places), from.symbol)} → ${formatCurrency(to.real_amount / getDecimalPlaces(to.decimal_places), to.symbol)}`,
+          color: 'text-purple-600 dark:text-purple-400',
+        }
+      default:
+        return {
+          text: `${formatCurrency(amount, symbol)}`,
+          color: 'text-gray-600 dark:text-gray-400',
+        }
     }
   }
 
   const getDescription = () => {
-    if (transaction.counterparty) {
-      return transaction.counterparty
-    }
-    return transaction.wallet
-  }
+    const transactionType = getTransactionType(transaction)
+    const from = transaction.find(l => l.real_amount < 0 && l.tags === transactionType)!
+    const to = transaction.find(l => l.real_amount >= 0 && l.tags === transactionType)!
 
-  // Determine transaction type from tags
-  const getTransactionType = () => {
-    const tags = transaction.tags?.toLowerCase() || ''
-    if (tags.includes('transfer')) return 'transfer'
-    if (tags.includes('exchange')) return 'exchange'
-    return transaction.actual_amount > 0 ? 'income' : 'expense'
+    switch (transactionType) {
+      case 'transfer':
+        if (from.currency == to.currency)
+          return `${from.wallet} → ${to.wallet}`
+        return `${from.wallet}:${from.symbol} → ${to.wallet}:${to.symbol}`
+      case 'exchange':
+        if (from.wallet === to.wallet)
+          return `${from.currency} → ${to.currency}`
+        return `${from.wallet}:${from.symbol} → ${to.wallet}:${to.symbol}`
+      default:
+        return transaction.find(l => l.counterparty)?.counterparty
+          || transaction[0].wallet
+    }
   }
 
   const getIcon = () => {
-    const type = getTransactionType()
-    switch (type) {
-      case 'transfer':
-        return '↔️'
-      case 'exchange':
-        return '💱'
-      default:
-        return transaction.actual_amount > 0 ? '📈' : '📉'
+    switch (transactionType) {
+      case 'transfer': return '↔️'
+      case 'exchange': return '💱'
+      case 'income': return '📈'
+      case 'expense': return '📉'
+      default: return '📝'
     }
   }
 
+  const getTitle = () => {
+    if (['transfer', 'exchange'].includes(transactionType)) {
+      return transactionType[0].toUpperCase() + transactionType.slice(1)
+    }
+    if (transaction[0].tags.length > 0) {
+      return transaction[0].tags[0]?.toUpperCase() + transaction[0].tags?.slice(1)
+    }
+    return 'Uncategorized'
+  }
+
   const amount = getAmountDisplay()
-  const type = getTransactionType()
+  const transactionType = getTransactionType(transaction)
 
   return (
     <button
@@ -80,9 +117,7 @@ export function TransactionItem({
       {/* Details */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-          {type === 'transfer' || type === 'exchange'
-            ? type.charAt(0).toUpperCase() + type.slice(1)
-            : transaction.tags || 'Uncategorized'}
+          {getTitle()}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
           {getDescription()}
@@ -92,9 +127,7 @@ export function TransactionItem({
       {/* Amount and time */}
       <div className="flex-shrink-0 text-right">
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          {formatTime(transaction.created_at)}
-        </p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].created_at)}</p>
       </div>
     </button>
   )

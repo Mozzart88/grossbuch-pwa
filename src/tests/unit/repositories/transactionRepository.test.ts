@@ -39,6 +39,8 @@ const sampleTransactionView: TransactionView = {
   tags: 'food',
   real_amount: -5000,
   actual_amount: -5000,
+  symbol: '$',
+  decimal_places: 2
 }
 
 // Sample TransactionLine
@@ -76,6 +78,8 @@ const sampleTransactionLog: TransactionLog = {
   tags: 'food',
   real_amount: -5000,
   actual_amount: -5000,
+  symbol: '$',
+  decimal_places: 2
 }
 
 describe('transactionRepository', () => {
@@ -90,7 +94,7 @@ describe('transactionRepository', () => {
       const result = await transactionRepository.findByMonth('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM transactions'),
+        expect.stringContaining('SELECT * FROM trx_log'),
         expect.arrayContaining([expect.any(Number), expect.any(Number)])
       )
       expect(result).toEqual([sampleTransactionView])

@@ -14,17 +14,17 @@ export function MonthSummary({ income, expenses, totalBalance, displayCurrencySy
       <div className="text-center">
         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Income</p>
         <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-          +{formatCurrency(income, displayCurrencySymbol, decimalPlaces)}
+          {formatCurrency(income, displayCurrencySymbol, decimalPlaces)}
         </p>
       </div>
       <div className="text-center">
         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Expenses</p>
         <p className="text-sm font-semibold text-red-600 dark:text-red-400">
-          -{formatCurrency(expenses, displayCurrencySymbol, decimalPlaces)}
+          {formatCurrency(expenses, displayCurrencySymbol, decimalPlaces)}
         </p>
       </div>
       <div className="text-center">
-        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Total</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Balance</p>
         <p className={`text-sm font-semibold ${totalBalance >= 0 ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-400'}`}>
           {formatCurrency(totalBalance, displayCurrencySymbol, decimalPlaces)}
         </p>

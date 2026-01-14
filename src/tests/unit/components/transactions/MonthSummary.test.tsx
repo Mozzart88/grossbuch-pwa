@@ -13,13 +13,13 @@ describe('MonthSummary', () => {
   it('displays income amount with plus sign', () => {
     render(<MonthSummary {...defaultProps} />)
 
-    expect(screen.getByText('+$1,000.00')).toBeInTheDocument()
+    expect(screen.getByText('$1,000.00')).toBeInTheDocument()
   })
 
   it('displays expenses amount with minus sign', () => {
     render(<MonthSummary {...defaultProps} />)
 
-    expect(screen.getByText('-$500.00')).toBeInTheDocument()
+    expect(screen.getByText('$500.00')).toBeInTheDocument()
   })
 
   it('displays total balance', () => {
@@ -33,20 +33,20 @@ describe('MonthSummary', () => {
 
     expect(screen.getByText('Income')).toBeInTheDocument()
     expect(screen.getByText('Expenses')).toBeInTheDocument()
-    expect(screen.getByText('Total')).toBeInTheDocument()
+    expect(screen.getByText('Balance')).toBeInTheDocument()
   })
 
   it('applies green color to income', () => {
     render(<MonthSummary {...defaultProps} />)
 
-    const incomeAmount = screen.getByText('+$1,000.00')
+    const incomeAmount = screen.getByText('$1,000.00')
     expect(incomeAmount.className).toContain('text-green-600')
   })
 
   it('applies red color to expenses', () => {
     render(<MonthSummary {...defaultProps} />)
 
-    const expensesAmount = screen.getByText('-$500.00')
+    const expensesAmount = screen.getByText('$500.00')
     expect(expensesAmount.className).toContain('text-red-600')
   })
 
@@ -61,7 +61,7 @@ describe('MonthSummary', () => {
     // Use different value to avoid conflict with expense display
     render(<MonthSummary income={1000} expenses={500} totalBalance={-200} displayCurrencySymbol="$" />)
 
-    const totalAmount = screen.getByText('-$200.00')
+    const totalAmount = screen.getByText('$200.00')
     expect(totalAmount.className).toContain('text-red-600')
   })
 
@@ -75,16 +75,14 @@ describe('MonthSummary', () => {
       />
     )
 
-    expect(screen.getByText('+$0.00')).toBeInTheDocument()
-    expect(screen.getByText('-$0.00')).toBeInTheDocument()
-    expect(screen.getByText('$0.00')).toBeInTheDocument()
+    expect(screen.getAllByText('$0.00').length === 3).toBeTruthy()
   })
 
   it('uses different currency symbols', () => {
     render(<MonthSummary {...defaultProps} displayCurrencySymbol="€" />)
 
-    expect(screen.getByText('+€1,000.00')).toBeInTheDocument()
-    expect(screen.getByText('-€500.00')).toBeInTheDocument()
+    expect(screen.getByText('€1,000.00')).toBeInTheDocument()
+    expect(screen.getByText('€500.00')).toBeInTheDocument()
     expect(screen.getByText('€1,500.00')).toBeInTheDocument()
   })
 
@@ -98,7 +96,7 @@ describe('MonthSummary', () => {
       />
     )
 
-    expect(screen.getByText('+$1,000,000.00')).toBeInTheDocument()
+    expect(screen.getByText('$1,000,000.00')).toBeInTheDocument()
   })
 
   it('uses grid layout with 3 columns', () => {

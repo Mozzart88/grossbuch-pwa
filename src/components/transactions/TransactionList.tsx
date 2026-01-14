@@ -16,16 +16,20 @@ function blobToHex(blob: Uint8Array): string {
 }
 
 // Group transactions by date
-function groupByDate(transactions: TransactionView[]): Map<string, TransactionView[]> {
-  const groups = new Map<string, TransactionView[]>()
+function groupByDate(transactions: TransactionView[]): Map<string, Map<string, TransactionView[]>> {
+  const groups = new Map<string, Map<string, TransactionView[]>>()
 
   for (const tx of transactions) {
     // Extract date part from datetime string
     const date = tx.created_at.split(' ')[0]
     if (!groups.has(date)) {
-      groups.set(date, [])
+      groups.set(date, new Map<string, TransactionView[]>)
     }
-    groups.get(date)!.push(tx)
+    const hexId = blobToHex(tx.id)
+    if (!groups.get(date)!.has(hexId)) {
+      groups.get(date)!.set(hexId, [])
+    }
+    groups.get(date)!.get(hexId)!.push(tx)
   }
 
   return groups
@@ -77,11 +81,7 @@ export function TransactionList() {
     }
   }
 
-  const handleTransactionClick = (tx: TransactionView) => {
-    // Convert blob ID to hex string for URL
-    const hexId = blobToHex(tx.id)
-    // For now just log - navigation to edit would need the hex ID
-    console.log('Transaction clicked:', hexId)
+  const handleTransactionClick = (hexId: string) => {
     navigate(`/transaction/${hexId}`)
   }
 
@@ -114,13 +114,11 @@ export function TransactionList() {
                 {formatDate(date)}
               </div>
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {txns.map((tx, index) => (
+                {Array.from(txns.entries()).map(([hexId, trxs], index) => (
                   <TransactionItem
-                    key={`${blobToHex(tx.id)}-${index}`}
-                    transaction={tx}
-                    onClick={() => handleTransactionClick(tx)}
-                    decimalPlaces={decimalPlaces}
-                    currencySymbol={summary.displayCurrencySymbol}
+                    key={`${hexId}-${index}`}
+                    transaction={trxs}
+                    onClick={() => handleTransactionClick(hexId)}
                   />
                 ))}
               </div>

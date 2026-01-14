@@ -763,7 +763,7 @@ const migrations: Record<number, string[]> = {
     SELECT
       a.id as id,
       w.name as wallet,
-      c.code as currency,
+      c.code as currency, c.symbol as symbol, c.decimal_places as decimal_places,
       group_concat(t.name, ', ') as tags,
       a.real_balance as real_balance,
       a.actual_balance as actual_balance,
@@ -775,7 +775,8 @@ const migrations: Record<number, string[]> = {
     LEFT JOIN account_to_tags a2t ON a2t.account_id = a.id
     LEFT JOIN tag t ON a2t.tag_id = t.id
     GROUP BY a.id
-    ORDER BY wallet_id`,
+    ORDER BY wallet_id
+`,
 
     `CREATE VIEW IF NOT EXISTS transaction_view AS
     SELECT
@@ -929,7 +930,7 @@ const migrations: Record<number, string[]> = {
       datetime(t.created_at, 'unixepoch', 'localtime') as created_at,
       c.name as counterparty,
       a.wallet as wallet,
-      a.currency as currency,
+      a.currency as currency, a.symbol as symbol, a.decimal_places as decimal_places,
       tag.name as tags,
       (CASE WHEN tb.sign = '-' THEN -tb.real_amount ELSE tb.real_amount END) as real_amount,
       (CASE WHEN tb.sign = '-' THEN -tb.actual_amount ELSE tb.actual_amount END) as actual_amount
@@ -969,8 +970,7 @@ const migrations: Record<number, string[]> = {
         END
       ),
       actual_balance = (
-        CASE
-          WHEN NEW.sign = '-' THEN actual_balance - NEW.actual_amount
+        CASE WHEN NEW.sign = '-' THEN actual_balance - NEW.actual_amount
           ELSE actual_balance + NEW.actual_amount
         END
       )

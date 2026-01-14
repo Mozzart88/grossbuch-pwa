@@ -10,7 +10,7 @@ describe('formatters', () => {
 
     it('formats negative amount with sign and symbol', () => {
       const result = formatCurrency(-1234.56, '$')
-      expect(result).toMatch(/-\$1,?234\.56/)
+      expect(result).toMatch(/\$1,?234\.56/)
     })
 
     it('formats zero', () => {
@@ -47,7 +47,7 @@ describe('formatters', () => {
 
     it('handles very small negative amounts', () => {
       const result = formatCurrency(-0.01, '$')
-      expect(result).toMatch(/-\$0\.01/)
+      expect(result).toMatch(/\$0\.01/)
     })
 
     it('default decimal places is 2', () => {

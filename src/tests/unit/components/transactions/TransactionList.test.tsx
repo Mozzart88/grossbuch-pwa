@@ -46,6 +46,8 @@ const sampleTransaction: TransactionView = {
   tags: 'food',
   real_amount: -5000, // -50.00
   actual_amount: -5000,
+  symbol: '$',
+  decimal_places: 2
 }
 
 describe('TransactionList', () => {
@@ -76,7 +78,7 @@ describe('TransactionList', () => {
   }
 
   it('displays loading spinner initially', () => {
-    mockTransactionRepository.findByMonth.mockImplementation(() => new Promise(() => {}))
+    mockTransactionRepository.findByMonth.mockImplementation(() => new Promise(() => { }))
 
     const { container } = renderWithRouter()
 
@@ -87,7 +89,7 @@ describe('TransactionList', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getAllByText('food').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('Food').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -95,8 +97,8 @@ describe('TransactionList', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('+$1,000.00')).toBeInTheDocument()
-      expect(screen.getByText('-$500.00')).toBeInTheDocument()
+      expect(screen.getByText('$1,000.00')).toBeInTheDocument()
+      expect(screen.getByText('$500.00')).toBeInTheDocument()
     })
   })
 
@@ -122,7 +124,7 @@ describe('TransactionList', () => {
 
     await waitFor(() => {
       // 3 transactions showing 'food' tag
-      expect(screen.getAllByText('food').length).toBe(3)
+      expect(screen.getAllByText('Food').length).toBe(3)
     })
   })
 
@@ -141,7 +143,7 @@ describe('TransactionList', () => {
 
     await waitFor(() => {
       // Should use default $ symbol
-      expect(screen.getByText('+$1,000.00')).toBeInTheDocument()
+      expect(screen.getByText('$1,000.00')).toBeInTheDocument()
     })
   })
 
@@ -173,7 +175,7 @@ describe('TransactionList', () => {
 
     await waitFor(() => {
       // With 8 decimal places: 100000000 / 10^8 = 1.00000000
-      expect(screen.getByText('+₿1.00000000')).toBeInTheDocument()
+      expect(screen.getByText('₿1.00000000')).toBeInTheDocument()
     })
   })
 
@@ -184,7 +186,7 @@ describe('TransactionList', () => {
       // Transaction shows wallet name when no counterparty
       expect(screen.getByText('Cash')).toBeInTheDocument()
       // Transaction amount
-      expect(screen.getByText('-$50.00')).toBeInTheDocument()
+      expect(screen.getByText('$50.00')).toBeInTheDocument()
     })
   })
 

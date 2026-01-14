@@ -29,7 +29,7 @@ export const transactionRepository = {
     console.log(startTs, endTs)
 
     return querySQL<TransactionView>(`
-      SELECT * FROM transactions
+      SELECT * FROM trx_log
       WHERE CAST(strftime('%s',created_at) as INTEGER) >= ? AND CAST(strftime('%s',created_at) as INTEGER) < ?
       ORDER BY created_at DESC
     `, [startTs, endTs])

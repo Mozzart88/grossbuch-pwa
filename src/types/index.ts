@@ -192,6 +192,8 @@ export interface TransactionView {
   counterparty: string | null
   wallet: string
   currency: string
+  symbol: string
+  decimal_places: number
   tags: string
   real_amount: number
   actual_amount: number
@@ -228,6 +230,8 @@ export interface TransactionLog {
   counterparty: string | null
   wallet: string
   currency: string
+  symbol: string
+  decimal_places: number
   tags: string
   real_amount: number
   actual_amount: number
