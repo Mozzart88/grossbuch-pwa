@@ -25,6 +25,8 @@ vi.mock('../../../../services/repositories', () => ({
     createExpense: vi.fn(),
     createTransfer: vi.fn(),
     createExchange: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
   },
 }))
 
@@ -171,6 +173,8 @@ describe('TransactionForm', () => {
     mockTransactionRepository.createIncome.mockResolvedValue({} as any)
     mockTransactionRepository.createTransfer.mockResolvedValue({} as any)
     mockTransactionRepository.createExchange.mockResolvedValue({} as any)
+    mockTransactionRepository.create.mockResolvedValue({} as any)
+    mockTransactionRepository.update.mockResolvedValue({} as any)
   })
 
   const renderForm = () => {
@@ -540,12 +544,17 @@ describe('TransactionForm', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
-          1, // accountId
-          10, // tagId (food)
-          5000, // amount in cents
-          5000, // actual amount
-          expect.any(Object)
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: [
+              expect.objectContaining({
+                account_id: 1,
+                tag_id: 10,
+                sign: '-',
+                real_amount: 5000,
+              }),
+            ],
+          })
         )
         expect(mockOnSubmit).toHaveBeenCalled()
       })
@@ -571,12 +580,17 @@ describe('TransactionForm', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createIncome).toHaveBeenCalledWith(
-          1, // accountId
-          20, // tagId (salary)
-          100000, // amount in cents
-          100000, // actual amount
-          expect.any(Object)
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: [
+              expect.objectContaining({
+                account_id: 1,
+                tag_id: 20,
+                sign: '+',
+                real_amount: 100000,
+              }),
+            ],
+          })
         )
         expect(mockOnSubmit).toHaveBeenCalled()
       })
@@ -603,11 +617,13 @@ describe('TransactionForm', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createTransfer).toHaveBeenCalledWith(
-          1, // from accountId
-          3, // to accountId
-          20000, // amount in cents
-          expect.any(Object)
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ account_id: 1, sign: '-', real_amount: 20000 }),
+              expect.objectContaining({ account_id: 3, sign: '+', real_amount: 20000 }),
+            ]),
+          })
         )
         expect(mockOnSubmit).toHaveBeenCalled()
       })
@@ -643,19 +659,20 @@ describe('TransactionForm', () => {
       fireEvent.click(submitButton)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createExchange).toHaveBeenCalledWith(
-          1, // from accountId
-          2, // to accountId
-          10000, // from amount in cents
-          9000, // to amount in cents
-          expect.any(Object)
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ account_id: 1, sign: '-', real_amount: 10000 }),
+              expect.objectContaining({ account_id: 2, sign: '+', real_amount: 9000 }),
+            ]),
+          })
         )
         expect(mockOnSubmit).toHaveBeenCalled()
       })
     })
 
     it('shows submitting state during submission', async () => {
-      mockTransactionRepository.createExpense.mockImplementation(() => new Promise(() => { }))
+      mockTransactionRepository.create.mockImplementation(() => new Promise(() => { }))
 
       renderForm()
 
@@ -679,7 +696,7 @@ describe('TransactionForm', () => {
 
     it('handles submission error', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
-      mockTransactionRepository.createExpense.mockRejectedValue(new Error('Failed'))
+      mockTransactionRepository.create.mockRejectedValue(new Error('Failed'))
 
       renderForm()
 
@@ -787,9 +804,13 @@ describe('TransactionForm', () => {
       fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
-          expect.anything(), expect.anything(), expect.anything(), expect.anything(),
-          expect.objectContaining({ counterpartyId: 1, note: 'Dinner note' })
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            counterparty_id: 1,
+            lines: expect.arrayContaining([
+              expect.objectContaining({ note: 'Dinner note' }),
+            ]),
+          })
         )
       })
     })
@@ -805,9 +826,10 @@ describe('TransactionForm', () => {
       fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
-          expect.anything(), expect.anything(), expect.anything(), expect.anything(),
-          expect.objectContaining({ counterpartyName: 'New CP' })
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            counterparty_name: 'New CP',
+          })
         )
       })
     })
@@ -829,9 +851,12 @@ describe('TransactionForm', () => {
       fireEvent.submit(submitBtn.closest('form')!)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createTransfer).toHaveBeenCalledWith(
-          expect.anything(), expect.anything(), expect.anything(),
-          expect.objectContaining({ fee: 100, feeTagId: 11 })
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ tag_id: 11, real_amount: 100 }),
+            ]),
+          })
         )
       })
     })
@@ -856,7 +881,7 @@ describe('TransactionForm', () => {
       fireEvent.submit(submitBtn.closest('form')!)
 
       await waitFor(() => {
-        expect(mockTransactionRepository.createExchange).toHaveBeenCalled()
+        expect(mockTransactionRepository.create).toHaveBeenCalled()
         expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(1, 85)
       })
     })

@@ -6,6 +6,7 @@ import { MonthNavigator } from './MonthNavigator'
 import { MonthSummary } from './MonthSummary'
 import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
+import { useNavigate } from 'react-router-dom'
 
 // Helper to convert blob ID to string for navigation
 function blobToHex(blob: Uint8Array): string {
@@ -31,6 +32,7 @@ function groupByDate(transactions: TransactionView[]): Map<string, TransactionVi
 }
 
 export function TransactionList() {
+  const navigate = useNavigate()
   const [month, setMonth] = useState(getCurrentMonth())
   const [transactions, setTransactions] = useState<TransactionView[]>([])
   const [summary, setSummary] = useState<MonthSummaryType>({
@@ -80,6 +82,7 @@ export function TransactionList() {
     const hexId = blobToHex(tx.id)
     // For now just log - navigation to edit would need the hex ID
     console.log('Transaction clicked:', hexId)
+    navigate(`/transaction/${hexId}`)
   }
 
   const groupedTransactions = groupByDate(transactions)

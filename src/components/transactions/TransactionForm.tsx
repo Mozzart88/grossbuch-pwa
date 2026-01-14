@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { Account, Tag, Counterparty } from '../../types'
+import type { Account, Tag, Counterparty, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository } from '../../services/repositories'
 import { Button, Input, Select } from '../ui'
@@ -7,6 +7,7 @@ import { Button, Input, Select } from '../ui'
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
 
 interface TransactionFormProps {
+  initialData?: Transaction
   onSubmit: () => void
   onCancel: () => void
 }
@@ -19,7 +20,7 @@ interface AccountOption extends Account {
   decimalPlaces: number
 }
 
-export function TransactionForm({ onSubmit, onCancel }: TransactionFormProps) {
+export function TransactionForm({ initialData, onSubmit, onCancel }: TransactionFormProps) {
   const [mode, setMode] = useState<TransactionMode>('expense')
   const [amount, setAmount] = useState('')
   const [accountId, setAccountId] = useState('')
@@ -46,6 +47,71 @@ export function TransactionForm({ onSubmit, onCancel }: TransactionFormProps) {
   useEffect(() => {
     loadData()
   }, [])
+
+  useEffect(() => {
+    if (initialData && accounts.length > 0) {
+      populateFromInitialData()
+    }
+  }, [initialData, accounts])
+
+  const populateFromInitialData = () => {
+    if (!initialData || !initialData.lines || initialData.lines.length === 0) return
+
+    const lines = initialData.lines as TransactionLine[]
+    const firstLine = lines[0]
+
+    // Detect mode
+    let detectedMode: TransactionMode = 'expense'
+    if (lines.some((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.TRANSFER)) {
+      detectedMode = 'transfer'
+    } else if (lines.some((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.EXCHANGE)) {
+      detectedMode = 'exchange'
+    } else if (firstLine.sign === '+') {
+      detectedMode = 'income'
+    }
+
+    setMode(detectedMode)
+
+    if (detectedMode === 'income' || detectedMode === 'expense') {
+      setAccountId(firstLine.account_id.toString())
+      setTagId(firstLine.tag_id.toString())
+      setNote(firstLine.note || '')
+
+      const acc = accounts.find(a => a.id === firstLine.account_id)
+      const dp = acc?.decimalPlaces ?? 2
+      setAmount((firstLine.real_amount / Math.pow(10, dp)).toString())
+
+      if (initialData.counterparty_id) {
+        setCounterpartyId(initialData.counterparty_id.toString())
+      }
+    } else if (detectedMode === 'transfer' || detectedMode === 'exchange') {
+      const fromLine = lines.find((l: TransactionLine) => l.sign === '-')!
+      const toLine = lines.find((l: TransactionLine) => l.sign === '+')!
+      const feeLine = lines.find((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.FEE || (l.tag_id !== fromLine.tag_id && l.sign === '-'))
+
+      setAccountId(fromLine.account_id.toString())
+      setToAccountId(toLine.account_id.toString())
+      setNote(fromLine.note || (initialData.lines as TransactionLine[]).find((l: TransactionLine) => l.note)?.note || '')
+
+      const fromAcc = accounts.find(a => a.id === fromLine.account_id)
+      const fromDp = fromAcc?.decimalPlaces ?? 2
+      setAmount((fromLine.real_amount / Math.pow(10, fromDp)).toString())
+
+      const toAcc = accounts.find(a => a.id === toLine.account_id)
+      const toDp = toAcc?.decimalPlaces ?? 2
+      setToAmount((toLine.real_amount / Math.pow(10, toDp)).toString())
+
+      if (feeLine) {
+        setFee((feeLine.real_amount / Math.pow(10, fromDp)).toString())
+        setFeeTagId(feeLine.tag_id.toString())
+      }
+
+      if (detectedMode === 'exchange') {
+        const rate = toLine.real_amount / fromLine.real_amount
+        setExchangeRate(rate.toFixed(6))
+      }
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -81,8 +147,8 @@ export function TransactionForm({ onSubmit, onCancel }: TransactionFormProps) {
       setFeeTags(allFeeTags)
       setCounterparties(cps)
 
-      // Set default account
-      if (accountOptions.length > 0) {
+      // Set default account only if not editing
+      if (!initialData && accountOptions.length > 0) {
         const defaultAcc = accountOptions.find(a => a.is_default) || accountOptions[0]
         setAccountId(defaultAcc.id.toString())
       }
@@ -168,51 +234,103 @@ export function TransactionForm({ onSubmit, onCancel }: TransactionFormProps) {
       const intFee = fee ? toIntegerAmount(fee, decimalPlaces) : undefined
 
       if (mode === 'income') {
-        await transactionRepository.createIncome(
-          parseInt(accountId),
-          parseInt(tagId),
-          intAmount,
-          intAmount, // actual = real for now
-          {
-            counterpartyId: counterpartyId ? parseInt(counterpartyId) : undefined,
-            counterpartyName: counterpartyName || undefined,
-            note: note || undefined,
-          }
-        )
+        const payload = {
+          counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
+          counterparty_name: counterpartyName || undefined,
+          lines: [
+            {
+              account_id: parseInt(accountId),
+              tag_id: parseInt(tagId),
+              sign: '+' as const,
+              real_amount: intAmount,
+              actual_amount: intAmount,
+              note: note || undefined,
+            },
+          ],
+        }
+        if (initialData) {
+          await transactionRepository.update(initialData.id, payload)
+        } else {
+          await transactionRepository.create(payload)
+        }
       } else if (mode === 'expense') {
-        await transactionRepository.createExpense(
-          parseInt(accountId),
-          parseInt(tagId),
-          intAmount,
-          intAmount,
-          {
-            counterpartyId: counterpartyId ? parseInt(counterpartyId) : undefined,
-            counterpartyName: counterpartyName || undefined,
-            note: note || undefined,
-          }
-        )
+        const payload = {
+          counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
+          counterparty_name: counterpartyName || undefined,
+          lines: [
+            {
+              account_id: parseInt(accountId),
+              tag_id: parseInt(tagId),
+              sign: '-' as const,
+              real_amount: intAmount,
+              actual_amount: intAmount,
+              note: note || undefined,
+            },
+          ],
+        }
+        if (initialData) {
+          await transactionRepository.update(initialData.id, payload)
+        } else {
+          await transactionRepository.create(payload)
+        }
       } else if (mode === 'transfer') {
-        await transactionRepository.createTransfer(
-          parseInt(accountId),
-          parseInt(toAccountId),
-          intAmount,
+        const lines: any[] = [
           {
-            fee: intFee,
-            feeTagId: feeTagId ? parseInt(feeTagId) : undefined,
-            note: note || undefined,
-          }
-        )
+            account_id: parseInt(accountId),
+            tag_id: SYSTEM_TAGS.TRANSFER,
+            sign: '-' as const,
+            real_amount: intAmount,
+            actual_amount: intAmount,
+          },
+          {
+            account_id: parseInt(toAccountId),
+            tag_id: SYSTEM_TAGS.TRANSFER,
+            sign: '+' as const,
+            real_amount: intAmount,
+            actual_amount: intAmount,
+          },
+        ]
+        if (intFee) {
+          lines.push({
+            account_id: parseInt(accountId),
+            tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
+            sign: '-' as const,
+            real_amount: intFee,
+            actual_amount: intFee,
+          })
+        }
+        const payload = { lines, note: note || undefined }
+        if (initialData) {
+          await transactionRepository.update(initialData.id, payload)
+        } else {
+          await transactionRepository.create(payload)
+        }
       } else if (mode === 'exchange') {
         const intToAmount = toIntegerAmount(toAmount, toDecimalPlaces)
-        await transactionRepository.createExchange(
-          parseInt(accountId),
-          parseInt(toAccountId),
-          intAmount,
-          intToAmount,
-          {
-            note: note || undefined,
-          }
-        )
+        const payload = {
+          lines: [
+            {
+              account_id: parseInt(accountId),
+              tag_id: SYSTEM_TAGS.EXCHANGE,
+              sign: '-' as const,
+              real_amount: intAmount,
+              actual_amount: intAmount,
+            },
+            {
+              account_id: parseInt(toAccountId),
+              tag_id: SYSTEM_TAGS.EXCHANGE,
+              sign: '+' as const,
+              real_amount: intToAmount,
+              actual_amount: intToAmount,
+            },
+          ],
+          note: note || undefined,
+        }
+        if (initialData) {
+          await transactionRepository.update(initialData.id, payload)
+        } else {
+          await transactionRepository.create(payload)
+        }
 
         // Store exchange rate if provided
         if (exchangeRate && selectedAccount) {
@@ -454,7 +572,7 @@ export function TransactionForm({ onSubmit, onCancel }: TransactionFormProps) {
           Cancel
         </Button>
         <Button type="submit" disabled={submitting} className="flex-1">
-          {submitting ? 'Saving...' : 'Add'}
+          {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
         </Button>
       </div>
     </form>

@@ -100,13 +100,8 @@ export function EditTransactionPage() {
         }
       />
       <div className="p-4">
-        {transaction && (
-          <div className="mb-4 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-sm">
-            <p className="text-gray-500 dark:text-gray-400 mb-2">Transaction ID: {transaction.id ? Array.from(transaction.id).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 8) : 'N/A'}...</p>
-            <p className="text-gray-600 dark:text-gray-300">Editing is not yet supported with the new schema. You can delete and recreate the transaction.</p>
-          </div>
-        )}
         <TransactionForm
+          initialData={transaction}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/')}
         />

@@ -20,6 +20,8 @@ vi.mock('../../../services/repositories', () => ({
     createIncome: vi.fn(),
     createTransfer: vi.fn(),
     createExchange: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
   },
   walletRepository: {
     findActive: vi.fn(),
@@ -65,8 +67,8 @@ const mockCurrencyRepository = vi.mocked(currencyRepository)
 describe('AddTransactionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockTransactionRepository.createExpense.mockResolvedValue(undefined)
-    mockTransactionRepository.createIncome.mockResolvedValue(undefined)
+    mockTransactionRepository.create.mockResolvedValue({} as any)
+    mockTransactionRepository.update.mockResolvedValue({} as any)
     mockWalletRepository.findActive.mockResolvedValue([
       {
         id: 1,
@@ -85,7 +87,7 @@ describe('AddTransactionPage', () => {
             currency: 'USD',
             real_balance: 15000,
             actual_balance: 15000,
-            tags: null,
+            tags: undefined,
             created_at: 1704067200,
             updated_at: 1704067200,
             is_default: true,
@@ -173,12 +175,17 @@ describe('AddTransactionPage', () => {
     fireEvent.click(submitButton)
 
     await waitFor(() => {
-      expect(mockTransactionRepository.createExpense).toHaveBeenCalledWith(
-        1, // accountId
-        12, // tagId
-        5000, // amount in cents
-        5000, // actual amount
-        expect.any(Object)
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [
+            expect.objectContaining({
+              account_id: 1,
+              tag_id: 12,
+              sign: '-',
+              real_amount: 5000,
+            }),
+          ],
+        })
       )
     })
 

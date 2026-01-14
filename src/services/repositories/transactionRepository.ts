@@ -281,6 +281,49 @@ export const transactionRepository = {
     await execSQL('DELETE FROM trx WHERE id = ?', [id])
   },
 
+  // Update an existing transaction
+  async update(id: Uint8Array, input: TransactionInput): Promise<Transaction> {
+    const updatedAt = Math.floor(Date.now() / 1000)
+    const createdAt = input.created_at ?? updatedAt
+
+    // Update transaction header
+    await execSQL(
+      'UPDATE trx SET created_at = ?, updated_at = ? WHERE id = ?',
+      [createdAt, updatedAt, id]
+    )
+
+    // Manage counterparty
+    await execSQL('DELETE FROM trx_to_counterparty WHERE trx_id = ?', [id])
+    if (input.counterparty_id) {
+      await execSQL(
+        'INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)',
+        [id, input.counterparty_id]
+      )
+    } else if (input.counterparty_name) {
+      // Auto-create counterparty if name provided
+      await execSQL(`
+        INSERT INTO counterparty (name)
+        SELECT ?
+        WHERE NOT EXISTS (SELECT 1 FROM counterparty WHERE name = ?)
+      `, [input.counterparty_name, input.counterparty_name])
+
+      await execSQL(`
+        INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
+        VALUES (?, (SELECT id FROM counterparty WHERE name = ?))
+      `, [id, input.counterparty_name])
+    }
+
+    // Wipe and recreate transaction lines
+    await execSQL('DELETE FROM trx_base WHERE trx_id = ?', [id])
+    for (const line of input.lines) {
+      await this.addLine(id, line)
+    }
+
+    const transaction = await this.findById(id)
+    if (!transaction) throw new Error('Failed to update transaction')
+    return transaction
+  },
+
   // Get exchanges view
   async getExchanges(limit?: number): Promise<ExchangeView[]> {
     let sql = 'SELECT * FROM exchanges ORDER BY created_at DESC'

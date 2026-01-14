@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import '@testing-library/jest-dom'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { EditTransactionPage } from '../../../pages/EditTransactionPage'
 import type { Transaction } from '../../../types'
@@ -33,9 +34,11 @@ vi.mock('../../../services/repositories', () => ({
     findAll: vi.fn(),
   },
   currencyRepository: {
+    findAll: vi.fn(),
     findDefault: vi.fn(),
   },
   walletRepository: {
+    findActive: vi.fn(),
     findAll: vi.fn(),
   },
 }))
@@ -79,21 +82,30 @@ const sampleBlobId = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 
 
 const mockTransaction: Transaction = {
   id: sampleBlobId,
-  created_at: 1736337000, // Unix timestamp
+  created_at: 1736337000,
   updated_at: 1736337000,
+  lines: [
+    {
+      id: new Uint8Array(16),
+      trx_id: sampleBlobId,
+      account_id: 1,
+      tag_id: 10,
+      sign: '-',
+      real_amount: 5000,
+      actual_amount: 5000,
+    },
+  ],
 }
 
 describe('EditTransactionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockTransactionRepository.findById.mockResolvedValue(mockTransaction)
-    mockTransactionRepository.update.mockResolvedValue(undefined)
+    mockTransactionRepository.update.mockResolvedValue({} as any)
     mockTransactionRepository.delete.mockResolvedValue(undefined)
     mockAccountRepository.findAll.mockResolvedValue([
       {
         id: 1,
-        wallet_id: 1,
-        currency_id: 1,
         wallet: 'Cash',
         currency: 'USD',
         real_balance: 10000,
@@ -102,6 +114,28 @@ describe('EditTransactionPage', () => {
         created_at: 1704067200,
         updated_at: 1704067200,
       },
+    ] as any)
+    mockWalletRepository.findActive.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Cash',
+        created_at: 1704067200,
+        updated_at: 1704067200,
+        accounts: [
+          {
+            id: 1,
+            wallet_id: 1,
+            currency_id: 1,
+            real_balance: 10000,
+            actual_balance: 15000,
+            created_at: 1704067200,
+            updated_at: 1704067200,
+          },
+        ],
+      } as any,
+    ])
+    mockCurrencyRepository.findAll.mockResolvedValue([
+      { id: 1, code: 'USD', symbol: '$', decimal_places: 2 } as any,
     ])
     mockTagRepository.findAll.mockResolvedValue([
       {
@@ -157,7 +191,7 @@ describe('EditTransactionPage', () => {
             currency: 'USD',
             real_balance: 10000,
             actual_balance: 15000,
-            tags: null,
+            tags: undefined,
             created_at: 1704067200,
             updated_at: 1704067200,
           },
@@ -193,7 +227,7 @@ describe('EditTransactionPage', () => {
   })
 
   it('shows loading spinner while loading', async () => {
-    mockTransactionRepository.findById.mockImplementation(() => new Promise(() => {}))
+    mockTransactionRepository.findById.mockImplementation(() => new Promise(() => { }))
 
     const { container } = renderPage()
 
@@ -260,7 +294,7 @@ describe('EditTransactionPage', () => {
   })
 
   it('shows error when delete fails', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
     mockTransactionRepository.delete.mockRejectedValue(new Error('Delete failed'))
 
     renderPage()
@@ -298,14 +332,28 @@ describe('EditTransactionPage', () => {
     renderPage()
 
     await waitFor(() => {
-      // TransactionForm has a submit button; in edit mode it should show Update
-      // Note: The actual form may still show "Add" if editing isn't fully implemented
-      expect(screen.getByText('Edit Transaction')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
+    })
+  })
+
+  it('navigates home on successful submission', async () => {
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50)
+      expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
+    })
+
+    const updateButton = screen.getByRole('button', { name: 'Update' })
+    fireEvent.click(updateButton)
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/')
     })
   })
 
   it('handles load error', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
     mockTransactionRepository.findById.mockRejectedValue(new Error('Load failed'))
 
     renderPage()
@@ -331,7 +379,7 @@ describe('EditTransactionPage', () => {
   })
 
   it('shows Deleting... text while deleting', async () => {
-    mockTransactionRepository.delete.mockImplementation(() => new Promise(() => {}))
+    mockTransactionRepository.delete.mockImplementation(() => new Promise(() => { }))
 
     renderPage()
 
