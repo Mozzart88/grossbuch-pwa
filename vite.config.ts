@@ -21,22 +21,22 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
-            src: '/x192.png',
+            src: '/dark-192.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: '/x512.png',
+            src: '/dark-512.png',
             sizes: '512x512',
             type: 'image/png'
           },
           {
-            src: '/x144.png',
+            src: '/dark-144.png',
             sizes: '144x144',
             type: 'image/png'
           },
           {
-            src: '/x1024.png',
+            src: '/dark-1024.png',
             sizes: '1024x1024',
             type: 'image/png'
           },
@@ -73,6 +73,7 @@ export default defineConfig({
   // Required for SQLite WASM with OPFS
   server: {
     host: '0.0.0.0',
+    allowedHosts: ['dev.grossbuh.lan'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'

@@ -61,6 +61,7 @@ export function downloadCSV(content: string, filename: string): void {
   downloadFile(blob, filename)
 }
 
+// TODO: move to separate file
 export function downloadFile(data: File | Blob, filename: string): void {
   const link = document.createElement('a')
   link.href = URL.createObjectURL(data)
@@ -69,4 +70,13 @@ export function downloadFile(data: File | Blob, filename: string): void {
   link.click()
   document.body.removeChild(link)
   URL.revokeObjectURL(link.href)
+}
+
+// TODO: move to separate file
+export async function uploadFile(file: File) {
+  const root = await navigator.storage.getDirectory()
+  const opfsFH = await root.getFileHandle(file.name, { create: true })
+  const writable = await opfsFH.createWritable()
+  await writable.write(await file.arrayBuffer())
+  await writable.close()
 }

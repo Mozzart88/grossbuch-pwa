@@ -22,17 +22,11 @@ export const transactionRepository = {
   // Get transactions for a month using the view
   async findByMonth(yearMonth: string): Promise<TransactionView[]> {
     // yearMonth format: "YYYY-MM"
-    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
-    const endDate = new Date(`${yearMonth}-01`)
-    endDate.setMonth(endDate.getMonth() + 1)
-    const endTs = Math.floor(endDate.getTime() / 1000)
-    console.log(startTs, endTs)
-
     return querySQL<TransactionView>(`
       SELECT * FROM trx_log
-      WHERE CAST(strftime('%s',created_at) as INTEGER) >= ? AND CAST(strftime('%s',created_at) as INTEGER) < ?
+      WHERE created_at LIKE ?
       ORDER BY created_at DESC
-    `, [startTs, endTs])
+    `, [`${yearMonth}%`])
   },
 
   // Get full transaction log

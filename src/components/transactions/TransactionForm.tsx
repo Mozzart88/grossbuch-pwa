@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import type { Account, Tag, Counterparty, Transaction, TransactionLine } from '../../types'
+import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository } from '../../services/repositories'
 import { Button, Input, Select } from '../ui'
+import { toDateTimeLocal } from '../../utils/dateUtils'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
 
@@ -34,6 +35,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const [feeTagId, setFeeTagId] = useState(SYSTEM_TAGS.FEE.toString())
   const [note, setNote] = useState('')
   const [exchangeMode, setExchangeMode] = useState<'amounts' | 'rate'>('amounts')
+  const [datetime, setDateTime] = useState(Date.now())
 
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
@@ -56,6 +58,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const populateFromInitialData = () => {
     if (!initialData || !initialData.lines || initialData.lines.length === 0) return
+    setDateTime(new Date(initialData.created_at * 1000).getTime())
 
     const lines = initialData.lines as TransactionLine[]
     const firstLine = lines[0]
@@ -124,6 +127,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         currencyRepository.findAll(),
       ])
 
+      setDateTime(Date.now())
       // Build account options with wallet/currency info
       const accountOptions: AccountOption[] = []
       for (const wallet of wallets) {
@@ -233,65 +237,44 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       const intAmount = toIntegerAmount(amount, decimalPlaces)
       const intFee = fee ? toIntegerAmount(fee, decimalPlaces) : undefined
 
-      if (mode === 'income') {
-        const payload = {
-          counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
-          counterparty_name: counterpartyName || undefined,
-          lines: [
-            {
-              account_id: parseInt(accountId),
-              tag_id: parseInt(tagId),
-              sign: '+' as const,
-              real_amount: intAmount,
-              actual_amount: intAmount,
-              note: note || undefined,
-            },
-          ],
-        }
-        if (initialData) {
-          await transactionRepository.update(initialData.id, payload)
-        } else {
-          await transactionRepository.create(payload)
-        }
-      } else if (mode === 'expense') {
-        const payload = {
-          counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
-          counterparty_name: counterpartyName || undefined,
-          lines: [
-            {
-              account_id: parseInt(accountId),
-              tag_id: parseInt(tagId),
-              sign: '-' as const,
-              real_amount: intAmount,
-              actual_amount: intAmount,
-              note: note || undefined,
-            },
-          ],
-        }
-        if (initialData) {
-          await transactionRepository.update(initialData.id, payload)
-        } else {
-          await transactionRepository.create(payload)
-        }
+      const payload: TransactionInput = {
+        counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
+        counterparty_name: counterpartyName || undefined,
+        created_at: Math.floor(datetime / 1000),
+        lines: []
+      }
+      if (mode === 'income' || mode === 'expense') {
+        const sign = mode === 'income' ? '+' : '-' as const
+        payload.lines.push(
+          {
+            account_id: parseInt(accountId),
+            tag_id: parseInt(tagId),
+            sign,
+            real_amount: intAmount,
+            actual_amount: intAmount,
+            note: note || undefined,
+          },
+        )
       } else if (mode === 'transfer') {
-        const lines: any[] = [
+        payload.lines.push(
           {
             account_id: parseInt(accountId),
             tag_id: SYSTEM_TAGS.TRANSFER,
             sign: '-' as const,
             real_amount: intAmount,
             actual_amount: intAmount,
-          },
-          {
-            account_id: parseInt(toAccountId),
-            tag_id: SYSTEM_TAGS.TRANSFER,
-            sign: '+' as const,
-            real_amount: intAmount,
-            actual_amount: intAmount,
-          },
-        ]
+            note: note || undefined,
+          })
+        payload.lines.push({
+          account_id: parseInt(toAccountId),
+          tag_id: SYSTEM_TAGS.TRANSFER,
+          sign: '+' as const,
+          real_amount: intAmount,
+          actual_amount: intAmount,
+        })
+
         if (intFee) {
-          lines.push({
+          payload.lines.push({
             account_id: parseInt(accountId),
             tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
             sign: '-' as const,
@@ -299,45 +282,36 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             actual_amount: intFee,
           })
         }
-        const payload = { lines, note: note || undefined }
-        if (initialData) {
-          await transactionRepository.update(initialData.id, payload)
-        } else {
-          await transactionRepository.create(payload)
-        }
       } else if (mode === 'exchange') {
         const intToAmount = toIntegerAmount(toAmount, toDecimalPlaces)
-        const payload = {
-          lines: [
-            {
-              account_id: parseInt(accountId),
-              tag_id: SYSTEM_TAGS.EXCHANGE,
-              sign: '-' as const,
-              real_amount: intAmount,
-              actual_amount: intAmount,
-            },
-            {
-              account_id: parseInt(toAccountId),
-              tag_id: SYSTEM_TAGS.EXCHANGE,
-              sign: '+' as const,
-              real_amount: intToAmount,
-              actual_amount: intToAmount,
-            },
-          ],
-          note: note || undefined,
-        }
-        if (initialData) {
-          await transactionRepository.update(initialData.id, payload)
-        } else {
-          await transactionRepository.create(payload)
-        }
-
+        payload.lines.push(
+          {
+            account_id: parseInt(accountId),
+            tag_id: SYSTEM_TAGS.EXCHANGE,
+            sign: '-' as const,
+            real_amount: intAmount,
+            actual_amount: intAmount,
+            note: note || undefined,
+          })
+        payload.lines.push({
+          account_id: parseInt(toAccountId),
+          tag_id: SYSTEM_TAGS.EXCHANGE,
+          sign: '+' as const,
+          real_amount: intToAmount,
+          actual_amount: intToAmount,
+        })
         // Store exchange rate if provided
         if (exchangeRate && selectedAccount) {
           const rateInt = toIntegerAmount(exchangeRate, decimalPlaces)
           await currencyRepository.setExchangeRate(selectedAccount.currency_id, rateInt)
         }
       }
+      if (initialData) {
+        await transactionRepository.update(initialData.id, payload)
+      } else {
+        await transactionRepository.create(payload)
+      }
+
 
       onSubmit()
     } catch (error) {
@@ -552,6 +526,13 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         </>
       )}
 
+      <Input
+        type='datetime-local'
+        onChange={e => {
+          setDateTime(new Date(e.target.value).getTime())
+        }}
+        value={toDateTimeLocal(new Date(datetime))}
+      />
       {/* Notes */}
       <div className="space-y-1">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">

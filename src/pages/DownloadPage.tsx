@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Card, useToast } from '../components/ui'
-import { downloadFile } from '../services/export/csvExport'
+import { Button, Card, useToast } from '../components/ui'
+import { downloadFile, uploadFile } from '../services/export/csvExport'
 
 type opfsList = { name: string, handle: FileSystemFileHandle }[]
 
@@ -49,6 +49,37 @@ export function DownloadPage() {
     }
   }
 
+  const fileSystemFallback = () => {
+    return new Promise<File>((resolve, reject) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.db,.sqlite'
+      input.onchange = () => {
+        const file = input.files?.[0]
+        file ? resolve(file) : reject('file not selected')
+      }
+      input.click()
+
+    })
+
+  }
+
+  const handleUpload = async () => {
+    try {
+      let file
+      if ('showOpenFilePicker' in window) {
+        const [handle] = await window.showOpenFilePicker({ multiple: false })
+        file = await handle.getFile()
+      } else {
+        file = await fileSystemFallback()
+      }
+      await uploadFile(file)
+      showToast('Download successful', 'success')
+    } catch (error) {
+      console.error('Failed to download:', error)
+      showToast('Failed to download DB file', 'error')
+    }
+  }
   return (
     <div>
       <PageHeader title="Download Raw Sqlite DB" showBack />
@@ -86,6 +117,17 @@ export function DownloadPage() {
             </Card>
           ))
         )}
+        <Card className='py-2'>
+          <div className='flex justify-center items-center'>
+            <Button
+              onClick={() => handleUpload()}
+              type='button'
+              variant='ghost'
+            >
+              Upload DB file
+            </Button>
+          </div>
+        </Card>
       </div>
     </div>
   )

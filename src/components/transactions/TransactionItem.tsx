@@ -1,4 +1,4 @@
-import { SYSTEM_TAGS, type Transaction, type TransactionView } from '../../types'
+import { type TransactionView } from '../../types'
 import { formatCurrency } from '../../utils/formatters'
 import { formatTime } from '../../utils/dateUtils'
 

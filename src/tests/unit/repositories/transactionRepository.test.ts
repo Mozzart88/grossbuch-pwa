@@ -59,14 +59,14 @@ const sampleLine: TransactionLine = {
 }
 
 // Sample full Transaction
-const sampleTransaction: Transaction = {
-  id: mockId(),
-  created_at: 1704803400,
-  updated_at: 1704803400,
-  counterparty: 'Supermarket',
-  counterparty_id: 1,
-  lines: [sampleLine],
-}
+// const sampleTransaction: Transaction = {
+//   id: mockId(),
+//   created_at: 1704803400,
+//   updated_at: 1704803400,
+//   counterparty: 'Supermarket',
+//   counterparty_id: 1,
+//   lines: [sampleLine],
+// }
 
 // Sample TransactionLog
 const sampleTransactionLog: TransactionLog = {
@@ -95,7 +95,7 @@ describe('transactionRepository', () => {
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining('SELECT * FROM trx_log'),
-        expect.arrayContaining([expect.any(Number), expect.any(Number)])
+        expect.arrayContaining([expect.any(String)])
       )
       expect(result).toEqual([sampleTransactionView])
     })
@@ -115,7 +115,7 @@ describe('transactionRepository', () => {
 
       // January 2025 start timestamp and February 2025 start timestamp
       const call = mockQuerySQL.mock.calls[0]
-      expect(call![1]![0]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
+      expect(call![1]![0]).toBe('2025-01%')
     })
 
     it('orders by created_at DESC', async () => {
