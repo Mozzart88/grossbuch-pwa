@@ -82,17 +82,16 @@ const sampleBlobId = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 
 
 const mockTransaction: Transaction = {
   id: sampleBlobId,
-  created_at: 1736337000,
-  updated_at: 1736337000,
+  timestamp: 1736337000,
   lines: [
     {
       id: new Uint8Array(16),
       trx_id: sampleBlobId,
       account_id: 1,
       tag_id: 10,
-      sign: '-',
-      real_amount: 5000,
-      actual_amount: 5000,
+      sign: '-' as const,
+      amount: 5000,
+      rate: 0,
     },
   ],
 }

@@ -1,18 +1,18 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TransactionItem } from '../../../../components/transactions/TransactionItem'
-import type { TransactionView } from '../../../../types'
+import type { TransactionLog } from '../../../../types'
 
 describe('TransactionItem', () => {
-  const baseTransaction: TransactionView = {
-    id: new Uint8Array(16),
-    created_at: '2025-01-09 14:30:00',
+  const baseTransaction: TransactionLog = {
+    id: new Uint8Array(8),
+    date_time: '2025-01-09 14:30:00',
     counterparty: null,
     wallet: 'Cash',
     currency: 'USD',
     tags: 'food',
-    real_amount: -5000, // -50.00
-    actual_amount: -5000,
+    amount: -5000, // -50.00
+    rate: 0,
     symbol: '$',
     decimal_places: 2
   }
@@ -26,11 +26,10 @@ describe('TransactionItem', () => {
   })
 
   it('renders income transaction (positive amount)', () => {
-    const incomeTransaction: TransactionView = {
+    const incomeTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'sale',
-      real_amount: 100000,
-      actual_amount: 100000,
+      amount: 100000,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
@@ -40,19 +39,17 @@ describe('TransactionItem', () => {
   })
 
   it('renders transfer transaction in same currency', () => {
-    const transferTransaction: TransactionView[] = [
+    const transferTransaction: TransactionLog[] = [
       {
         ...baseTransaction,
         tags: 'transfer',
-        real_amount: -5000,
-        actual_amount: -5000,
+        amount: -5000,
       },
       {
         ...baseTransaction,
         wallet: 'Bank',
         tags: 'transfer',
-        real_amount: 5000,
-        actual_amount: 5000,
+        amount: 5000,
       },
     ]
     const onClick = vi.fn()
@@ -64,12 +61,11 @@ describe('TransactionItem', () => {
   })
 
   it('renders transfer transaction in different currencies currency', () => {
-    const transferTransaction: TransactionView[] = [
+    const transferTransaction: TransactionLog[] = [
       {
         ...baseTransaction,
         tags: 'transfer',
-        real_amount: -5000,
-        actual_amount: -5000,
+        amount: -5000,
       },
       {
         ...baseTransaction,
@@ -77,8 +73,7 @@ describe('TransactionItem', () => {
         currency: 'ARS',
         symbol: 'AR$',
         tags: 'transfer',
-        real_amount: 5000,
-        actual_amount: 5000,
+        amount: 5000,
       },
     ]
     const onClick = vi.fn()
@@ -90,20 +85,18 @@ describe('TransactionItem', () => {
   })
 
   it('renders exchange transaction in same wallet', () => {
-    const exchangeTransaction: TransactionView[] = [
+    const exchangeTransaction: TransactionLog[] = [
       {
         ...baseTransaction,
         tags: 'exchange',
-        real_amount: -5000,
-        actual_amount: -5000,
+        amount: -5000,
       },
       {
         ...baseTransaction,
         tags: 'exchange',
         currency: 'ARS',
         symbol: 'AR$',
-        real_amount: 50,
-        actual_amount: 5000,
+        amount: 50,
       },
     ]
     const onClick = vi.fn()
@@ -115,12 +108,11 @@ describe('TransactionItem', () => {
   })
 
   it('renders exchange transaction in different wallets', () => {
-    const exchangeTransaction: TransactionView[] = [
+    const exchangeTransaction: TransactionLog[] = [
       {
         ...baseTransaction,
         tags: 'exchange',
-        real_amount: -5000,
-        actual_amount: -5000,
+        amount: -5000,
       },
       {
         ...baseTransaction,
@@ -128,8 +120,7 @@ describe('TransactionItem', () => {
         wallet: 'Bank',
         currency: 'ARS',
         symbol: 'AR$',
-        real_amount: 50,
-        actual_amount: 5000,
+        amount: 50,
       },
     ]
     const onClick = vi.fn()
@@ -151,11 +142,10 @@ describe('TransactionItem', () => {
   })
 
   it('displays income icon for positive amounts', () => {
-    const incomeTransaction: TransactionView = {
+    const incomeTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'sale',
-      real_amount: 5000,
-      actual_amount: 5000,
+      amount: 5000,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
@@ -171,7 +161,7 @@ describe('TransactionItem', () => {
   })
 
   it('displays counterparty when available', () => {
-    const withCounterparty: TransactionView = {
+    const withCounterparty: TransactionLog = {
       ...baseTransaction,
       counterparty: 'Supermarket',
     }
@@ -210,11 +200,10 @@ describe('TransactionItem', () => {
   })
 
   it('applies green color for income (positive amount)', () => {
-    const incomeTransaction: TransactionView = {
+    const incomeTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'sale',
-      real_amount: 5000,
-      actual_amount: 5000,
+      amount: 5000,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
@@ -251,7 +240,7 @@ describe('TransactionItem', () => {
   })
 
   it('handles missing tags', () => {
-    const noTags: TransactionView = {
+    const noTags: TransactionLog = {
       ...baseTransaction,
       tags: '',
     }

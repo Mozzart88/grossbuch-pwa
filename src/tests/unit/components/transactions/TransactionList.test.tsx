@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { TransactionList } from '../../../../components/transactions/TransactionList'
-import type { TransactionView } from '../../../../types'
+import type { TransactionLog } from '../../../../types'
 
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
@@ -37,15 +37,15 @@ const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 
-const sampleTransaction: TransactionView = {
-  id: new Uint8Array(16),
-  created_at: '2025-01-09 14:30:00',
+const sampleTransaction: TransactionLog = {
+  id: new Uint8Array(8),
+  date_time: '2025-01-09 14:30:00',
   counterparty: null,
   wallet: 'Cash',
   currency: 'USD',
   tags: 'food',
-  real_amount: -5000, // -50.00
-  actual_amount: -5000,
+  amount: -5000, // -50.00
+  rate: 0,
   symbol: '$',
   decimal_places: 2
 }
@@ -59,14 +59,12 @@ describe('TransactionList', () => {
       name: 'US Dollar',
       symbol: '$',
       decimal_places: 2,
-      created_at: 1704067200,
-      updated_at: 1704067200,
       is_default: true,
       is_fiat: true,
     })
     mockTransactionRepository.findByMonth.mockResolvedValue([sampleTransaction])
     mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000, expenses: 50000 })
-    mockAccountRepository.getTotalBalance.mockResolvedValue({ real: 150000, actual: 150000 })
+    mockAccountRepository.getTotalBalance.mockResolvedValue(150000)
   })
 
   const renderWithRouter = () => {
@@ -113,10 +111,10 @@ describe('TransactionList', () => {
   })
 
   it('groups transactions by date', async () => {
-    const transactions: TransactionView[] = [
-      { ...sampleTransaction, id: new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), created_at: '2025-01-09 14:30:00' },
-      { ...sampleTransaction, id: new Uint8Array([2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), created_at: '2025-01-09 16:00:00' },
-      { ...sampleTransaction, id: new Uint8Array([3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), created_at: '2025-01-10 08:00:00' },
+    const transactions: TransactionLog[] = [
+      { ...sampleTransaction, id: new Uint8Array([1, 0, 0, 0, 0, 0, 0, 0]), date_time: '2025-01-09 14:30:00' },
+      { ...sampleTransaction, id: new Uint8Array([2, 0, 0, 0, 0, 0, 0, 0]), date_time: '2025-01-09 16:00:00' },
+      { ...sampleTransaction, id: new Uint8Array([3, 0, 0, 0, 0, 0, 0, 0]), date_time: '2025-01-10 08:00:00' },
     ]
     mockTransactionRepository.findByMonth.mockResolvedValue(transactions)
 
@@ -163,13 +161,11 @@ describe('TransactionList', () => {
       name: 'Bitcoin',
       symbol: '₿',
       decimal_places: 8,
-      created_at: 1704067200,
-      updated_at: 1704067200,
       is_default: true,
       is_crypto: true,
     })
     mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000000, expenses: 50000000 })
-    mockAccountRepository.getTotalBalance.mockResolvedValue({ real: 150000000, actual: 150000000 })
+    mockAccountRepository.getTotalBalance.mockResolvedValue(150000000)
 
     renderWithRouter()
 
@@ -191,7 +187,7 @@ describe('TransactionList', () => {
   })
 
   it('shows counterparty when available', async () => {
-    const withCounterparty: TransactionView = {
+    const withCounterparty: TransactionLog = {
       ...sampleTransaction,
       counterparty: 'Supermarket',
     }

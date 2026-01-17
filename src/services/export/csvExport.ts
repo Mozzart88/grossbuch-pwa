@@ -35,21 +35,21 @@ export async function exportTransactionsToCSV(
     'Wallet',
     'Currency',
     'Tags',
-    'Real Amount',
-    'Actual Amount',
+    'Amount',
+    'Rate',
     'Counterparty',
   ]
 
   const divisor = Math.pow(10, decimalPlaces)
 
   const rows = transactions.map((t: TransactionLog) => [
-    escapeCsvField(formatDate(t.created_at)),
-    escapeCsvField(formatTime(t.created_at)),
+    escapeCsvField(formatDate(t.date_time)),
+    escapeCsvField(formatTime(t.date_time)),
     escapeCsvField(t.wallet),
     escapeCsvField(t.currency),
     escapeCsvField(t.tags),
-    escapeCsvField((t.real_amount / divisor).toFixed(decimalPlaces)),
-    escapeCsvField((t.actual_amount / divisor).toFixed(decimalPlaces)),
+    escapeCsvField((t.amount / divisor).toFixed(decimalPlaces)),
+    escapeCsvField(t.rate),
     escapeCsvField(t.counterparty),
   ])
 

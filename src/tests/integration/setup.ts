@@ -6,12 +6,16 @@ let db: Database | null = null
 
 // SQL schema matching the production migrations v2
 const SCHEMA = `
-  -- Tag table (replaces categories)
+  -- Icon table
+  CREATE TABLE IF NOT EXISTS icon (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    value TEXT NOT NULL UNIQUE
+  );
+
+  -- Tag table (replaces categories) - no timestamps
   CREATE TABLE IF NOT EXISTS tag (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    name TEXT NOT NULL UNIQUE
   );
 
   -- Tag hierarchy
@@ -20,15 +24,19 @@ const SCHEMA = `
     parent_id INTEGER REFERENCES tag(id)
   );
 
-  -- Currency table
+  -- Tag icon relationship
+  CREATE TABLE IF NOT EXISTS tag_icon (
+    tag_id INTEGER REFERENCES tag(id),
+    icon_id INTEGER REFERENCES icon(id)
+  );
+
+  -- Currency table - no timestamps
   CREATE TABLE IF NOT EXISTS currency (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     symbol TEXT NOT NULL,
-    decimal_places INTEGER DEFAULT 2,
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    decimal_places INTEGER DEFAULT 2
   );
 
   CREATE TABLE IF NOT EXISTS currency_to_tags (
@@ -43,14 +51,11 @@ const SCHEMA = `
     updated_at INTEGER DEFAULT (strftime('%s', 'now'))
   );
 
-  -- Wallet table
+  -- Wallet table - no icon or timestamps
   CREATE TABLE IF NOT EXISTS wallet (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
-    icon TEXT,
-    color TEXT,
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    color TEXT
   );
 
   CREATE TABLE IF NOT EXISTS wallet_to_tags (
@@ -60,14 +65,12 @@ const SCHEMA = `
     FOREIGN KEY (tag_id) REFERENCES tag(id) ON DELETE CASCADE
   );
 
-  -- Account table (wallet + currency combination)
+  -- Account table (wallet + currency combination) - single balance, no created_at
   CREATE TABLE IF NOT EXISTS account (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     wallet_id INTEGER NOT NULL,
     currency_id INTEGER NOT NULL,
-    real_balance INTEGER NOT NULL DEFAULT 0,
-    actual_balance INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
+    balance INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER DEFAULT (strftime('%s', 'now')),
     FOREIGN KEY (wallet_id) REFERENCES wallet(id) ON DELETE CASCADE,
     FOREIGN KEY (currency_id) REFERENCES currency(id) ON DELETE CASCADE
@@ -78,13 +81,16 @@ const SCHEMA = `
     tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE
   );
 
-  -- Counterparty table
+  -- Counterparty table - no timestamps
   CREATE TABLE IF NOT EXISTS counterparty (
     id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL UNIQUE,
-    note TEXT,
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    name TEXT NOT NULL UNIQUE
+  );
+
+  -- Counterparty note in separate table
+  CREATE TABLE IF NOT EXISTS counterparty_note (
+    counterparty_id INTEGER REFERENCES counterparty(id) ON DELETE CASCADE,
+    note TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS counterparty_to_tags (
@@ -92,11 +98,10 @@ const SCHEMA = `
     tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE
   );
 
-  -- Transaction header
+  -- Transaction header - 8-byte blob, single timestamp
   CREATE TABLE IF NOT EXISTS trx (
-    id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(16)),
-    created_at INTEGER DEFAULT (strftime('%s', 'now')),
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(8)),
+    timestamp INTEGER DEFAULT (strftime('%s', 'now'))
   );
 
   CREATE TABLE IF NOT EXISTS trx_to_counterparty (
@@ -104,15 +109,15 @@ const SCHEMA = `
     counterparty_id INTEGER NOT NULL REFERENCES counterparty(id) ON DELETE CASCADE
   );
 
-  -- Transaction line items
+  -- Transaction line items - amount and rate
   CREATE TABLE IF NOT EXISTS trx_base (
-    id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(16)),
+    id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(8)),
     trx_id BLOB NOT NULL REFERENCES trx(id) ON DELETE CASCADE,
     account_id INTEGER NOT NULL REFERENCES account(id) ON DELETE RESTRICT,
     tag_id INTEGER NOT NULL REFERENCES tag(id) ON DELETE RESTRICT,
     sign TEXT NOT NULL DEFAULT '-',
-    real_amount INTEGER CHECK(real_amount >= 0) NOT NULL DEFAULT 0,
-    actual_amount INTEGER CHECK(actual_amount >= 0) NOT NULL DEFAULT 0
+    amount INTEGER CHECK(amount >= 0) NOT NULL DEFAULT 0,
+    rate INTEGER CHECK(rate >= 0) NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS trx_note (
@@ -133,10 +138,10 @@ const SCHEMA = `
     a.id as id,
     w.name as wallet,
     c.code as currency,
+    c.symbol as symbol,
+    c.decimal_places as decimal_places,
     group_concat(t.name, ', ') as tags,
-    a.real_balance as real_balance,
-    a.actual_balance as actual_balance,
-    a.created_at as created_at,
+    a.balance as balance,
     a.updated_at as updated_at
   FROM account a
   JOIN wallet w ON a.wallet_id = w.id
@@ -150,17 +155,14 @@ const SCHEMA = `
   CREATE VIEW IF NOT EXISTS transactions AS
   SELECT
     t.id as id,
-    datetime(t.created_at, 'unixepoch', 'localtime') as created_at,
+    datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
     c.name as counterparty,
     GROUP_CONCAT(DISTINCT a.wallet) as wallet,
     GROUP_CONCAT(DISTINCT a.currency) as currency,
     GROUP_CONCAT(tag.name) as tags,
     sum((
-      CASE WHEN tb.sign = '-' THEN -tb.real_amount ELSE tb.real_amount END
-    )) as real_amount,
-    sum((
-      CASE WHEN tb.sign = '-' THEN -tb.actual_amount ELSE tb.actual_amount END
-    )) as actual_amount
+      CASE WHEN tb.sign = '-' THEN -tb.amount ELSE tb.amount END
+    )) as amount
   FROM trx t
   JOIN trx_base tb ON tb.trx_id = t.id
   JOIN accounts a ON tb.account_id = a.id
@@ -169,41 +171,36 @@ const SCHEMA = `
   LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
   WHERE tb.tag_id NOT IN (3, 6, 7)
   GROUP BY t.id
-  ORDER BY t.created_at;
+  ORDER BY t.timestamp;
 
   -- trx_log view
   CREATE VIEW IF NOT EXISTS trx_log AS
   SELECT
     t.id as id,
-    datetime(t.created_at, 'unixepoch', 'localtime') as created_at,
+    datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
     c.name as counterparty,
     a.wallet as wallet,
     a.currency as currency,
+    a.symbol as symbol,
+    a.decimal_places as decimal_places,
     tag.name as tags,
-    (CASE WHEN tb.sign = '-' THEN -tb.real_amount ELSE tb.real_amount END) as real_amount,
-    (CASE WHEN tb.sign = '-' THEN -tb.actual_amount ELSE tb.actual_amount END) as actual_amount
+    (CASE WHEN tb.sign = '-' THEN -tb.amount ELSE tb.amount END) as amount,
+    tb.rate as rate
   FROM trx t
   JOIN trx_base tb ON tb.trx_id = t.id
   JOIN accounts a ON tb.account_id = a.id
   JOIN tag ON tb.tag_id = tag.id
   LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
   LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
-  ORDER BY t.created_at;
+  ORDER BY t.timestamp;
 
-  -- Budget table
+  -- Budget table - 8-byte id, amount is INTEGER
   CREATE TABLE IF NOT EXISTS budget (
-    id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(16)),
+    id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(8)),
     start INTEGER NOT NULL DEFAULT (strftime('%s', date('now', 'start of month'))),
     end INTEGER NOT NULL DEFAULT (strftime('%s', date('now', 'start of month', '+1 month'))),
     tag_id INTEGER NOT NULL REFERENCES tag(id),
-    amount REAL NOT NULL
-  );
-
-  -- Exchange rate table
-  CREATE TABLE IF NOT EXISTS exchange_rate (
-    currency_id INTEGER REFERENCES currency(id) ON DELETE CASCADE,
-    rate INTEGER NOT NULL,
-    updated_at INTEGER DEFAULT (strftime('%s', 'now'))
+    amount INTEGER NOT NULL
   );
 
   -- Tags hierarchy view
@@ -237,35 +234,35 @@ const SCHEMA = `
   FROM budget
   LEFT JOIN tags_hierarchy th ON th.parent_id = budget.tag_id OR budget.tag_id = th.child_id;
 
-  -- Summary view
+  -- Summary view - uses amount * rate
   CREATE VIEW IF NOT EXISTS summary AS
   SELECT
     tag.name as tag,
     budget.amount as amount,
-    abs(total(iif(tb.sign = '-', -tb.actual_amount, tb.actual_amount))) as actual
+    abs(total(iif(tb.sign = '-', -tb.amount, tb.amount) * tb.rate)) as actual
   FROM budget
   JOIN tag ON budget.tag_id = tag.id
-  JOIN trx ON trx.created_at >= budget.start AND trx.created_at < budget.end
+  JOIN trx ON trx.timestamp >= budget.start AND trx.timestamp < budget.end
   JOIN trx_base tb ON tb.trx_id = trx.id
     AND (tb.tag_id = budget.tag_id OR tb.tag_id IN (SELECT child_id FROM budget_subtags WHERE budget_id = budget.id))
   GROUP BY budget.tag_id, budget.end - budget.start;
 
-  -- Counterparties summary view
+  -- Counterparties summary view - uses amount * rate
   CREATE VIEW IF NOT EXISTS counterparties_summary AS
   SELECT
     c.name as counterparty,
-    total(iif(tb.sign = '-', -tb.actual_amount, tb.actual_amount)) as amount
+    sum(iif(tb.sign = '-', -tb.amount, tb.amount) * tb.rate) as amount
   FROM counterparty c
   JOIN trx_to_counterparty tc ON tc.counterparty_id = c.id
   LEFT JOIN trx_base tb ON tc.trx_id = tb.trx_id
   GROUP BY c.id
   ORDER BY amount;
 
-  -- Tags summary view
+  -- Tags summary view - uses amount * rate
   CREATE VIEW IF NOT EXISTS tags_summary AS
   SELECT
     tag.name as tag,
-    total(iif(tb.sign = '-', -tb.actual_amount, tb.actual_amount)) as amount
+    total(iif(tb.sign = '-', -tb.amount, tb.amount) * tb.rate) as amount
   FROM trx_base tb
   JOIN tag ON tb.tag_id = tag.id
   GROUP BY tb.tag_id
@@ -275,13 +272,12 @@ const SCHEMA = `
   CREATE VIEW IF NOT EXISTS exchanges AS
   SELECT
     t.id as id,
-    datetime(t.created_at, 'unixepoch', 'localtime') as created_at,
+    datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
     c.name as counterparty,
     a.wallet as wallet,
     a.currency as currency,
     tag.name as tag,
-    (iif(tb.sign = '-', -tb.real_amount, tb.real_amount)) as real_amount,
-    (iif(tb.sign = '-', -tb.actual_amount, tb.actual_amount)) as actual_amount
+    (iif(tb.sign = '-', -tb.amount, tb.amount)) as amount
   FROM trx t
   JOIN trx_base tb ON tb.trx_id = t.id
   JOIN accounts a ON tb.account_id = a.id
@@ -294,13 +290,12 @@ const SCHEMA = `
   CREATE VIEW IF NOT EXISTS transfers AS
   SELECT
     t.id as id,
-    datetime(t.created_at, 'unixepoch', 'localtime') as created_at,
+    datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
     c.name as counterparty,
     a.wallet as wallet,
     a.currency as currency,
     tag.name as tag,
-    (iif(tb.sign = '-', -tb.real_amount, tb.real_amount)) as real_amount,
-    (iif(tb.sign = '-', -tb.actual_amount, tb.actual_amount)) as actual_amount
+    (iif(tb.sign = '-', -tb.amount, tb.amount)) as amount
   FROM trx t
   JOIN trx_base tb ON tb.trx_id = t.id
   JOIN accounts a ON tb.account_id = a.id
@@ -407,6 +402,7 @@ export function resetTestDatabase(): void {
     db.run('DELETE FROM trx')
     // Clear counterparty data
     db.run('DELETE FROM counterparty_to_tags')
+    db.run('DELETE FROM counterparty_note')
     db.run('DELETE FROM counterparty')
     // Clear account/wallet data
     db.run('DELETE FROM account_to_tags')
@@ -495,14 +491,13 @@ export function insertCurrency(data: {
 
 export function insertWallet(data: {
   name: string
-  icon?: string
   color?: string
   is_default?: boolean
 }): number {
   const database = getTestDatabase()
   database.run(
-    'INSERT INTO wallet (name, icon, color) VALUES (?, ?, ?)',
-    [data.name, data.icon ?? null, data.color ?? null]
+    'INSERT INTO wallet (name, color) VALUES (?, ?)',
+    [data.name, data.color ?? null]
   )
   const id = Number(database.exec('SELECT last_insert_rowid()')[0].values[0][0])
 
@@ -516,13 +511,12 @@ export function insertWallet(data: {
 export function insertAccount(data: {
   wallet_id: number
   currency_id: number
-  real_balance?: number
-  actual_balance?: number
+  balance?: number
 }): number {
   const database = getTestDatabase()
   database.run(
-    'INSERT INTO account (wallet_id, currency_id, real_balance, actual_balance) VALUES (?, ?, ?, ?)',
-    [data.wallet_id, data.currency_id, data.real_balance ?? 0, data.actual_balance ?? 0]
+    'INSERT INTO account (wallet_id, currency_id, balance) VALUES (?, ?, ?)',
+    [data.wallet_id, data.currency_id, data.balance ?? 0]
   )
   return Number(database.exec('SELECT last_insert_rowid()')[0].values[0][0])
 }
@@ -550,8 +544,12 @@ export function insertCounterparty(data: {
   tag_ids?: number[]
 }): number {
   const database = getTestDatabase()
-  database.run('INSERT INTO counterparty (name, note) VALUES (?, ?)', [data.name, data.note ?? null])
+  database.run('INSERT INTO counterparty (name) VALUES (?)', [data.name])
   const id = Number(database.exec('SELECT last_insert_rowid()')[0].values[0][0])
+
+  if (data.note) {
+    database.run('INSERT INTO counterparty_note (counterparty_id, note) VALUES (?, ?)', [id, data.note])
+  }
 
   if (data.tag_ids) {
     for (const tagId of data.tag_ids) {
@@ -566,26 +564,26 @@ export function insertTransaction(data: {
   account_id: number
   tag_id: number
   sign: '+' | '-'
-  real_amount: number
-  actual_amount: number
+  amount: number
+  rate?: number
   counterparty_id?: number
   note?: string
-  created_at?: number
+  timestamp?: number
 }): Uint8Array {
   const database = getTestDatabase()
-  const trxId = new Uint8Array(16)
+  const trxId = new Uint8Array(8)
   crypto.getRandomValues(trxId)
 
-  const timestamp = data.created_at ?? Math.floor(Date.now() / 1000)
+  const timestamp = data.timestamp ?? Math.floor(Date.now() / 1000)
 
-  database.run('INSERT INTO trx (id, created_at, updated_at) VALUES (?, ?, ?)', [trxId, timestamp, timestamp])
+  database.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
 
-  const trxBaseId = new Uint8Array(16)
+  const trxBaseId = new Uint8Array(8)
   crypto.getRandomValues(trxBaseId)
 
   database.run(
-    'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, real_amount, actual_amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [trxBaseId, trxId, data.account_id, data.tag_id, data.sign, data.real_amount, data.actual_amount]
+    'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [trxBaseId, trxId, data.account_id, data.tag_id, data.sign, data.amount, data.rate ?? 0]
   )
 
   if (data.counterparty_id) {
@@ -609,7 +607,7 @@ export function insertBudget(data: {
   end?: number
 }): Uint8Array {
   const database = getTestDatabase()
-  const budgetId = new Uint8Array(16)
+  const budgetId = new Uint8Array(8)
   crypto.getRandomValues(budgetId)
 
   const now = Math.floor(Date.now() / 1000)
@@ -638,3 +636,18 @@ export function insertExchangeRate(data: {
   )
 }
 
+export function insertIcon(data: {
+  value: string
+}): number {
+  const database = getTestDatabase()
+  database.run('INSERT INTO icon (value) VALUES (?)', [data.value])
+  return Number(database.exec('SELECT last_insert_rowid()')[0].values[0][0])
+}
+
+export function insertTagIcon(data: {
+  tag_id: number
+  icon_id: number
+}): void {
+  const database = getTestDatabase()
+  database.run('INSERT INTO tag_icon (tag_id, icon_id) VALUES (?, ?)', [data.tag_id, data.icon_id])
+}

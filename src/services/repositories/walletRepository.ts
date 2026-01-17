@@ -118,8 +118,8 @@ export const walletRepository = {
     }
 
     await execSQL(
-      `INSERT INTO wallet (name, icon, color) VALUES (?, ?, ?)`,
-      [input.name, input.icon ?? null, input.color ?? null]
+      `INSERT INTO wallet (name, color) VALUES (?, ?)`,
+      [input.name, input.color ?? null]
     )
     const id = await getLastInsertId()
 
@@ -144,17 +144,12 @@ export const walletRepository = {
       fields.push('name = ?')
       values.push(input.name)
     }
-    if (input.icon !== undefined) {
-      fields.push('icon = ?')
-      values.push(input.icon)
-    }
     if (input.color !== undefined) {
       fields.push('color = ?')
       values.push(input.color)
     }
 
     if (fields.length > 0) {
-      fields.push("updated_at = strftime('%s', datetime('now', 'localtime'))")
       values.push(id)
       await execSQL(`UPDATE wallet SET ${fields.join(', ')} WHERE id = ?`, values)
     }

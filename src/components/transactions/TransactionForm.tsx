@@ -58,7 +58,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const populateFromInitialData = () => {
     if (!initialData || !initialData.lines || initialData.lines.length === 0) return
-    setDateTime(new Date(initialData.created_at * 1000).getTime())
+    setDateTime(new Date(initialData.timestamp * 1000).getTime())
 
     const lines = initialData.lines as TransactionLine[]
     const firstLine = lines[0]
@@ -82,7 +82,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
       const acc = accounts.find(a => a.id === firstLine.account_id)
       const dp = acc?.decimalPlaces ?? 2
-      setAmount((firstLine.real_amount / Math.pow(10, dp)).toString())
+      setAmount((firstLine.amount / Math.pow(10, dp)).toString())
 
       if (initialData.counterparty_id) {
         setCounterpartyId(initialData.counterparty_id.toString())
@@ -98,19 +98,19 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
       const fromAcc = accounts.find(a => a.id === fromLine.account_id)
       const fromDp = fromAcc?.decimalPlaces ?? 2
-      setAmount((fromLine.real_amount / Math.pow(10, fromDp)).toString())
+      setAmount((fromLine.amount / Math.pow(10, fromDp)).toString())
 
       const toAcc = accounts.find(a => a.id === toLine.account_id)
       const toDp = toAcc?.decimalPlaces ?? 2
-      setToAmount((toLine.real_amount / Math.pow(10, toDp)).toString())
+      setToAmount((toLine.amount / Math.pow(10, toDp)).toString())
 
       if (feeLine) {
-        setFee((feeLine.real_amount / Math.pow(10, fromDp)).toString())
+        setFee((feeLine.amount / Math.pow(10, fromDp)).toString())
         setFeeTagId(feeLine.tag_id.toString())
       }
 
       if (detectedMode === 'exchange') {
-        const rate = toLine.real_amount / fromLine.real_amount
+        const rate = toLine.amount / fromLine.amount
         setExchangeRate(rate.toFixed(6))
       }
     }
@@ -240,7 +240,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       const payload: TransactionInput = {
         counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
         counterparty_name: counterpartyName || undefined,
-        created_at: Math.floor(datetime / 1000),
+        timestamp: Math.floor(datetime / 1000),
         lines: []
       }
       if (mode === 'income' || mode === 'expense') {
@@ -250,8 +250,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             account_id: parseInt(accountId),
             tag_id: parseInt(tagId),
             sign,
-            real_amount: intAmount,
-            actual_amount: intAmount,
+            amount: intAmount,
             note: note || undefined,
           },
         )
@@ -261,16 +260,14 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             account_id: parseInt(accountId),
             tag_id: SYSTEM_TAGS.TRANSFER,
             sign: '-' as const,
-            real_amount: intAmount,
-            actual_amount: intAmount,
+            amount: intAmount,
             note: note || undefined,
           })
         payload.lines.push({
           account_id: parseInt(toAccountId),
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '+' as const,
-          real_amount: intAmount,
-          actual_amount: intAmount,
+          amount: intAmount,
         })
 
         if (intFee) {
@@ -278,8 +275,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             account_id: parseInt(accountId),
             tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
             sign: '-' as const,
-            real_amount: intFee,
-            actual_amount: intFee,
+            amount: intFee,
           })
         }
       } else if (mode === 'exchange') {
@@ -289,16 +285,14 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             account_id: parseInt(accountId),
             tag_id: SYSTEM_TAGS.EXCHANGE,
             sign: '-' as const,
-            real_amount: intAmount,
-            actual_amount: intAmount,
+            amount: intAmount,
             note: note || undefined,
           })
         payload.lines.push({
           account_id: parseInt(toAccountId),
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+' as const,
-          real_amount: intToAmount,
-          actual_amount: intToAmount,
+          amount: intToAmount,
         })
         // Store exchange rate if provided
         if (exchangeRate && selectedAccount) {
@@ -373,7 +367,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         onChange={(e) => setAccountId(e.target.value)}
         options={accounts.map((a) => ({
           value: a.id,
-          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.real_balance, a.decimalPlaces)})`,
+          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
         }))}
         placeholder="Select account"
         error={errors.accountId}
@@ -433,7 +427,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             .filter((a) => mode === 'transfer' ? a.currency_id === selectedAccount?.currency_id : true)
             .map((a) => ({
               value: a.id,
-              label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.real_balance, a.decimalPlaces)})`,
+              label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
             }))}
           placeholder="Select destination account"
           error={errors.toAccountId}

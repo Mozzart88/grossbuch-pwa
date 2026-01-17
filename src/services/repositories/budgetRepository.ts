@@ -60,13 +60,13 @@ export const budgetRepository = {
         t.name as tag,
         (
           SELECT COALESCE(ABS(SUM(
-            CASE WHEN tb.sign = '-' THEN tb.actual_amount ELSE -tb.actual_amount END
+            CASE WHEN tb.sign = '-' THEN tb.amount ELSE -tb.amount END
           )), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
           WHERE tb.tag_id = b.tag_id
-            AND trx.created_at >= b.start
-            AND trx.created_at < b.end
+            AND trx.timestamp >= b.start
+            AND trx.timestamp < b.end
         ) as actual
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
@@ -113,13 +113,13 @@ export const budgetRepository = {
         t.name as tag,
         (
           SELECT COALESCE(ABS(SUM(
-            CASE WHEN tb.sign = '-' THEN tb.actual_amount ELSE -tb.actual_amount END
+            CASE WHEN tb.sign = '-' THEN tb.amount ELSE -tb.amount END
           )), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
           WHERE tb.tag_id = b.tag_id
-            AND trx.created_at >= b.start
-            AND trx.created_at < b.end
+            AND trx.timestamp >= b.start
+            AND trx.timestamp < b.end
         ) as actual
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
@@ -246,13 +246,13 @@ export const budgetRepository = {
         t.name as tag,
         (
           SELECT COALESCE(ABS(SUM(
-            CASE WHEN tb.sign = '-' THEN tb.actual_amount ELSE -tb.actual_amount END
+            CASE WHEN tb.sign = '-' THEN tb.amount ELSE -tb.amount END
           )), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
           WHERE tb.tag_id = b.tag_id
-            AND trx.created_at >= b.start
-            AND trx.created_at < b.end
+            AND trx.timestamp >= b.start
+            AND trx.timestamp < b.end
         ) as actual
       FROM budget b
       JOIN tag t ON b.tag_id = t.id

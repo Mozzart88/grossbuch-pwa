@@ -4,7 +4,6 @@ import type {
   TransactionInput,
   TransactionLine,
   TransactionLineInput,
-  TransactionView,
   TransactionLog,
   ExchangeView,
   TransferView,
@@ -20,18 +19,18 @@ import { SYSTEM_TAGS } from '../../types'
 
 export const transactionRepository = {
   // Get transactions for a month using the view
-  async findByMonth(yearMonth: string): Promise<TransactionView[]> {
+  async findByMonth(yearMonth: string): Promise<TransactionLog[]> {
     // yearMonth format: "YYYY-MM"
-    return querySQL<TransactionView>(`
+    return querySQL<TransactionLog>(`
       SELECT * FROM trx_log
-      WHERE created_at LIKE ?
-      ORDER BY created_at DESC
+      WHERE date_time LIKE ?
+      ORDER BY date_time DESC
     `, [`${yearMonth}%`])
   },
 
   // Get full transaction log
   async getLog(limit?: number, offset?: number): Promise<TransactionLog[]> {
-    let sql = 'SELECT * FROM trx_log ORDER BY created_at DESC'
+    let sql = 'SELECT * FROM trx_log ORDER BY date_time DESC'
     const params: unknown[] = []
 
     if (limit) {
@@ -90,11 +89,11 @@ export const transactionRepository = {
 
     const result = await queryOne<{ income: number; expenses: number }>(`
       SELECT
-        COALESCE(SUM(CASE WHEN tb.sign = '+' AND tb.tag_id NOT IN (?, ?, ?) THEN tb.actual_amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN tb.sign = '-' AND tb.tag_id NOT IN (?, ?, ?) THEN tb.actual_amount ELSE 0 END), 0) as expenses
+        COALESCE(SUM(CASE WHEN tb.sign = '+' AND tb.tag_id NOT IN (?, ?, ?) THEN tb.amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-' AND tb.tag_id NOT IN (?, ?, ?) THEN tb.amount ELSE 0 END), 0) as expenses
       FROM trx t
       JOIN trx_base tb ON tb.trx_id = t.id
-      WHERE t.created_at >= ? AND t.created_at < ?
+      WHERE t.timestamp >= ? AND t.timestamp < ?
     `, [
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
@@ -110,11 +109,11 @@ export const transactionRepository = {
   // Create a new transaction
   async create(input: TransactionInput): Promise<Transaction> {
     // Insert transaction header
-    const createdAt = input.created_at ?? Math.floor(Date.now() / 1000)
+    const timestamp = input.timestamp ?? Math.floor(Date.now() / 1000)
 
     await execSQL(
-      'INSERT INTO trx (id, created_at, updated_at) VALUES (randomblob(16), ?, ?)',
-      [createdAt, createdAt]
+      'INSERT INTO trx (id, timestamp) VALUES (randomblob(8), ?)',
+      [timestamp]
     )
 
     // Get the created transaction ID
@@ -160,9 +159,9 @@ export const transactionRepository = {
     // const hexTrxId = blobToHex(trxId)
 
     await execSQL(`
-      INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, real_amount, actual_amount)
-      VALUES (randomblob(16), ?, ?, ?, ?, ?, ?)
-    `, [trxId, line.account_id, line.tag_id, line.sign, line.real_amount, line.actual_amount])
+      INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate)
+      VALUES (randomblob(8), ?, ?, ?, ?, ?, ?)
+    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount, line.rate ?? 0])
 
     // Get the created line ID
     const lineResult = await queryOne<{ id: Uint8Array }>(
@@ -218,13 +217,13 @@ export const transactionRepository = {
       fields.push('sign = ?')
       values.push(input.sign)
     }
-    if (input.real_amount !== undefined) {
-      fields.push('real_amount = ?')
-      values.push(input.real_amount)
+    if (input.amount !== undefined) {
+      fields.push('amount = ?')
+      values.push(input.amount)
     }
-    if (input.actual_amount !== undefined) {
-      fields.push('actual_amount = ?')
-      values.push(input.actual_amount)
+    if (input.rate !== undefined) {
+      fields.push('rate = ?')
+      values.push(input.rate)
     }
 
     if (fields.length > 0) {
@@ -277,13 +276,12 @@ export const transactionRepository = {
 
   // Update an existing transaction
   async update(id: Uint8Array, input: TransactionInput): Promise<Transaction> {
-    const updatedAt = Math.floor(Date.now() / 1000)
-    const createdAt = input.created_at ?? updatedAt
+    const timestamp = input.timestamp ?? Math.floor(Date.now() / 1000)
 
     // Update transaction header
     await execSQL(
-      'UPDATE trx SET created_at = ?, updated_at = ? WHERE id = ?',
-      [createdAt, updatedAt, id]
+      'UPDATE trx SET timestamp = ? WHERE id = ?',
+      [timestamp, id]
     )
 
     // Manage counterparty
@@ -320,7 +318,7 @@ export const transactionRepository = {
 
   // Get exchanges view
   async getExchanges(limit?: number): Promise<ExchangeView[]> {
-    let sql = 'SELECT * FROM exchanges ORDER BY created_at DESC'
+    let sql = 'SELECT * FROM exchanges ORDER BY date_time DESC'
     if (limit) {
       sql += ` LIMIT ${limit}`
     }
@@ -329,7 +327,7 @@ export const transactionRepository = {
 
   // Get transfers view
   async getTransfers(limit?: number): Promise<TransferView[]> {
-    let sql = 'SELECT * FROM transfers ORDER BY created_at DESC'
+    let sql = 'SELECT * FROM transfers ORDER BY date_time DESC'
     if (limit) {
       sql += ` LIMIT ${limit}`
     }
@@ -340,26 +338,26 @@ export const transactionRepository = {
   async createIncome(
     accountId: number,
     tagId: number,
-    realAmount: number,
-    actualAmount: number,
+    amount: number,
     options?: {
+      rate?: number
       counterpartyId?: number
       counterpartyName?: string
       note?: string
-      createdAt?: number
+      timestamp?: number
     }
   ): Promise<Transaction> {
     return this.create({
       counterparty_id: options?.counterpartyId,
       counterparty_name: options?.counterpartyName,
-      created_at: options?.createdAt,
+      timestamp: options?.timestamp,
       lines: [
         {
           account_id: accountId,
           tag_id: tagId,
           sign: '+',
-          real_amount: realAmount,
-          actual_amount: actualAmount,
+          amount: amount,
+          rate: options?.rate,
           note: options?.note,
         },
       ],
@@ -370,26 +368,26 @@ export const transactionRepository = {
   async createExpense(
     accountId: number,
     tagId: number,
-    realAmount: number,
-    actualAmount: number,
+    amount: number,
     options?: {
+      rate?: number
       counterpartyId?: number
       counterpartyName?: string
       note?: string
-      createdAt?: number
+      timestamp?: number
     }
   ): Promise<Transaction> {
     return this.create({
       counterparty_id: options?.counterpartyId,
       counterparty_name: options?.counterpartyName,
-      created_at: options?.createdAt,
+      timestamp: options?.timestamp,
       lines: [
         {
           account_id: accountId,
           tag_id: tagId,
           sign: '-',
-          real_amount: realAmount,
-          actual_amount: actualAmount,
+          amount: amount,
+          rate: options?.rate,
           note: options?.note,
         },
       ],
@@ -406,7 +404,7 @@ export const transactionRepository = {
       feeTagId?: number
       counterpartyId?: number
       note?: string
-      createdAt?: number
+      timestamp?: number
     }
   ): Promise<Transaction> {
     const lines: TransactionLineInput[] = [
@@ -414,15 +412,13 @@ export const transactionRepository = {
         account_id: fromAccountId,
         tag_id: SYSTEM_TAGS.TRANSFER,
         sign: '-',
-        real_amount: amount,
-        actual_amount: amount,
+        amount: amount,
       },
       {
         account_id: toAccountId,
         tag_id: SYSTEM_TAGS.TRANSFER,
         sign: '+',
-        real_amount: amount,
-        actual_amount: amount,
+        amount: amount,
       },
     ]
 
@@ -432,14 +428,13 @@ export const transactionRepository = {
         account_id: fromAccountId,
         tag_id: options.feeTagId ?? SYSTEM_TAGS.FEE,
         sign: '-',
-        real_amount: options.fee,
-        actual_amount: options.fee,
+        amount: options.fee,
       })
     }
 
     return this.create({
       counterparty_id: options?.counterpartyId,
-      created_at: options?.createdAt,
+      timestamp: options?.timestamp,
       lines,
       note: options?.note,
     })
@@ -454,26 +449,24 @@ export const transactionRepository = {
     options?: {
       counterpartyId?: number
       note?: string
-      createdAt?: number
+      timestamp?: number
     }
   ): Promise<Transaction> {
     return this.create({
       counterparty_id: options?.counterpartyId,
-      created_at: options?.createdAt,
+      timestamp: options?.timestamp,
       lines: [
         {
           account_id: fromAccountId,
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '-',
-          real_amount: fromAmount,
-          actual_amount: fromAmount,
+          amount: fromAmount,
         },
         {
           account_id: toAccountId,
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+',
-          real_amount: toAmount,
-          actual_amount: toAmount,
+          amount: toAmount,
         },
       ],
       note: options?.note,
@@ -487,11 +480,11 @@ export const transactionRepository = {
     const params: unknown[] = []
 
     if (startTs) {
-      conditions.push('created_at >= ?')
+      conditions.push('date_time >= datetime(?, \'unixepoch\', \'localtime\')')
       params.push(startTs)
     }
     if (endTs) {
-      conditions.push('created_at <= ?')
+      conditions.push('date_time <= datetime(?, \'unixepoch\', \'localtime\')')
       params.push(endTs)
     }
 
@@ -499,7 +492,7 @@ export const transactionRepository = {
       sql += ' WHERE ' + conditions.join(' AND ')
     }
 
-    sql += ' ORDER BY created_at ASC'
+    sql += ' ORDER BY date_time ASC'
 
     return querySQL<TransactionLog>(sql, params)
   },

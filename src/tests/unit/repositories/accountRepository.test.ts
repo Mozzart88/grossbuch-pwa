@@ -231,14 +231,14 @@ describe('accountRepository', () => {
 
   describe('getTotalBalance', () => {
     it('returns sum of all account balances', async () => {
-      mockQueryOne.mockResolvedValue({ real_total: 250000, actual_total: 250000 })
+      mockQueryOne.mockResolvedValue({ total: 250000 })
 
       const result = await accountRepository.getTotalBalance()
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('SUM(real_balance)')
+        expect.stringContaining('SUM(balance)')
       )
-      expect(result).toEqual({ real: 250000, actual: 250000 })
+      expect(result).toBe(250000)
     })
 
     it('returns 0 for empty accounts', async () => {
@@ -246,13 +246,13 @@ describe('accountRepository', () => {
 
       const result = await accountRepository.getTotalBalance()
 
-      expect(result).toEqual({ real: 0, actual: 0 })
+      expect(result).toBe(0)
     })
   })
 
   describe('getWalletBalance', () => {
     it('returns sum of balances for specific wallet', async () => {
-      mockQueryOne.mockResolvedValue({ real_total: 150000, actual_total: 150000 })
+      mockQueryOne.mockResolvedValue({ total: 150000 })
 
       const result = await accountRepository.getWalletBalance(1)
 
@@ -260,7 +260,7 @@ describe('accountRepository', () => {
         expect.stringContaining('WHERE wallet_id = ?'),
         [1]
       )
-      expect(result).toEqual({ real: 150000, actual: 150000 })
+      expect(result).toBe(150000)
     })
 
     it('returns 0 for empty wallet', async () => {
@@ -268,7 +268,7 @@ describe('accountRepository', () => {
 
       const result = await accountRepository.getWalletBalance(99)
 
-      expect(result).toEqual({ real: 0, actual: 0 })
+      expect(result).toBe(0)
     })
   })
 

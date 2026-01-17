@@ -19,13 +19,15 @@ describe('csvExport', () => {
   })
 
   const sampleTransaction: TransactionLog = {
-    id: new Uint8Array(16),
-    created_at: '2025-01-09 14:30:00',
+    id: new Uint8Array(8),
+    date_time: '2025-01-09 14:30:00',
     wallet: 'Cash',
     currency: 'USD',
+    symbol: '$',
+    decimal_places: 2,
     tags: 'food',
-    real_amount: -5025, // -50.25 stored as integer
-    actual_amount: -5025,
+    amount: -5025, // -50.25 stored as integer
+    rate: 0,
     counterparty: 'Supermarket',
   }
 
@@ -40,8 +42,8 @@ describe('csvExport', () => {
       expect(result).toContain('Wallet')
       expect(result).toContain('Currency')
       expect(result).toContain('Tags')
-      expect(result).toContain('Real Amount')
-      expect(result).toContain('Actual Amount')
+      expect(result).toContain('Amount')
+      expect(result).toContain('Rate')
       expect(result).toContain('Counterparty')
     })
 
@@ -65,8 +67,7 @@ describe('csvExport', () => {
       const transfer: TransactionLog = {
         ...sampleTransaction,
         tags: 'transfer',
-        real_amount: -10000,
-        actual_amount: -10000,
+        amount: -10000,
       }
       mockFindAllForExport.mockResolvedValue([transfer])
 
@@ -80,8 +81,7 @@ describe('csvExport', () => {
       const income: TransactionLog = {
         ...sampleTransaction,
         tags: 'sale',
-        real_amount: 100000, // +1000.00
-        actual_amount: 100000,
+        amount: 100000, // +1000.00
         counterparty: 'Client',
       }
       mockFindAllForExport.mockResolvedValue([income])
@@ -164,8 +164,8 @@ describe('csvExport', () => {
     it('handles multiple transactions', async () => {
       const transactions = [
         { ...sampleTransaction },
-        { ...sampleTransaction, real_amount: -10000, actual_amount: -10000 },
-        { ...sampleTransaction, real_amount: -20000, actual_amount: -20000 },
+        { ...sampleTransaction, amount: -10000 },
+        { ...sampleTransaction, amount: -20000 },
       ]
       mockFindAllForExport.mockResolvedValue(transactions)
 
@@ -178,8 +178,7 @@ describe('csvExport', () => {
     it('formats amounts with specified decimal places', async () => {
       const transaction: TransactionLog = {
         ...sampleTransaction,
-        real_amount: -123456, // Will be -1234.56 with 2 decimals
-        actual_amount: -123456,
+        amount: -123456, // Will be -1234.56 with 2 decimals
       }
       mockFindAllForExport.mockResolvedValue([transaction])
 

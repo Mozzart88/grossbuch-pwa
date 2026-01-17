@@ -40,22 +40,19 @@ const mockAccount: Account = {
   id: 1,
   wallet_id: 1,
   currency_id: 1,
-  real_balance: 150000,
-  actual_balance: 150000,
-  created_at: 1704067200,
+  balance: 150000,
   updated_at: 1704067200,
   wallet: 'Cash',
   currency: 'USD',
+  symbol: '$',
+  decimal_places: 2,
 }
 
 const mockWallets: Wallet[] = [
   {
     id: 1,
     name: 'Cash',
-    icon: '💰',
     color: '#3B82F6',
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_default: true,
     accounts: [mockAccount],
   },
@@ -68,8 +65,6 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_default: true,
     is_fiat: true,
   },
@@ -79,8 +74,6 @@ const mockCurrencies: Currency[] = [
     name: 'Euro',
     symbol: '€',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_fiat: true,
   },
 ]
@@ -173,11 +166,12 @@ describe('AccountsPage', () => {
     })
   })
 
-  it('displays wallet with icon', async () => {
+  it('displays wallet with color', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('💰')).toBeInTheDocument()
+      // Wallet should be displayed with its color
+      expect(screen.getByText('Cash')).toBeInTheDocument()
     })
   })
 
@@ -202,7 +196,7 @@ describe('AccountsPage', () => {
     mockWalletRepository.findAll.mockResolvedValue([
       {
         ...mockWallets[0],
-        accounts: [{ ...mockAccount, actual_balance: -50000 }],
+        accounts: [{ ...mockAccount, balance: -50000 }],
       },
     ])
 

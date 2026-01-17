@@ -26,10 +26,7 @@ describe('walletRepository', () => {
     const sampleWallet: Wallet = {
         id: 1,
         name: 'Cash Wallet',
-        icon: '💵',
         color: '#22c55e',
-        created_at: 1704067200,
-        updated_at: 1704067200,
         is_default: true,
         is_archived: false,
         accounts: [],
@@ -39,9 +36,7 @@ describe('walletRepository', () => {
         id: 1,
         wallet_id: 1,
         currency_id: 1,
-        real_balance: 100000,
-        actual_balance: 100000,
-        created_at: 1704067200,
+        balance: 100000,
         updated_at: 1704067200,
         currency: 'USD',
         is_default: true,
@@ -192,17 +187,17 @@ describe('walletRepository', () => {
 
             expect(mockExecSQL).toHaveBeenCalledWith(
                 expect.stringContaining('INSERT INTO wallet'),
-                ['New Wallet', '🏦', '#3b82f6']
+                ['New Wallet', '#3b82f6']
             )
             expect(result.name).toBe('New Wallet')
         })
 
-        it('creates wallet with null icon and color when not provided', async () => {
+        it('creates wallet with null color when not provided', async () => {
             const input: WalletInput = { name: 'Simple Wallet' }
 
             mockQueryOne
                 .mockResolvedValueOnce(null)
-                .mockResolvedValueOnce({ ...sampleWallet, name: 'Simple Wallet', icon: null, color: null })
+                .mockResolvedValueOnce({ ...sampleWallet, name: 'Simple Wallet', color: null })
             mockQuerySQL.mockResolvedValue([])
             mockGetLastInsertId.mockResolvedValue(2)
 
@@ -210,7 +205,7 @@ describe('walletRepository', () => {
 
             expect(mockExecSQL).toHaveBeenCalledWith(
                 expect.stringContaining('INSERT INTO wallet'),
-                ['Simple Wallet', null, null]
+                ['Simple Wallet', null]
             )
         })
 
@@ -251,18 +246,6 @@ describe('walletRepository', () => {
                 expect.arrayContaining(['Updated Wallet', 1])
             )
             expect(result.name).toBe('Updated Wallet')
-        })
-
-        it('updates wallet icon', async () => {
-            mockQueryOne.mockResolvedValue({ ...sampleWallet, icon: '🏧' })
-            mockQuerySQL.mockResolvedValue([])
-
-            await walletRepository.update(1, { icon: '🏧' })
-
-            expect(mockExecSQL).toHaveBeenCalledWith(
-                expect.stringContaining('icon = ?'),
-                expect.arrayContaining(['🏧', 1])
-            )
         })
 
         it('updates wallet color', async () => {
@@ -309,14 +292,14 @@ describe('walletRepository', () => {
         it('updates multiple fields at once', async () => {
             mockQueryOne
                 .mockResolvedValueOnce(null)
-                .mockResolvedValueOnce({ ...sampleWallet, name: 'New', icon: '🎯', color: '#000' })
+                .mockResolvedValueOnce({ ...sampleWallet, name: 'New', color: '#000' })
             mockQuerySQL.mockResolvedValue([])
 
-            await walletRepository.update(1, { name: 'New', icon: '🎯', color: '#000' })
+            await walletRepository.update(1, { name: 'New', color: '#000' })
 
             expect(mockExecSQL).toHaveBeenCalledWith(
                 expect.stringContaining('name = ?'),
-                expect.arrayContaining(['New', '🎯', '#000', 1])
+                expect.arrayContaining(['New', '#000', 1])
             )
         })
     })

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { TransactionView, MonthSummary as MonthSummaryType } from '../../types'
+import type { TransactionLog, MonthSummary as MonthSummaryType } from '../../types'
 import { transactionRepository, accountRepository, currencyRepository } from '../../services/repositories'
 import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
 import { MonthNavigator } from './MonthNavigator'
@@ -16,14 +16,14 @@ function blobToHex(blob: Uint8Array): string {
 }
 
 // Group transactions by date
-function groupByDate(transactions: TransactionView[]): Map<string, Map<string, TransactionView[]>> {
-  const groups = new Map<string, Map<string, TransactionView[]>>()
+function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
+  const groups = new Map<string, Map<string, TransactionLog[]>>()
 
   for (const tx of transactions) {
     // Extract date part from datetime string
-    const date = tx.created_at.split(' ')[0]
+    const date = tx.date_time.split(' ')[0]
     if (!groups.has(date)) {
-      groups.set(date, new Map<string, TransactionView[]>)
+      groups.set(date, new Map<string, TransactionLog[]>)
     }
     const hexId = blobToHex(tx.id)
     if (!groups.get(date)!.has(hexId)) {
@@ -38,7 +38,7 @@ function groupByDate(transactions: TransactionView[]): Map<string, Map<string, T
 export function TransactionList() {
   const navigate = useNavigate()
   const [month, setMonth] = useState(getCurrentMonth())
-  const [transactions, setTransactions] = useState<TransactionView[]>([])
+  const [transactions, setTransactions] = useState<TransactionLog[]>([])
   const [summary, setSummary] = useState<MonthSummaryType>({
     income: 0,
     expenses: 0,
@@ -71,7 +71,7 @@ export function TransactionList() {
       setSummary({
         income: monthSum.income / Math.pow(10, decimals),
         expenses: monthSum.expenses / Math.pow(10, decimals),
-        totalBalance: totalBalance.actual / Math.pow(10, decimals),
+        totalBalance: totalBalance / Math.pow(10, decimals),
         displayCurrencySymbol,
       })
     } catch (error) {

@@ -49,12 +49,12 @@ const mockAccount: Account = {
     id: 1,
     wallet_id: 1,
     currency_id: 1,
-    real_balance: 15000,
-    actual_balance: 15000,
-    created_at: 1704067200,
+    balance: 15000,
     updated_at: 1704067200,
     wallet: 'Cash',
     currency: 'USD',
+    symbol: '$',
+    decimal_places: 2,
     is_default: true,
 }
 
@@ -62,51 +62,45 @@ const mockAccount2: Account = {
     id: 2,
     wallet_id: 2,
     currency_id: 2,
-    real_balance: 20000,
-    actual_balance: 20000,
-    created_at: 1704067200,
+    balance: 20000,
     updated_at: 1704067200,
     wallet: 'Bank',
     currency: 'EUR',
+    symbol: '€',
+    decimal_places: 2,
 }
 
 const mockWallets: Wallet[] = [
     {
         id: 1,
         name: 'Cash',
-        icon: '💵',
         color: '#4CAF50',
-        created_at: 1704067200,
-        updated_at: 1704067200,
         is_default: true,
         accounts: [mockAccount],
     },
     {
         id: 2,
         name: 'Bank',
-        icon: '🏦',
         color: '#2196F3',
-        created_at: 1704067200,
-        updated_at: 1704067200,
         accounts: [mockAccount2],
     },
 ]
 
 const mockExpenseTags: Tag[] = [
-    { id: 10, name: 'Food', created_at: 1704067200, updated_at: 1704067200 },
+    { id: 10, name: 'Food' },
 ]
 
 const mockIncomeTags: Tag[] = [
-    { id: 20, name: 'Salary', created_at: 1704067200, updated_at: 1704067200 },
+    { id: 20, name: 'Salary' },
 ]
 
 const mockFeeTags: Tag[] = [
-    { id: SYSTEM_TAGS.FEE, name: 'Fee', created_at: 1704067200, updated_at: 1704067200 },
+    { id: SYSTEM_TAGS.FEE, name: 'Fee' },
 ]
 
 const mockCurrencies: Currency[] = [
-    { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, created_at: 1704067200, updated_at: 1704067200, is_default: true },
-    { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, created_at: 1704067200, updated_at: 1704067200 },
+    { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true },
+    { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2 },
 ]
 
 describe('TransactionForm Editing mode', () => {
@@ -136,18 +130,17 @@ describe('TransactionForm Editing mode', () => {
 
     it('populates fields for an expense transaction', async () => {
         const expenseData: Transaction = {
-            id: new Uint8Array(16),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array(8),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array(16),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array(8),
                     account_id: 1,
                     tag_id: 10,
                     sign: '-',
-                    real_amount: 5000,
-                    actual_amount: 5000,
+                    amount: 5000,
+                    rate: 0,
                     wallet: 'Cash',
                     currency: 'USD',
                     tag: 'Food',
@@ -167,18 +160,17 @@ describe('TransactionForm Editing mode', () => {
 
     it('populates fields for an income transaction', async () => {
         const incomeData: Transaction = {
-            id: new Uint8Array(16),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array(8),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array(16),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array(8),
                     account_id: 1,
                     tag_id: 20,
                     sign: '+',
-                    real_amount: 100000,
-                    actual_amount: 100000,
+                    amount: 100000,
+                    rate: 0,
                     wallet: 'Cash',
                     currency: 'USD',
                     tag: 'Salary',
@@ -197,27 +189,26 @@ describe('TransactionForm Editing mode', () => {
 
     it('populates fields for a transfer transaction', async () => {
         const transferData: Transaction = {
-            id: new Uint8Array(16),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array(8),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array(16),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array(8),
                     account_id: 1,
                     tag_id: SYSTEM_TAGS.TRANSFER,
                     sign: '-',
-                    real_amount: 2000,
-                    actual_amount: 2000,
+                    amount: 2000,
+                    rate: 0,
                 },
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array(16),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array(8),
                     account_id: 1, // To account (simplifying mock wallets)
                     tag_id: SYSTEM_TAGS.TRANSFER,
                     sign: '+',
-                    real_amount: 2000,
-                    actual_amount: 2000,
+                    amount: 2000,
+                    rate: 0,
                 },
             ],
         }
@@ -232,18 +223,17 @@ describe('TransactionForm Editing mode', () => {
 
     it('updates instead of creating when initialData is present', async () => {
         const expenseData: Transaction = {
-            id: new Uint8Array([1, 2, 3]),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array([1, 2, 3]),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
                     account_id: 1,
                     tag_id: 10,
                     sign: '-',
-                    real_amount: 5000,
-                    actual_amount: 5000,
+                    amount: 5000,
+                    rate: 0,
                 },
             ],
         }
@@ -265,18 +255,17 @@ describe('TransactionForm Editing mode', () => {
 
     it('updates instead of creating when initialData is present (income)', async () => {
         const incomeData: Transaction = {
-            id: new Uint8Array([1, 2, 3]),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array([1, 2, 3]),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
                     account_id: 1,
                     tag_id: 20,
                     sign: '+',
-                    real_amount: 100000,
-                    actual_amount: 100000,
+                    amount: 100000,
+                    rate: 0,
                 },
             ],
         }
@@ -294,27 +283,26 @@ describe('TransactionForm Editing mode', () => {
 
     it('updates instead of creating when initialData is present (transfer)', async () => {
         const transferData: Transaction = {
-            id: new Uint8Array([1, 2, 3]),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array([1, 2, 3]),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
                     account_id: 1,
                     tag_id: SYSTEM_TAGS.TRANSFER,
                     sign: '-',
-                    real_amount: 2000,
-                    actual_amount: 2000,
+                    amount: 2000,
+                    rate: 0,
                 },
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array([1, 2, 3]),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
                     account_id: 2,
                     tag_id: SYSTEM_TAGS.TRANSFER,
                     sign: '+',
-                    real_amount: 2000,
-                    actual_amount: 2000,
+                    amount: 2000,
+                    rate: 0,
                 },
             ],
         }
@@ -332,27 +320,26 @@ describe('TransactionForm Editing mode', () => {
 
     it('updates instead of creating when initialData is present (exchange)', async () => {
         const exchangeData: Transaction = {
-            id: new Uint8Array([1, 2, 3]),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+            timestamp: 1704803400,
             lines: [
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array([1, 2, 3]),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
                     account_id: 1,
                     tag_id: SYSTEM_TAGS.EXCHANGE,
                     sign: '-',
-                    real_amount: 10000,
-                    actual_amount: 10000,
+                    amount: 10000,
+                    rate: 0,
                 },
                 {
-                    id: new Uint8Array(16),
-                    trx_id: new Uint8Array([1, 2, 3]),
+                    id: new Uint8Array(8),
+                    trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
                     account_id: 2,
                     tag_id: SYSTEM_TAGS.EXCHANGE,
                     sign: '+',
-                    real_amount: 9200,
-                    actual_amount: 9200,
+                    amount: 9200,
+                    rate: 0,
                 },
             ],
         }
@@ -391,9 +378,8 @@ describe('TransactionForm Editing mode', () => {
 
     it('early returns when initialData has no lines', async () => {
         const emptyData: Transaction = {
-            id: new Uint8Array(16),
-            created_at: 1704803400,
-            updated_at: 1704803400,
+            id: new Uint8Array(8),
+            timestamp: 1704803400,
             lines: [],
         }
 

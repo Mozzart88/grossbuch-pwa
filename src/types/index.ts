@@ -1,19 +1,31 @@
-// Tag (replaces Category)
+// Icon
+export interface Icon {
+  id: number
+  value: string
+}
+
+// Tag icon relationship
+export interface TagIcon {
+  tag_id: number
+  icon_id: number
+}
+
+// Tag (replaces Category) - no timestamps
 export interface Tag {
   id: number
   name: string
-  created_at: number
-  updated_at: number
   // Joined fields
   parent_ids?: number[]
   parent_names?: string[]
   child_ids?: number[]
   child_names?: string[]
+  icon?: string // Joined from tag_icon -> icon
 }
 
 export interface TagInput {
   name: string
   parent_ids?: number[]
+  icon_id?: number
 }
 
 // Tag hierarchy relationship
@@ -22,15 +34,13 @@ export interface TagRelation {
   parent_id: number
 }
 
-// Currency
+// Currency - no timestamps
 export interface Currency {
   id: number
   code: string
   name: string
   symbol: string
   decimal_places: number
-  created_at: number
-  updated_at: number
   // Joined fields
   tags?: string[]
   is_default?: boolean
@@ -54,14 +64,11 @@ export interface ExchangeRate {
   updated_at: number
 }
 
-// Wallet
+// Wallet - no icon or timestamps, just name and color
 export interface Wallet {
   id: number
   name: string
-  icon: string | null
   color: string | null
-  created_at: number
-  updated_at: number
   // Joined fields
   tags?: string[]
   is_default?: boolean
@@ -71,22 +78,21 @@ export interface Wallet {
 
 export interface WalletInput {
   name: string
-  icon?: string
   color?: string
 }
 
-// Account (wallet + currency combination)
+// Account (wallet + currency combination) - single balance, no created_at
 export interface Account {
   id: number
   wallet_id: number
   currency_id: number
-  real_balance: number // Stored as integer, divide by 10^decimal_places
-  actual_balance: number // Stored as integer, divide by 10^decimal_places
-  created_at: number
+  balance: number // Stored as integer, divide by 10^decimal_places
   updated_at: number
   // Joined fields from 'accounts' view
   wallet?: string
   currency?: string
+  symbol?: string
+  decimal_places?: number
   tags?: string
   is_default?: boolean
 }
@@ -96,16 +102,20 @@ export interface AccountInput {
   currency_id: number
 }
 
-// Counterparty
+// Counterparty - no timestamps, note in separate table
 export interface Counterparty {
   id: number
   name: string
-  note: string | null
-  created_at: number
-  updated_at: number
   // Joined fields
+  note?: string | null // Joined from counterparty_note
   tag_ids?: number[]
   tags?: string[]
+}
+
+// Counterparty note in separate table
+export interface CounterpartyNote {
+  counterparty_id: number
+  note: string
 }
 
 export interface CounterpartyInput {
@@ -114,11 +124,10 @@ export interface CounterpartyInput {
   tag_ids?: number[]
 }
 
-// Transaction header
+// Transaction header - 8-byte blob id, single timestamp
 export interface Transaction {
-  id: Uint8Array // 16-byte BLOB
-  created_at: number
-  updated_at: number
+  id: Uint8Array // 8-byte BLOB
+  timestamp: number
   // Joined fields
   counterparty?: string | null
   counterparty_id?: number | null
@@ -126,22 +135,22 @@ export interface Transaction {
 }
 
 export interface TransactionInput {
-  created_at?: number
+  timestamp?: number
   counterparty_id?: number
   counterparty_name?: string // Auto-creates if doesn't exist
   lines: TransactionLineInput[]
   note?: string
 }
 
-// Transaction line item (trx_base)
+// Transaction line item (trx_base) - amount/rate instead of real/actual
 export interface TransactionLine {
-  id: Uint8Array // 16-byte BLOB
+  id: Uint8Array // 8-byte BLOB
   trx_id: Uint8Array
   account_id: number
   tag_id: number
   sign: '+' | '-'
-  real_amount: number // Stored as integer, divide by 10^decimal_places
-  actual_amount: number // Stored as integer, divide by 10^decimal_places
+  amount: number // Stored as integer, divide by 10^decimal_places
+  rate: number // Exchange rate (1 = default currency, otherwise multiply to get default currency value)
   // Joined fields
   wallet?: string
   currency?: string
@@ -153,8 +162,8 @@ export interface TransactionLineInput {
   account_id: number
   tag_id: number
   sign: '+' | '-'
-  real_amount: number
-  actual_amount: number
+  amount: number
+  rate: number // Defaults to 1 for default currency
   note?: string
 }
 
@@ -164,16 +173,16 @@ export interface TransactionNote {
   note: string
 }
 
-// Budget
+// Budget - 8-byte blob id, amount is INTEGER
 export interface Budget {
-  id: Uint8Array // 16-byte BLOB
+  id: Uint8Array // 8-byte BLOB
   start: number // Unix timestamp
   end: number // Unix timestamp
   tag_id: number
-  amount: number
+  amount: number // INTEGER (not REAL)
   // Joined fields
   tag?: string
-  actual?: number
+  actual: number
 }
 
 export interface BudgetInput {
@@ -188,53 +197,48 @@ export interface BudgetInput {
 // From 'transactions' view
 export interface TransactionView {
   id: Uint8Array
-  created_at: string // datetime string from view
+  date_time: string // datetime string from view (was created_at)
   counterparty: string | null
   wallet: string
   currency: string
-  symbol: string
-  decimal_places: number
   tags: string
-  real_amount: number
-  actual_amount: number
+  amount: number // Single amount instead of real/actual
 }
 
 // From 'exchanges' view
 export interface ExchangeView {
   id: Uint8Array
-  created_at: string
+  date_time: string
   counterparty: string | null
   wallet: string
   currency: string
   tag: string
-  real_amount: number
-  actual_amount: number
+  amount: number
 }
 
 // From 'transfers' view
 export interface TransferView {
   id: Uint8Array
-  created_at: string
+  date_time: string
   counterparty: string | null
   wallet: string
   currency: string
   tag: string
-  real_amount: number
-  actual_amount: number
+  amount: number
 }
 
 // From 'trx_log' view
 export interface TransactionLog {
   id: Uint8Array
-  created_at: string
+  date_time: string
   counterparty: string | null
   wallet: string
   currency: string
   symbol: string
   decimal_places: number
   tags: string
-  real_amount: number
-  actual_amount: number
+  amount: number
+  rate: number
 }
 
 // From 'summary' view

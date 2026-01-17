@@ -133,7 +133,7 @@ export const tagRepository = {
 
     if (input.name !== undefined) {
       await execSQL(
-        "UPDATE tag SET name = ?, updated_at = strftime('%s', datetime('now', 'localtime')) WHERE id = ?",
+        'UPDATE tag SET name = ? WHERE id = ?',
         [input.name, id]
       )
     }

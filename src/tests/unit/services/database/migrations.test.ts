@@ -579,7 +579,7 @@ describe('migrations', () => {
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO wallet (id, name, icon, color')
+        expect.stringContaining('INSERT INTO wallet (name)')
       )
     })
 
@@ -589,7 +589,7 @@ describe('migrations', () => {
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO counterparty (id, name, note')
+        expect.stringContaining('INSERT INTO counterparty (id, name)')
       )
     })
 

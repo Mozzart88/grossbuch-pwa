@@ -38,8 +38,7 @@ describe('Accounts Integration', () => {
       expect(result[0].values[0]).toBeDefined()
       expect(result[0].values[0][1]).toBe(walletId) // wallet_id
       expect(result[0].values[0][2]).toBe(1) // currency_id
-      expect(result[0].values[0][3]).toBe(0) // real_balance default
-      expect(result[0].values[0][4]).toBe(0) // actual_balance default
+      expect(result[0].values[0][3]).toBe(0) // balance default
     })
 
     it('updates account properties', async () => {
@@ -49,14 +48,13 @@ describe('Accounts Integration', () => {
       const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
       db.run(
-        'UPDATE account SET real_balance = ?, actual_balance = ? WHERE id = ?',
-        [50000, 50000, accountId]
+        'UPDATE account SET balance = ? WHERE id = ?',
+        [50000, accountId]
       )
 
-      const result = db.exec('SELECT real_balance, actual_balance FROM account WHERE id = ?', [accountId])
+      const result = db.exec('SELECT balance FROM account WHERE id = ?', [accountId])
 
       expect(result[0].values[0][0]).toBe(50000)
-      expect(result[0].values[0][1]).toBe(50000)
     })
 
     it('archives account by adding archived tag', async () => {
@@ -157,15 +155,14 @@ describe('Accounts Integration', () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Main' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, real_balance: 100000 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
 
       // Income
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.SALE,
         sign: '+',
-        real_amount: 50000,
-        actual_amount: 50000,
+        amount: 50000,
       })
 
       // Expense
@@ -173,8 +170,7 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        real_amount: 20000,
-        actual_amount: 20000,
+        amount: 20000,
       })
 
       // Another Expense
@@ -182,13 +178,12 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        real_amount: 10000,
-        actual_amount: 10000,
+        amount: 10000,
       })
 
       // Calculate net from transactions
       const result = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN real_amount ELSE -real_amount END) as net
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
         FROM trx_base WHERE account_id = ?
       `, [accountId])
 
@@ -200,18 +195,17 @@ describe('Accounts Integration', () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Main' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, real_balance: 10000 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 10000 })
 
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        real_amount: 20000,
-        actual_amount: 20000,
+        amount: 20000,
       })
 
       const result = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN real_amount ELSE -real_amount END) as net
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
         FROM trx_base WHERE account_id = ?
       `, [accountId])
 
@@ -252,45 +246,44 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        real_amount: 10000,
-        actual_amount: 10000,
+        amount: 10000,
       })
 
       // Transfer out (this account is source)
-      const trxId1 = new Uint8Array(16)
+      const trxId1 = new Uint8Array(8)
       crypto.getRandomValues(trxId1)
       const timestamp = Math.floor(Date.now() / 1000)
-      db.run('INSERT INTO trx (id, created_at, updated_at) VALUES (?, ?, ?)', [trxId1, timestamp, timestamp])
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId1, timestamp])
 
-      const debitId = new Uint8Array(16)
+      const debitId = new Uint8Array(8)
       crypto.getRandomValues(debitId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, real_amount, actual_amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId, trxId1, accountId, SYSTEM_TAGS.TRANSFER, '-', 5000, 5000]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId1, accountId, SYSTEM_TAGS.TRANSFER, '-', 5000, 0]
       )
-      const creditId = new Uint8Array(16)
+      const creditId = new Uint8Array(8)
       crypto.getRandomValues(creditId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, real_amount, actual_amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId, trxId1, account2Id, SYSTEM_TAGS.TRANSFER, '+', 5000, 5000]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId1, account2Id, SYSTEM_TAGS.TRANSFER, '+', 5000, 0]
       )
 
       // Transfer in (this account is destination)
-      const trxId2 = new Uint8Array(16)
+      const trxId2 = new Uint8Array(8)
       crypto.getRandomValues(trxId2)
-      db.run('INSERT INTO trx (id, created_at, updated_at) VALUES (?, ?, ?)', [trxId2, timestamp, timestamp])
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId2, timestamp])
 
-      const debitId2 = new Uint8Array(16)
+      const debitId2 = new Uint8Array(8)
       crypto.getRandomValues(debitId2)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, real_amount, actual_amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId2, trxId2, account2Id, SYSTEM_TAGS.TRANSFER, '-', 2500, 2500]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [debitId2, trxId2, account2Id, SYSTEM_TAGS.TRANSFER, '-', 2500, 0]
       )
-      const creditId2 = new Uint8Array(16)
+      const creditId2 = new Uint8Array(8)
       crypto.getRandomValues(creditId2)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, real_amount, actual_amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId2, trxId2, accountId, SYSTEM_TAGS.TRANSFER, '+', 2500, 2500]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [creditId2, trxId2, accountId, SYSTEM_TAGS.TRANSFER, '+', 2500, 0]
       )
 
       // Count transactions linked to accountId

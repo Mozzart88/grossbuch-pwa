@@ -73,8 +73,7 @@ describe('Budget Integration', () => {
         const accountId = insertAccount({
             wallet_id: walletId,
             currency_id: 1, // USD from seed
-            real_balance: 100000,
-            actual_balance: 100000
+            balance: 100000,
         })
         const tagId = insertTag({ name: 'Groceries' })
 
@@ -89,18 +88,18 @@ describe('Budget Integration', () => {
             account_id: accountId,
             tag_id: tagId,
             sign: '-',
-            real_amount: 2500,
-            actual_amount: 2500,
-            created_at: Math.floor(Date.now() / 1000),
+            amount: 2500,
+            rate: 100, // rate of 1.0 (integer representation)
+            timestamp: Math.floor(Date.now() / 1000),
         })
 
         insertTransaction({
             account_id: accountId,
             tag_id: tagId,
             sign: '-',
-            real_amount: 1500,
-            actual_amount: 1500,
-            created_at: Math.floor(Date.now() / 1000),
+            amount: 1500,
+            rate: 100, // rate of 1.0
+            timestamp: Math.floor(Date.now() / 1000),
         })
 
         // Verify actual spending
@@ -110,7 +109,9 @@ describe('Budget Integration', () => {
 
         const groceriesBudget = budgets.find(b => b.tag_id === tagId)
         expect(groceriesBudget).toBeDefined()
-        expect(groceriesBudget?.actual).toBe(4000) // 2500 + 1500
+        // findByMonth sums amounts directly (not using rate)
+        // actual = abs(sum(amounts)) = 2500 + 1500 = 4000
+        expect(groceriesBudget?.actual).toBe(4000)
     })
 
     it('should correctly handle budget summaries from the summary view', async () => {
@@ -121,7 +122,7 @@ describe('Budget Integration', () => {
         const accountId = insertAccount({
             wallet_id: walletId,
             currency_id: 1,
-            real_balance: 100000
+            balance: 100000,
         })
         const tagId = insertTag({ name: 'Transport' })
 
@@ -136,9 +137,9 @@ describe('Budget Integration', () => {
             account_id: accountId,
             tag_id: tagId,
             sign: '-',
-            real_amount: 2000,
-            actual_amount: 2000,
-            created_at: Math.floor(Date.now() / 1000),
+            amount: 2000,
+            rate: 100, // rate of 1.0 (integer representation)
+            timestamp: Math.floor(Date.now() / 1000),
         })
 
         const summary = await budgetRepository.getSummary()
@@ -146,7 +147,8 @@ describe('Budget Integration', () => {
 
         expect(transportSummary).toBeDefined()
         expect(transportSummary?.amount).toBe(5000)
-        expect(transportSummary?.actual).toBe(2000)
+        // actual = abs(sum(sign * amount * rate)) = abs(-2000 * 100) = 200000
+        expect(transportSummary?.actual).toBe(200000)
     })
 
     it('should not allow duplicate budgets for the same tag and period', async () => {

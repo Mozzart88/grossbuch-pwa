@@ -209,7 +209,7 @@ export function CurrenciesPage() {
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
             placeholder="e.g., B, L"
-            maxLength={3}
+            maxLength={4}
             required
           />
           <Input
@@ -228,22 +228,20 @@ export function CurrenciesPage() {
               <button
                 type="button"
                 onClick={() => setIsFiat(true)}
-                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                  isFiat
+                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${isFiat
                     ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
                     : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 Fiat
               </button>
               <button
                 type="button"
                 onClick={() => setIsFiat(false)}
-                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                  !isFiat
+                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${!isFiat
                     ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
                     : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 Crypto
               </button>

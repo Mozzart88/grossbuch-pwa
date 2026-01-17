@@ -8,10 +8,10 @@ interface AccountView {
   id: number
   wallet: string
   currency: string
+  symbol: string
+  decimal_places: number
   tags: string | null
-  real_balance: number
-  actual_balance: number
-  created_at: number
+  balance: number
   updated_at: number
 }
 
@@ -122,34 +122,26 @@ export const accountRepository = {
   },
 
   // Calculate total balance across all accounts in default currency
-  async getTotalBalance(): Promise<{ real: number; actual: number }> {
-    const result = await queryOne<{ real_total: number; actual_total: number }>(`
+  async getTotalBalance(): Promise<number> {
+    const result = await queryOne<{ total: number }>(`
       SELECT
-        COALESCE(SUM(real_balance), 0) as real_total,
-        COALESCE(SUM(actual_balance), 0) as actual_total
+        COALESCE(SUM(balance), 0) as total
       FROM account
     `)
 
-    return {
-      real: result?.real_total ?? 0,
-      actual: result?.actual_total ?? 0,
-    }
+    return result?.total ?? 0
   },
 
   // Get total balance for a specific wallet
-  async getWalletBalance(walletId: number): Promise<{ real: number; actual: number }> {
-    const result = await queryOne<{ real_total: number; actual_total: number }>(`
+  async getWalletBalance(walletId: number): Promise<number> {
+    const result = await queryOne<{ total: number }>(`
       SELECT
-        COALESCE(SUM(real_balance), 0) as real_total,
-        COALESCE(SUM(actual_balance), 0) as actual_total
+        COALESCE(SUM(balance), 0) as total
       FROM account
       WHERE wallet_id = ?
     `, [walletId])
 
-    return {
-      real: result?.real_total ?? 0,
-      actual: result?.actual_total ?? 0,
-    }
+    return result?.total ?? 0
   },
 
   // Convert amount from one currency to another using exchange rates

@@ -182,7 +182,7 @@ describe('AddTransactionPage', () => {
               account_id: 1,
               tag_id: 12,
               sign: '-',
-              real_amount: 5000,
+              amount: 5000,
             }),
           ],
         })

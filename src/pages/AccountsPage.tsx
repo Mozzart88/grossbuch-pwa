@@ -14,7 +14,6 @@ export function AccountsPage() {
   const [walletModalOpen, setWalletModalOpen] = useState(false)
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null)
   const [walletName, setWalletName] = useState('')
-  const [walletIcon, setWalletIcon] = useState('')
   const [walletColor, setWalletColor] = useState('')
 
   // Add currency modal state
@@ -24,7 +23,6 @@ export function AccountsPage() {
 
   const [submitting, setSubmitting] = useState(false)
 
-  const WALLET_ICONS = ['💰', '🏦', '💳', '💵', '🪙', '📊', '💎', '🎯']
   const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6']
 
   useEffect(() => {
@@ -51,12 +49,10 @@ export function AccountsPage() {
     if (wallet) {
       setEditingWallet(wallet)
       setWalletName(wallet.name)
-      setWalletIcon(wallet.icon || '')
       setWalletColor(wallet.color || '')
     } else {
       setEditingWallet(null)
       setWalletName('')
-      setWalletIcon('')
       setWalletColor('')
     }
     setWalletModalOpen(true)
@@ -75,7 +71,6 @@ export function AccountsPage() {
     try {
       const data: WalletInput = {
         name: walletName.trim(),
-        icon: walletIcon || undefined,
         color: walletColor || undefined,
       }
 
@@ -201,7 +196,7 @@ export function AccountsPage() {
                 style={{ borderLeft: wallet.color ? `4px solid ${wallet.color}` : undefined }}
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">{wallet.icon || '💰'}</span>
+                  <span className="text-2xl">💰</span>
                   <div>
                     <p className="font-medium text-gray-900 dark:text-gray-100">
                       {wallet.name}
@@ -249,13 +244,10 @@ export function AccountsPage() {
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Real: {formatBalance(account.real_balance, currency)}
-                          </p>
                         </div>
                         <div className="text-right">
-                          <p className={`text-sm font-semibold ${account.actual_balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {formatBalance(account.actual_balance, currency)}
+                          <p className={`text-sm font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {formatBalance(account.balance, currency)}
                           </p>
                           <button
                             onClick={() => handleDeleteAccount(account, wallet.name)}
@@ -284,25 +276,6 @@ export function AccountsPage() {
             placeholder="e.g., Cash, Bank Account"
             required
           />
-          <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Icon</label>
-            <div className="flex flex-wrap gap-2">
-              {WALLET_ICONS.map((icon) => (
-                <button
-                  key={icon}
-                  type="button"
-                  onClick={() => setWalletIcon(icon)}
-                  className={`w-10 h-10 text-xl rounded-lg border-2 transition-colors ${
-                    walletIcon === icon
-                      ? 'border-primary-500 bg-primary-50 dark:bg-primary-900'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                  }`}
-                >
-                  {icon}
-                </button>
-              ))}
-            </div>
-          </div>
           <div className="space-y-1">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Color</label>
             <div className="flex flex-wrap gap-2">

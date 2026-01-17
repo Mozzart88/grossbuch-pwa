@@ -26,8 +26,6 @@ describe('counterpartyRepository', () => {
     id: 1,
     name: 'Supermarket',
     note: 'Weekly groceries',
-    created_at: 1704067200,
-    updated_at: 1704067200,
     tag_ids: [12, 14],
     tags: ['food', 'transport'],
   }
@@ -41,7 +39,10 @@ describe('counterpartyRepository', () => {
       const result = await counterpartyRepository.findAll()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        'SELECT * FROM counterparty ORDER BY name ASC'
+        expect.stringContaining('FROM counterparty c')
+      )
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('LEFT JOIN counterparty_note')
       )
       expect(result[0].tag_ids).toEqual([12, 14])
       expect(result[0].tags).toEqual(['food', 'transport'])
@@ -75,7 +76,11 @@ describe('counterpartyRepository', () => {
       const result = await counterpartyRepository.findById(1)
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT * FROM counterparty WHERE id = ?',
+        expect.stringContaining('FROM counterparty c'),
+        [1]
+      )
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('LEFT JOIN counterparty_note'),
         [1]
       )
       expect(result?.tag_ids).toEqual([12, 14])
@@ -150,10 +155,17 @@ describe('counterpartyRepository', () => {
 
       const result = await counterpartyRepository.create(input)
 
+      // Insert counterparty name only
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO counterparty'),
-        ['New Store', 'Test notes']
+        expect.stringContaining('INSERT INTO counterparty (name)'),
+        ['New Store']
       )
+      // Insert note into separate table
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO counterparty_note (counterparty_id, note) VALUES (?, ?)',
+        [2, 'Test notes']
+      )
+      // Insert tag links
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO counterparty_to_tags'),
         [2, 12]
@@ -229,9 +241,14 @@ describe('counterpartyRepository', () => {
 
       await counterpartyRepository.update(1, { note: 'New note' })
 
+      // Note is updated via DELETE + INSERT in separate table
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('note = ?'),
-        expect.arrayContaining(['New note'])
+        'DELETE FROM counterparty_note WHERE counterparty_id = ?',
+        [1]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO counterparty_note (counterparty_id, note) VALUES (?, ?)',
+        [1, 'New note']
       )
     })
 

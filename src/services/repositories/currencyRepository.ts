@@ -90,7 +90,6 @@ export const currencyRepository = {
     }
 
     if (fields.length > 0) {
-      fields.push("updated_at = strftime('%s', datetime('now', 'localtime'))")
       values.push(id)
       await execSQL(`UPDATE currency SET ${fields.join(', ')} WHERE id = ?`, values)
     }

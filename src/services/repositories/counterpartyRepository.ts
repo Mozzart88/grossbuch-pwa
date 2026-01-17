@@ -3,7 +3,12 @@ import type { Counterparty, CounterpartyInput, CounterpartySummary } from '../..
 
 export const counterpartyRepository = {
   async findAll(): Promise<Counterparty[]> {
-    const counterparties = await querySQL<Counterparty>('SELECT * FROM counterparty ORDER BY name ASC')
+    const counterparties = await querySQL<Counterparty>(`
+      SELECT c.*, cn.note
+      FROM counterparty c
+      LEFT JOIN counterparty_note cn ON cn.counterparty_id = c.id
+      ORDER BY c.name ASC
+    `)
 
     // Load tag IDs for each counterparty
     for (const cp of counterparties) {
@@ -21,7 +26,12 @@ export const counterpartyRepository = {
   },
 
   async findById(id: number): Promise<Counterparty | null> {
-    const counterparty = await queryOne<Counterparty>('SELECT * FROM counterparty WHERE id = ?', [id])
+    const counterparty = await queryOne<Counterparty>(`
+      SELECT c.*, cn.note
+      FROM counterparty c
+      LEFT JOIN counterparty_note cn ON cn.counterparty_id = c.id
+      WHERE c.id = ?
+    `, [id])
     if (!counterparty) return null
 
     const links = await querySQL<{ tag_id: number; name: string }>(`
@@ -57,10 +67,18 @@ export const counterpartyRepository = {
     }
 
     await execSQL(
-      `INSERT INTO counterparty (name, note) VALUES (?, ?)`,
-      [input.name, input.note ?? null]
+      `INSERT INTO counterparty (name) VALUES (?)`,
+      [input.name]
     )
     const id = await getLastInsertId()
+
+    // Add note to separate table if provided
+    if (input.note) {
+      await execSQL(
+        'INSERT INTO counterparty_note (counterparty_id, note) VALUES (?, ?)',
+        [id, input.note]
+      )
+    }
 
     // Link tags
     if (input.tag_ids && input.tag_ids.length > 0) {
@@ -86,22 +104,19 @@ export const counterpartyRepository = {
       }
     }
 
-    const fields: string[] = []
-    const values: unknown[] = []
-
     if (input.name !== undefined) {
-      fields.push('name = ?')
-      values.push(input.name)
-    }
-    if (input.note !== undefined) {
-      fields.push('note = ?')
-      values.push(input.note)
+      await execSQL('UPDATE counterparty SET name = ? WHERE id = ?', [input.name, id])
     }
 
-    if (fields.length > 0) {
-      fields.push("updated_at = strftime('%s', datetime('now', 'localtime'))")
-      values.push(id)
-      await execSQL(`UPDATE counterparty SET ${fields.join(', ')} WHERE id = ?`, values)
+    // Update note in separate table
+    if (input.note !== undefined) {
+      await execSQL('DELETE FROM counterparty_note WHERE counterparty_id = ?', [id])
+      if (input.note) {
+        await execSQL(
+          'INSERT INTO counterparty_note (counterparty_id, note) VALUES (?, ?)',
+          [id, input.note]
+        )
+      }
     }
 
     // Update tag links if provided

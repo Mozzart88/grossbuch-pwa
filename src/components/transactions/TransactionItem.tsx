@@ -1,28 +1,28 @@
-import { type TransactionView } from '../../types'
+import { type TransactionLog } from '../../types'
 import { formatCurrency } from '../../utils/formatters'
 import { formatTime } from '../../utils/dateUtils'
 
 interface TransactionItemProps {
-  transaction: TransactionView[]
+  transaction: TransactionLog[]
   onClick: () => void
 }
 
 type transactionT = 'exchange' | 'transfer' | 'expense' | 'income'
 
-function isTypeOf(trx: TransactionView[], t: transactionT): boolean {
+function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
   return trx.some(l => {
     return l.tags.includes(t)
   })
 }
 
-const getTransactionType = (trx: TransactionView[]): transactionT => {
+const getTransactionType = (trx: TransactionLog[]): transactionT => {
   if (isTypeOf(trx, 'exchange')) {
     return 'exchange'
   }
   if (isTypeOf(trx, 'transfer')) {
     return 'transfer'
   }
-  return trx[0].real_amount < 0 ? 'expense' : 'income'
+  return trx[0].amount < 0 ? 'expense' : 'income'
 }
 
 const getDecimalPlaces = (p: number): number => {
@@ -34,7 +34,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     const symbol = transaction[0].symbol
     const decimalPlaces = transaction[0].decimal_places
 
-    const amount = transaction.reduce((acc, l) => acc + l.real_amount, 0) / getDecimalPlaces(decimalPlaces)
+    const amount = transaction.reduce((acc, l) => acc + l.amount, 0) / getDecimalPlaces(decimalPlaces)
     switch (getTransactionType(transaction)) {
       case 'income':
         return {
@@ -43,14 +43,14 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         }
       case 'transfer':
         return {
-          text: formatCurrency(transaction[0].real_amount / getDecimalPlaces(decimalPlaces), symbol),
+          text: formatCurrency(transaction[0].amount / getDecimalPlaces(decimalPlaces), symbol),
           color: 'text-blue-600 dark:text-blue-400',
         }
       case 'exchange':
-        const from = transaction.find(l => l.real_amount < 0 && l.tags.includes('exchange'))!
-        const to = transaction.find(l => l.real_amount >= 0 && l.tags.includes('exchange'))!
+        const from = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
+        const to = transaction.find(l => l.amount >= 0 && l.tags.includes('exchange'))!
         return {
-          text: `${formatCurrency(from.real_amount / getDecimalPlaces(from.decimal_places), from.symbol)} → ${formatCurrency(to.real_amount / getDecimalPlaces(to.decimal_places), to.symbol)}`,
+          text: `${formatCurrency(from.amount / getDecimalPlaces(from.decimal_places), from.symbol)} → ${formatCurrency(to.amount / getDecimalPlaces(to.decimal_places), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
         }
       default:
@@ -63,8 +63,8 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
   const getDescription = () => {
     const transactionType = getTransactionType(transaction)
-    const from = transaction.find(l => l.real_amount < 0 && l.tags === transactionType)!
-    const to = transaction.find(l => l.real_amount >= 0 && l.tags === transactionType)!
+    const from = transaction.find(l => l.amount < 0 && l.tags === transactionType)!
+    const to = transaction.find(l => l.amount >= 0 && l.tags === transactionType)!
 
     switch (transactionType) {
       case 'transfer':
@@ -127,7 +127,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       {/* Amount and time */}
       <div className="flex-shrink-0 text-right">
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].created_at)}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
       </div>
     </button>
   )

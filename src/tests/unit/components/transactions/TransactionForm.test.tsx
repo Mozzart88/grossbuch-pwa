@@ -551,7 +551,7 @@ describe('TransactionForm', () => {
                 account_id: 1,
                 tag_id: 10,
                 sign: '-',
-                real_amount: 5000,
+                amount: 5000,
               }),
             ],
           })
@@ -587,7 +587,7 @@ describe('TransactionForm', () => {
                 account_id: 1,
                 tag_id: 20,
                 sign: '+',
-                real_amount: 100000,
+                amount: 100000,
               }),
             ],
           })
@@ -620,8 +620,8 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ account_id: 1, sign: '-', real_amount: 20000 }),
-              expect.objectContaining({ account_id: 3, sign: '+', real_amount: 20000 }),
+              expect.objectContaining({ account_id: 1, sign: '-', amount: 20000 }),
+              expect.objectContaining({ account_id: 3, sign: '+', amount: 20000 }),
             ]),
           })
         )
@@ -662,8 +662,8 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ account_id: 1, sign: '-', real_amount: 10000 }),
-              expect.objectContaining({ account_id: 2, sign: '+', real_amount: 9000 }),
+              expect.objectContaining({ account_id: 1, sign: '-', amount: 10000 }),
+              expect.objectContaining({ account_id: 2, sign: '+', amount: 9000 }),
             ]),
           })
         )
@@ -854,7 +854,7 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ tag_id: 11, real_amount: 100 }),
+              expect.objectContaining({ tag_id: 11, amount: 100 }),
             ]),
           })
         )
