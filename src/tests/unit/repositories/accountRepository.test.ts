@@ -230,13 +230,19 @@ describe('accountRepository', () => {
   })
 
   describe('getTotalBalance', () => {
-    it('returns sum of all account balances', async () => {
+    it('returns sum of all account balances with rate conversion', async () => {
       mockQueryOne.mockResolvedValue({ total: 250000 })
 
       const result = await accountRepository.getTotalBalance()
 
+      // Should use (balance * divisor) / (rate * divisor) * 10^def_decimal_places formula
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('SUM(balance)')
+        expect.stringContaining('a.balance * cd.divisor'),
+        expect.anything()
+      )
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('exchange_rate'),
+        expect.anything()
       )
       expect(result).toBe(250000)
     })

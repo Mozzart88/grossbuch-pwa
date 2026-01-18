@@ -15,6 +15,24 @@ vi.mock('../../../services/database', () => ({
   queryOne: vi.fn(),
 }))
 
+// Mock the accountRepository (used by addLine for rate lookup)
+vi.mock('../../../services/repositories/accountRepository', () => ({
+  accountRepository: {
+    findById: vi.fn().mockResolvedValue({
+      id: 1,
+      currency_id: 1,
+      balance: 0,
+    }),
+  },
+}))
+
+// Mock the currencyRepository (used by addLine for rate lookup)
+vi.mock('../../../services/repositories/currencyRepository', () => ({
+  currencyRepository: {
+    getRateForCurrency: vi.fn().mockResolvedValue(100),
+  },
+}))
+
 import { transactionRepository } from '../../../services/repositories/transactionRepository'
 import { execSQL, querySQL, queryOne } from '../../../services/database'
 
@@ -209,14 +227,38 @@ describe('transactionRepository', () => {
       )
     })
 
+    it('uses rate-based conversion to default currency', async () => {
+      mockQueryOne.mockResolvedValue({ income: 100000, expenses: 50000 })
+
+      await transactionRepository.getMonthSummary('2025-01')
+
+      // Should use (amount * divisor) / (rate * divisor) formula for float conversion
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('(tb.amount * cd.divisor) / (tb.rate * cd.divisor)'),
+        expect.anything()
+      )
+    })
+
+    it('filters out transactions with zero rate', async () => {
+      mockQueryOne.mockResolvedValue({ income: 100000, expenses: 50000 })
+
+      await transactionRepository.getMonthSummary('2025-01')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('tb.rate > 0'),
+        expect.anything()
+      )
+    })
+
     it('uses Unix timestamps for date range', async () => {
       mockQueryOne.mockResolvedValue({ income: 0, expenses: 0 })
 
       await transactionRepository.getMonthSummary('2025-01')
 
       const call = mockQueryOne.mock.calls[0]
-      // Last two params should be timestamps
-      expect(call![1]![6]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
+      // Params: 6 system tags + DEFAULT tag + 2 timestamps = 9 total
+      // Start timestamp is at index 7
+      expect(call![1]![7]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
     })
   })
 

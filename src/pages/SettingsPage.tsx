@@ -8,6 +8,7 @@ const settingsLinks = [
   { to: '/settings/tags', label: 'Tags', icon: '🏷️', description: 'Organize your transactions' },
   { to: '/settings/counterparties', label: 'Counterparties', icon: '👥', description: 'Track who you transact with' },
   { to: '/settings/currencies', label: 'Currencies', icon: '💱', description: 'Manage currency options' },
+  { to: '/settings/exchange-rates', label: 'Exchange Rates', icon: '📈', description: 'Set currency exchange rates' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
   { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
   { to: '/settings/budgets', label: 'Budgets', icon: '💰', description: 'Manage your budgets' },

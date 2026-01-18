@@ -9,6 +9,8 @@ import type {
   TransferView,
 } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
+import { currencyRepository } from './currencyRepository'
+import { accountRepository } from './accountRepository'
 
 // Helper to convert Uint8Array to hex string for SQL
 // function blobToHex(blob: Uint8Array): string {
@@ -80,7 +82,9 @@ export const transactionRepository = {
     return trx
   },
 
-  // Get month summary
+  // Get month summary with rate conversion to default currency
+  // Rate stored as: value * 10^decimal_places (integer)
+  // Conversion: amount / rate * 10^def_decimal_places
   async getMonthSummary(yearMonth: string): Promise<{ income: number; expenses: number }> {
     const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
     const endDate = new Date(`${yearMonth}-01`)
@@ -88,15 +92,30 @@ export const transactionRepository = {
     const endTs = Math.floor(endDate.getTime() / 1000)
 
     const result = await queryOne<{ income: number; expenses: number }>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
       SELECT
-        COALESCE(SUM(CASE WHEN tb.sign = '+' AND tb.tag_id NOT IN (?, ?, ?) THEN tb.amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN tb.sign = '-' AND tb.tag_id NOT IN (?, ?, ?) THEN tb.amount ELSE 0 END), 0) as expenses
+        COALESCE(SUM(CASE WHEN tb.sign = '+' AND tb.tag_id NOT IN (?, ?, ?)
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-' AND tb.tag_id NOT IN (?, ?, ?)
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as expenses
       FROM trx t
       JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
       WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
     `, [
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.DEFAULT,
       startTs, endTs
     ])
 
@@ -156,12 +175,20 @@ export const transactionRepository = {
 
   // Add a line to an existing transaction
   async addLine(trxId: Uint8Array, line: TransactionLineInput): Promise<TransactionLine> {
-    // const hexTrxId = blobToHex(trxId)
+    // Auto-populate rate if not provided or is 0
+    let rate = line.rate ?? 0
+    if (rate === 0) {
+      // Get account's currency_id and fetch the rate
+      const account = await accountRepository.findById(line.account_id)
+      if (account) {
+        rate = await currencyRepository.getRateForCurrency(account.currency_id)
+      }
+    }
 
     await execSQL(`
       INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate)
       VALUES (randomblob(8), ?, ?, ?, ?, ?, ?)
-    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount, line.rate ?? 0])
+    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount, rate])
 
     // Get the created line ID
     const lineResult = await queryOne<{ id: Uint8Array }>(

@@ -12,6 +12,7 @@ import {
   // CategoriesPage,
   CounterpartiesPage,
   CurrenciesPage,
+  ExchangeRatesPage,
   ExportPage,
   DownloadPage,
   TagsPage,
@@ -58,6 +59,7 @@ function AppContent() {
         {/* <Route path="/settings/categories" element={<CategoriesPage />} /> */}
         <Route path="/settings/counterparties" element={<CounterpartiesPage />} />
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
+        <Route path="/settings/exchange-rates" element={<ExchangeRatesPage />} />
         <Route path="/settings/export" element={<ExportPage />} />
         <Route path="/settings/download" element={<DownloadPage />} />
         <Route path="/settings/tags" element={<TagsPage />} />

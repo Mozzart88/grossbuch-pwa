@@ -122,12 +122,30 @@ export const accountRepository = {
   },
 
   // Calculate total balance across all accounts in default currency
+  // Rate stored as: value * 10^decimal_places (integer)
+  // Conversion: (balance * divisor) / (rate * divisor) * 10^def_decimal_places
   async getTotalBalance(): Promise<number> {
     const result = await queryOne<{ total: number }>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
       SELECT
-        COALESCE(SUM(balance), 0) as total
-      FROM account
-    `)
+        COALESCE(SUM(
+          (a.balance * cd.divisor) / (COALESCE(
+            (SELECT er.rate FROM exchange_rate er
+             WHERE er.currency_id = a.currency_id
+             ORDER BY er.updated_at DESC LIMIT 1),
+            power(10, c.decimal_places)
+          ) * cd.divisor) * power(10, def.decimal_places)
+        ), 0) as total
+      FROM account a
+      JOIN currency c ON a.currency_id = c.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+    `, [SYSTEM_TAGS.DEFAULT])
 
     return result?.total ?? 0
   },

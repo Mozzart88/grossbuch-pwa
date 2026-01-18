@@ -155,4 +155,31 @@ export const currencyRepository = {
       [currencyId, rate]
     )
   },
+
+  /**
+   * Get the exchange rate for a currency to convert to default currency.
+   * Rate semantics: rate = value * 10^decimal_places
+   * (how many smallest units of this currency per 1 USD)
+   * Returns:
+   * - 10^decimal_places for the default currency (1.00 rate)
+   * - Latest rate from exchange_rate table for non-default currencies
+   * - 10^decimal_places as fallback if no rate exists
+   */
+  async getRateForCurrency(currencyId: number): Promise<number> {
+    const currency = await this.findById(currencyId)
+    if (!currency) {
+      return 100 // Fallback for 2 decimal places
+    }
+
+    const defaultRate = Math.pow(10, currency.decimal_places)
+
+    // Check if this is the default currency
+    if (currency.is_default) {
+      return defaultRate
+    }
+
+    // Get latest rate from exchange_rate table
+    const rate = await this.getExchangeRate(currencyId)
+    return rate?.rate ?? defaultRate // Fallback to 1.00 equivalent if no rate exists
+  },
 }

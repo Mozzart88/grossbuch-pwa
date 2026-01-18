@@ -13,6 +13,7 @@ vi.mock('../../pages', () => ({
   TagsPage: () => <div data-testid="tags-page">Tags</div>,
   CounterpartiesPage: () => <div data-testid="counterparties-page">Counterparties</div>,
   CurrenciesPage: () => <div data-testid="currencies-page">Currencies</div>,
+  ExchangeRatesPage: () => <div data-testid="exchange-rates-page">Exchange Rates</div>,
   ExportPage: () => <div data-testid="export-page">Export</div>,
   DownloadPage: () => <div data-testid="download-page">Export</div>,
   BudgetsPage: () => <div data-testid="budgets-page">Budgets</div>,

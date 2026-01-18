@@ -18,6 +18,7 @@ vi.mock('../../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
+    findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
   },
   transactionRepository: {
@@ -169,6 +170,7 @@ describe('TransactionForm', () => {
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
+    mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockTransactionRepository.createExpense.mockResolvedValue({} as any)
     mockTransactionRepository.createIncome.mockResolvedValue({} as any)
     mockTransactionRepository.createTransfer.mockResolvedValue({} as any)
@@ -882,7 +884,8 @@ describe('TransactionForm', () => {
 
       await waitFor(() => {
         expect(mockTransactionRepository.create).toHaveBeenCalled()
-        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(1, 85)
+        // EUR (currency_id=2) rate: 85 EUR per 100 USD = 0.85 * 100 = 85
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 85)
       })
     })
   })

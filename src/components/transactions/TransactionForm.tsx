@@ -280,25 +280,73 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         }
       } else if (mode === 'exchange') {
         const intToAmount = toIntegerAmount(toAmount, toDecimalPlaces)
-        payload.lines.push(
-          {
-            account_id: parseInt(accountId),
-            tag_id: SYSTEM_TAGS.EXCHANGE,
-            sign: '-' as const,
-            amount: intAmount,
-            note: note || undefined,
-          })
+
+        // Calculate rate: how many units of 'to' currency per 1 unit of 'from' currency
+        // Rate stored as integer where 100 = 1.00
+        const fromDisplay = parseFloat(amount) || 0
+        const toDisplay = parseFloat(toAmount) || 0
+
+        // Find which currency is default to determine rate direction
+        const fromCurrency = accounts.find(a => a.id.toString() === accountId)
+        const toCurrency = accounts.find(a => a.id.toString() === toAccountId)
+
+        // Rate for 'from' currency: how much default currency you get for 1 unit
+        // If from is default currency, rate = 100. Otherwise calculate from exchange.
+        let fromRate = 100
+        let toRate = 100
+
+        if (fromCurrency && toCurrency && fromDisplay > 0 && toDisplay > 0) {
+          // The actual exchange: fromAmount of fromCurrency = toAmount of toCurrency
+          // If toCurrency is the default, then fromRate = toAmount/fromAmount * 100
+          // If fromCurrency is the default, then toRate = fromAmount/toAmount * 100
+
+          // For now, calculate rate as toAmount/fromAmount * 100 adjusted for decimals
+          const fromDisplayNormalized = fromDisplay * Math.pow(10, fromCurrency.decimalPlaces)
+          const toDisplayNormalized = toDisplay * Math.pow(10, toCurrency.decimalPlaces)
+
+          // Cross rate calculation
+          const crossRate = (toDisplayNormalized / fromDisplayNormalized) * 100
+
+          // Update exchange_rate table for the non-default currency
+          // Rate semantics: rate=100 means 1.00 to the default currency
+          // If from is default currency, set rate for 'to' currency
+          // If to is default currency, set rate for 'from' currency
+          const defaultCurrency = await currencyRepository.findDefault()
+
+          if (defaultCurrency) {
+            if (fromCurrency.currency_id === defaultCurrency.id) {
+              // From is default (USD), to is foreign (EUR)
+              // Rate = how many EUR per 1 USD = toAmount/fromAmount * 10^decimal_places
+              toRate = Math.round((toDisplayNormalized / fromDisplayNormalized) * 100)
+              await currencyRepository.setExchangeRate(toCurrency.currency_id, toRate)
+            } else if (toCurrency.currency_id === defaultCurrency.id) {
+              // To is default (USD), from is foreign (EUR)
+              // Rate = how many EUR per 1 USD = fromAmount/toAmount * 10^decimal_places
+              fromRate = Math.round((fromDisplayNormalized / toDisplayNormalized) * 100)
+              await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRate)
+            } else {
+              // Neither is default - use cross rate for both
+              fromRate = Math.round(crossRate)
+              toRate = Math.round((fromDisplayNormalized / toDisplayNormalized) * 100)
+            }
+          }
+        }
+
+        payload.lines.push({
+          account_id: parseInt(accountId),
+          tag_id: SYSTEM_TAGS.EXCHANGE,
+          sign: '-' as const,
+          amount: intAmount,
+          rate: fromRate,
+          note: note || undefined,
+        })
         payload.lines.push({
           account_id: parseInt(toAccountId),
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+' as const,
           amount: intToAmount,
+          rate: toRate,
         })
-        // Store exchange rate if provided
-        if (exchangeRate && selectedAccount) {
-          const rateInt = toIntegerAmount(exchangeRate, decimalPlaces)
-          await currencyRepository.setExchangeRate(selectedAccount.currency_id, rateInt)
-        }
       }
       if (initialData) {
         await transactionRepository.update(initialData.id, payload)
