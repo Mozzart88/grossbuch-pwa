@@ -125,6 +125,42 @@ export const transactionRepository = {
     }
   },
 
+  // Get day summary with rate conversion to default currency
+  // Returns net amount (income - expenses) for a specific date
+  async getDaySummary(date: string): Promise<number> {
+    const startTs = Math.floor(new Date(`${date}T00:00:00`).getTime() / 1000)
+    const endTs = Math.floor(new Date(`${date}T23:59:59`).getTime() / 1000) + 1
+
+    const result = await queryOne<{ net: number }>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        COALESCE(SUM(CASE
+          WHEN tb.tag_id NOT IN (?, ?, ?)
+          THEN (CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END)
+               * (tb.amount * cd.divisor) / (tb.rate * cd.divisor)
+               * power(10, def.decimal_places)
+          ELSE 0 END), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+    `, [
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs
+    ])
+
+    return result?.net ?? 0
+  },
+
   // Create a new transaction
   async create(input: TransactionInput): Promise<Transaction> {
     // Insert transaction header
@@ -384,7 +420,7 @@ export const transactionRepository = {
           tag_id: tagId,
           sign: '+',
           amount: amount,
-          rate: options?.rate,
+          rate: options?.rate ?? 100,
           note: options?.note,
         },
       ],
@@ -414,7 +450,7 @@ export const transactionRepository = {
           tag_id: tagId,
           sign: '-',
           amount: amount,
-          rate: options?.rate,
+          rate: options?.rate ?? 100,
           note: options?.note,
         },
       ],
@@ -427,6 +463,7 @@ export const transactionRepository = {
     toAccountId: number,
     amount: number,
     options?: {
+      rate?: number
       fee?: number
       feeTagId?: number
       counterpartyId?: number
@@ -434,18 +471,21 @@ export const transactionRepository = {
       timestamp?: number
     }
   ): Promise<Transaction> {
+    const rate = options?.rate ?? 100
     const lines: TransactionLineInput[] = [
       {
         account_id: fromAccountId,
         tag_id: SYSTEM_TAGS.TRANSFER,
         sign: '-',
         amount: amount,
+        rate,
       },
       {
         account_id: toAccountId,
         tag_id: SYSTEM_TAGS.TRANSFER,
         sign: '+',
         amount: amount,
+        rate,
       },
     ]
 
@@ -456,6 +496,7 @@ export const transactionRepository = {
         tag_id: options.feeTagId ?? SYSTEM_TAGS.FEE,
         sign: '-',
         amount: options.fee,
+        rate,
       })
     }
 
@@ -474,6 +515,8 @@ export const transactionRepository = {
     fromAmount: number,
     toAmount: number,
     options?: {
+      fromRate?: number
+      toRate?: number
       counterpartyId?: number
       note?: string
       timestamp?: number
@@ -488,12 +531,14 @@ export const transactionRepository = {
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '-',
           amount: fromAmount,
+          rate: options?.fromRate ?? 100,
         },
         {
           account_id: toAccountId,
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+',
           amount: toAmount,
+          rate: options?.toRate ?? 100,
         },
       ],
       note: options?.note,

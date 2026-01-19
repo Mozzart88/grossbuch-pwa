@@ -237,6 +237,12 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       const intAmount = toIntegerAmount(amount, decimalPlaces)
       const intFee = fee ? toIntegerAmount(fee, decimalPlaces) : undefined
 
+      // Get exchange rate for the account's currency (100 = 1.00 in default currency)
+      const selectedAccount = accounts.find(a => a.id.toString() === accountId)
+      const accountRate = selectedAccount
+        ? (await currencyRepository.getExchangeRate(selectedAccount.currency_id))?.rate ?? 100
+        : 100
+
       const payload: TransactionInput = {
         counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
         counterparty_name: counterpartyName || undefined,
@@ -251,6 +257,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             tag_id: parseInt(tagId),
             sign,
             amount: intAmount,
+            rate: accountRate,
             note: note || undefined,
           },
         )
@@ -261,6 +268,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             tag_id: SYSTEM_TAGS.TRANSFER,
             sign: '-' as const,
             amount: intAmount,
+            rate: accountRate,
             note: note || undefined,
           })
         payload.lines.push({
@@ -268,6 +276,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '+' as const,
           amount: intAmount,
+          rate: accountRate, // Same currency for transfers
         })
 
         if (intFee) {
@@ -276,6 +285,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
             sign: '-' as const,
             amount: intFee,
+            rate: accountRate,
           })
         }
       } else if (mode === 'exchange') {

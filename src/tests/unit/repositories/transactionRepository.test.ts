@@ -262,6 +262,89 @@ describe('transactionRepository', () => {
     })
   })
 
+  describe('getDaySummary', () => {
+    it('returns net amount for a specific date', async () => {
+      mockQueryOne.mockResolvedValue({ net: 50000 })
+
+      const result = await transactionRepository.getDaySummary('2025-01-09')
+
+      expect(result).toBe(50000)
+    })
+
+    it('returns zero when no transactions', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await transactionRepository.getDaySummary('2025-01-09')
+
+      expect(result).toBe(0)
+    })
+
+    it('excludes system tags (initial, transfer, exchange) from summary', async () => {
+      mockQueryOne.mockResolvedValue({ net: 50000 })
+
+      await transactionRepository.getDaySummary('2025-01-09')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('tag_id NOT IN'),
+        expect.arrayContaining([
+          SYSTEM_TAGS.INITIAL,
+          SYSTEM_TAGS.TRANSFER,
+          SYSTEM_TAGS.EXCHANGE,
+        ])
+      )
+    })
+
+    it('uses rate-based conversion to default currency', async () => {
+      mockQueryOne.mockResolvedValue({ net: 50000 })
+
+      await transactionRepository.getDaySummary('2025-01-09')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('(tb.amount * cd.divisor) / (tb.rate * cd.divisor)'),
+        expect.anything()
+      )
+    })
+
+    it('filters out transactions with zero rate', async () => {
+      mockQueryOne.mockResolvedValue({ net: 50000 })
+
+      await transactionRepository.getDaySummary('2025-01-09')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('tb.rate > 0'),
+        expect.anything()
+      )
+    })
+
+    it('uses Unix timestamps for date range (single day)', async () => {
+      mockQueryOne.mockResolvedValue({ net: 0 })
+
+      await transactionRepository.getDaySummary('2025-01-09')
+
+      const call = mockQueryOne.mock.calls[0]
+      // Params: 3 system tags + DEFAULT tag + 2 timestamps = 6 total
+      const startTs = call![1]![4] as number
+      const endTs = call![1]![5] as number
+
+      // Start should be beginning of day
+      expect(startTs).toBe(Math.floor(new Date('2025-01-09T00:00:00').getTime() / 1000))
+      // End should be end of day + 1 second
+      expect(endTs).toBe(Math.floor(new Date('2025-01-09T23:59:59').getTime() / 1000) + 1)
+    })
+
+    it('calculates net as income minus expenses', async () => {
+      mockQueryOne.mockResolvedValue({ net: 50000 })
+
+      await transactionRepository.getDaySummary('2025-01-09')
+
+      // SQL should include sign calculation: +1 for income, -1 for expense
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining("CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END"),
+        expect.anything()
+      )
+    })
+  })
+
   describe('create', () => {
     beforeEach(() => {
       // Mock successful transaction creation

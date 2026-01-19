@@ -35,6 +35,20 @@ function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, Tr
   return groups
 }
 
+// Chevron icon that rotates based on expanded state
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : 'rotate-0'}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  )
+}
+
 export function TransactionList() {
   const navigate = useNavigate()
   const [month, setMonth] = useState(getCurrentMonth())
@@ -47,6 +61,24 @@ export function TransactionList() {
   })
   const [decimalPlaces, setDecimalPlaces] = useState(2)
   const [loading, setLoading] = useState(true)
+  const [daySummaries, setDaySummaries] = useState<Map<string, number>>(new Map())
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
+    // Initialize with today's date expanded
+    const today = new Date().toISOString().slice(0, 10)
+    return new Set([today])
+  })
+
+  const toggleDate = (date: string) => {
+    setExpandedDates(prev => {
+      const next = new Set(prev)
+      if (next.has(date)) {
+        next.delete(date)
+      } else {
+        next.add(date)
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     loadData()
@@ -74,6 +106,16 @@ export function TransactionList() {
         totalBalance: totalBalance / Math.pow(10, decimals),
         displayCurrencySymbol,
       })
+
+      // Get unique dates and fetch day summaries
+      const dates = [...new Set(txns.map(tx => tx.date_time.split(' ')[0]))]
+      const summaries = await Promise.all(
+        dates.map(async (date) => {
+          const net = await transactionRepository.getDaySummary(date)
+          return [date, net / Math.pow(10, decimals)] as const
+        })
+      )
+      setDaySummaries(new Map(summaries))
     } catch (error) {
       console.error('Failed to load transactions:', error)
     } finally {
@@ -108,22 +150,40 @@ export function TransactionList() {
         </div>
       ) : (
         <div className="flex-1 overflow-auto">
-          {Array.from(groupedTransactions.entries()).map(([date, txns]) => (
-            <div key={date}>
-              <div className="sticky top-0 px-4 py-2 bg-gray-100 dark:bg-gray-900 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                {formatDate(date)}
+          {Array.from(groupedTransactions.entries()).map(([date, txns]) => {
+            const daySummary = daySummaries.get(date) ?? 0
+            const isExpanded = expandedDates.has(date)
+
+            return (
+              <div key={date}>
+                <div
+                  className="sticky top-0 px-4 py-2 bg-gray-100 dark:bg-gray-900 flex items-center justify-between cursor-pointer"
+                  onClick={() => toggleDate(date)}
+                >
+                  <div className="flex items-center gap-2">
+                    <ChevronIcon expanded={isExpanded} />
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                      {formatDate(date)}
+                    </span>
+                  </div>
+                  <span className={`text-sm font-medium ${daySummary > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                    {daySummary > 0 ? '+' : ''}{Math.abs(daySummary).toFixed(decimalPlaces)}
+                  </span>
+                </div>
+                {isExpanded && (
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {Array.from(txns.entries()).map(([hexId, trxs], index) => (
+                      <TransactionItem
+                        key={`${hexId}-${index}`}
+                        transaction={trxs}
+                        onClick={() => handleTransactionClick(hexId)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {Array.from(txns.entries()).map(([hexId, trxs], index) => (
-                  <TransactionItem
-                    key={`${hexId}-${index}`}
-                    transaction={trxs}
-                    onClick={() => handleTransactionClick(hexId)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

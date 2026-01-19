@@ -20,6 +20,7 @@ vi.mock('../../../../services/repositories', () => ({
     findAll: vi.fn(),
     findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
+    getExchangeRate: vi.fn(),
   },
   transactionRepository: {
     createIncome: vi.fn(),
@@ -171,6 +172,7 @@ describe('TransactionForm', () => {
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
     mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
+    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
     mockTransactionRepository.createExpense.mockResolvedValue({} as any)
     mockTransactionRepository.createIncome.mockResolvedValue({} as any)
     mockTransactionRepository.createTransfer.mockResolvedValue({} as any)

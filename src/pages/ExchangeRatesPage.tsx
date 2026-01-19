@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
-import type { Currency, ExchangeRate } from '../types'
+import type { Currency } from '../types'
 
 interface CurrencyWithRate extends Currency {
   currentRate: number | null

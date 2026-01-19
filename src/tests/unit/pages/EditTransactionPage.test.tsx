@@ -36,6 +36,8 @@ vi.mock('../../../services/repositories', () => ({
   currencyRepository: {
     findAll: vi.fn(),
     findDefault: vi.fn(),
+    setExchangeRate: vi.fn(),
+    getExchangeRate: vi.fn(),
   },
   walletRepository: {
     findActive: vi.fn(),
@@ -172,6 +174,7 @@ describe('EditTransactionPage', () => {
       is_default: true,
       is_fiat: true,
     })
+    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
     mockWalletRepository.findAll.mockResolvedValue([
       {
         id: 1,

@@ -35,7 +35,9 @@ vi.mock('../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
+    findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
+    getExchangeRate: vi.fn(),
   },
 }))
 
@@ -125,6 +127,16 @@ describe('AddTransactionPage', () => {
         is_fiat: true,
       },
     ])
+    mockCurrencyRepository.findDefault.mockResolvedValue({
+      id: 1,
+      code: 'USD',
+      name: 'US Dollar',
+      symbol: '$',
+      decimal_places: 2,
+      is_default: true,
+      is_fiat: true,
+    })
+    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
   })
 
   const renderPage = () => {
