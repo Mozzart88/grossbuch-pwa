@@ -96,19 +96,35 @@ describe('budgetRepository', () => {
 
             expect(mockQuerySQL).toHaveBeenCalledWith(
                 expect.stringContaining('WHERE b.start >= ? AND b.start < ?'),
-                expect.arrayContaining([expect.any(Number), expect.any(Number)])
+                expect.arrayContaining([SYSTEM_TAGS.DEFAULT, expect.any(Number), expect.any(Number)])
             )
             expect(result[0].actual).toBe(25000)
         })
 
-        it('calculates actual spending from transactions', async () => {
+        it('calculates actual spending with currency conversion', async () => {
+            mockQuerySQL.mockResolvedValue([])
+
+            await budgetRepository.findByMonth('2024-01')
+
+            // Verify currency conversion formula is used
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining('curr_dec'),
+                expect.anything()
+            )
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining('tb.rate'),
+                expect.anything()
+            )
+        })
+
+        it('passes SYSTEM_TAGS.DEFAULT for default currency lookup', async () => {
             mockQuerySQL.mockResolvedValue([])
 
             await budgetRepository.findByMonth('2024-01')
 
             expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('SELECT COALESCE(ABS(SUM'),
-                expect.anything()
+                expect.stringContaining('currency_to_tags'),
+                expect.arrayContaining([SYSTEM_TAGS.DEFAULT])
             )
         })
     })
@@ -135,7 +151,7 @@ describe('budgetRepository', () => {
 
             expect(mockQuerySQL).toHaveBeenCalledWith(
                 expect.stringContaining('WHERE b.start <= ? AND b.end > ?'),
-                expect.arrayContaining([expect.any(Number), expect.any(Number)])
+                expect.arrayContaining([SYSTEM_TAGS.DEFAULT, expect.any(Number), expect.any(Number)])
             )
             expect(result).toHaveLength(1)
         })
@@ -146,6 +162,21 @@ describe('budgetRepository', () => {
             const result = await budgetRepository.findActive()
 
             expect(result[0].actual).toBe(30000)
+        })
+
+        it('uses currency conversion formula for actual calculation', async () => {
+            mockQuerySQL.mockResolvedValue([])
+
+            await budgetRepository.findActive()
+
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining('curr_dec'),
+                expect.anything()
+            )
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining('currency_to_tags'),
+                expect.arrayContaining([SYSTEM_TAGS.DEFAULT])
+            )
         })
     })
 
@@ -312,14 +343,29 @@ describe('budgetRepository', () => {
             expect(result?.actual).toBe(35000)
         })
 
-        it('calculates actual from trx_base', async () => {
+        it('calculates actual from trx_base with currency conversion', async () => {
             mockQueryOne.mockResolvedValue(sampleBudget)
 
             await budgetRepository.findWithActual(mockId())
 
             expect(mockQueryOne).toHaveBeenCalledWith(
                 expect.stringContaining('FROM trx_base tb'),
-                [mockHexId]
+                [SYSTEM_TAGS.DEFAULT, mockHexId]
+            )
+        })
+
+        it('uses currency conversion formula', async () => {
+            mockQueryOne.mockResolvedValue(sampleBudget)
+
+            await budgetRepository.findWithActual(mockId())
+
+            expect(mockQueryOne).toHaveBeenCalledWith(
+                expect.stringContaining('curr_dec'),
+                expect.anything()
+            )
+            expect(mockQueryOne).toHaveBeenCalledWith(
+                expect.stringContaining('tb.rate'),
+                expect.anything()
             )
         })
     })

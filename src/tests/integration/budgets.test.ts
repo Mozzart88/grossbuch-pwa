@@ -109,9 +109,74 @@ describe('Budget Integration', () => {
 
         const groceriesBudget = budgets.find(b => b.tag_id === tagId)
         expect(groceriesBudget).toBeDefined()
-        // findByMonth sums amounts directly (not using rate)
-        // actual = abs(sum(amounts)) = 2500 + 1500 = 4000
+        // findByMonth converts amounts to default currency
+        // With rate=100 (1.0) and USD (2 decimal places):
+        // actual = (2500 * 0.01) / (100 * 0.01) * 100 + (1500 * 0.01) / (100 * 0.01) * 100 = 4000
         expect(groceriesBudget?.actual).toBe(4000)
+    })
+
+    it('should convert multi-currency transactions to default currency', async () => {
+        const budgetRepository = await getRepository()
+        const db = getTestDatabase()
+
+        // Setup: Create a wallet with EUR account
+        const walletId = insertWallet({ name: 'Multi-Currency Wallet' })
+
+        // USD account (default currency)
+        const usdAccountId = insertAccount({
+            wallet_id: walletId,
+            currency_id: 1, // USD from seed (decimal_places=2)
+            balance: 100000,
+        })
+
+        // EUR account
+        const eurAccountId = insertAccount({
+            wallet_id: walletId,
+            currency_id: 2, // EUR from seed (decimal_places=2)
+            balance: 100000,
+        })
+
+        const tagId = insertTag({ name: 'Shopping' })
+
+        // Create budget for the tag
+        await budgetRepository.create({
+            tag_id: tagId,
+            amount: 20000, // $200.00
+        })
+
+        // Insert USD transaction: $50.00 (rate=100 means 1.0 USD/USD)
+        insertTransaction({
+            account_id: usdAccountId,
+            tag_id: tagId,
+            sign: '-',
+            amount: 5000, // $50.00
+            rate: 100, // 1.0 (USD to USD)
+            timestamp: Math.floor(Date.now() / 1000),
+        })
+
+        // Insert EUR transaction: €40.00 with rate of 0.90 (1 EUR = 1.11 USD)
+        // rate = 90 means 0.90, so 40 EUR = 40 / 0.90 = 44.44 USD
+        insertTransaction({
+            account_id: eurAccountId,
+            tag_id: tagId,
+            sign: '-',
+            amount: 4000, // €40.00
+            rate: 90, // 0.90 EUR/USD
+            timestamp: Math.floor(Date.now() / 1000),
+        })
+
+        // Verify actual spending is converted to USD
+        const now = new Date()
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+        const budgets = await budgetRepository.findByMonth(currentMonth)
+
+        const shoppingBudget = budgets.find(b => b.tag_id === tagId)
+        expect(shoppingBudget).toBeDefined()
+        // USD: (5000 * 0.01) / (100 * 0.01) * 100 = 5000
+        // EUR: (4000 * 0.01) / (90 * 0.01) * 100 = 40 / 0.9 * 100 = 4444.44 ≈ 4444
+        // Total: 5000 + 4444 = 9444 (rounded)
+        expect(shoppingBudget?.actual).toBeGreaterThan(9000)
+        expect(shoppingBudget?.actual).toBeLessThan(10000)
     })
 
     it('should correctly handle budget summaries from the summary view', async () => {
