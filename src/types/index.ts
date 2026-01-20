@@ -323,3 +323,29 @@ export interface MonthSummary {
   totalBalance: number
   displayCurrencySymbol: string
 }
+
+// Monthly tag summary for summaries page
+export interface MonthlyTagSummary {
+  tag_id: number
+  tag: string
+  income: number
+  expense: number
+  net: number
+}
+
+// Monthly counterparty summary for summaries page
+export interface MonthlyCounterpartySummary {
+  counterparty_id: number
+  counterparty: string
+  income: number
+  expense: number
+  net: number
+}
+
+// Monthly category breakdown for summaries page
+export interface MonthlyCategoryBreakdown {
+  tag_id: number
+  tag: string
+  amount: number
+  type: 'income' | 'expense'
+}

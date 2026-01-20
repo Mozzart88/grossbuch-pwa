@@ -132,7 +132,7 @@ export function TransactionList() {
   return (
     <div className="flex flex-col h-full">
       <MonthNavigator month={month} onChange={setMonth} />
-      <MonthSummary {...summary} decimalPlaces={decimalPlaces} />
+      <MonthSummary {...summary} decimalPlaces={decimalPlaces} month={month} clickable />
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center">

@@ -314,8 +314,16 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           const fromDisplayNormalized = fromDisplay * Math.pow(10, fromCurrency.decimalPlaces)
           const toDisplayNormalized = toDisplay * Math.pow(10, toCurrency.decimalPlaces)
 
+          await currencyRepository.getExchangeRate(fromCurrency.currency_id)
+            .then(v => {
+              if (v) fromRate = v.rate
+            })
+          await currencyRepository.getExchangeRate(toCurrency.currency_id)
+            .then(v => {
+              if (v) toRate = v.rate
+            })
           // Cross rate calculation
-          const crossRate = (toDisplayNormalized / fromDisplayNormalized) * 100
+          // const crossRate = (toDisplayNormalized / fromDisplayNormalized) * 100
 
           // Update exchange_rate table for the non-default currency
           // Rate semantics: rate=100 means 1.00 to the default currency
@@ -334,10 +342,6 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
               // Rate = how many EUR per 1 USD = fromAmount/toAmount * 10^decimal_places
               fromRate = Math.round((fromDisplayNormalized / toDisplayNormalized) * 100)
               await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRate)
-            } else {
-              // Neither is default - use cross rate for both
-              fromRate = Math.round(crossRate)
-              toRate = Math.round((fromDisplayNormalized / toDisplayNormalized) * 100)
             }
           }
         }

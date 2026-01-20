@@ -11,4 +11,5 @@ export { ExportPage } from './ExportPage'
 export { DownloadPage } from './DownloadPage'
 export { TagsPage } from './TagsPage'
 export { BudgetsPage } from './BudgetsPage'
+export { SummariesPage } from './SummariesPage'
 

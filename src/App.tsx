@@ -17,6 +17,7 @@ import {
   DownloadPage,
   TagsPage,
   BudgetsPage,
+  SummariesPage,
 } from './pages'
 
 function AppContent() {
@@ -54,6 +55,7 @@ function AppContent() {
         <Route path="/" element={<TransactionsPage />} />
         <Route path="/add" element={<AddTransactionPage />} />
         <Route path="/transaction/:id" element={<EditTransactionPage />} />
+        <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/accounts" element={<AccountsPage />} />
         {/* <Route path="/settings/categories" element={<CategoriesPage />} /> */}

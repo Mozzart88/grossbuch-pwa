@@ -7,6 +7,9 @@ import type {
   TransactionLog,
   ExchangeView,
   TransferView,
+  MonthlyTagSummary,
+  MonthlyCounterpartySummary,
+  MonthlyCategoryBreakdown,
 } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository } from './currencyRepository'
@@ -159,6 +162,130 @@ export const transactionRepository = {
     ])
 
     return result?.net ?? 0
+  },
+
+  // Get monthly tags summary with rate conversion to default currency
+  async getMonthlyTagsSummary(yearMonth: string): Promise<MonthlyTagSummary[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    return querySQL<MonthlyTagSummary>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        tb.tag_id,
+        tag.name as tag,
+        COALESCE(SUM(CASE WHEN tb.sign = '+'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END
+          * (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN tag ON tb.tag_id = tag.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+        AND tb.tag_id NOT IN (?, ?, ?)
+      GROUP BY tb.tag_id, tag.name
+      ORDER BY ABS(net) DESC
+    `, [
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
+  // Get monthly counterparties summary with rate conversion to default currency
+  async getMonthlyCounterpartiesSummary(yearMonth: string): Promise<MonthlyCounterpartySummary[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    return querySQL<MonthlyCounterpartySummary>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        COALESCE(tc.counterparty_id, 0) as counterparty_id,
+        COALESCE(cp.name, 'No counterparty') as counterparty,
+        COALESCE(SUM(CASE WHEN tb.sign = '+'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END
+          * (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      LEFT JOIN trx_to_counterparty tc ON tc.trx_id = t.id
+      LEFT JOIN counterparty cp ON tc.counterparty_id = cp.id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+        AND tb.tag_id NOT IN (?, ?, ?)
+      GROUP BY tc.counterparty_id, cp.name
+      ORDER BY ABS(net) DESC
+    `, [
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
+  // Get monthly category breakdown by income/expense type
+  async getMonthlyCategoryBreakdown(yearMonth: string): Promise<MonthlyCategoryBreakdown[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    return querySQL<MonthlyCategoryBreakdown>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        tb.tag_id,
+        tag.name as tag,
+        COALESCE(SUM((tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)), 0) as amount,
+        CASE WHEN tb.sign = '+' THEN 'income' ELSE 'expense' END as type
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN tag ON tb.tag_id = tag.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+        AND tb.tag_id NOT IN (?, ?, ?)
+      GROUP BY tb.tag_id, tag.name, tb.sign
+      ORDER BY amount DESC
+    `, [
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
   },
 
   // Create a new transaction

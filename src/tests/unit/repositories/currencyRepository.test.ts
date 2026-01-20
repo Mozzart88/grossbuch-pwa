@@ -29,8 +29,6 @@ describe('currencyRepository', () => {
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_default: true,
     is_fiat: true,
     is_crypto: false,
@@ -217,6 +215,17 @@ describe('currencyRepository', () => {
       expect(result.name).toBe('American Dollar')
     })
 
+    it('updates currency code', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, code: 'usd' })
+
+      await currencyRepository.update(1, { code: 'usd' })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('code = ?'),
+        expect.arrayContaining(['usd'])
+      )
+    })
+
     it('updates currency symbol', async () => {
       mockQueryOne.mockResolvedValue({ ...sampleCurrency, symbol: '$$' })
 
@@ -251,6 +260,17 @@ describe('currencyRepository', () => {
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
         [1, SYSTEM_TAGS.CRYPTO]
+      )
+    })
+
+    it('updates crypto/fiat tags', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, is_fiat: true, is_crypto: false })
+
+      await currencyRepository.update(1, { is_fiat: true })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.FIAT]
       )
     })
 

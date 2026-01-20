@@ -50,9 +50,7 @@ const mockAccount: Account = {
   id: 1,
   wallet_id: 1,
   currency_id: 1,
-  real_balance: 15000, // 150.00
-  actual_balance: 15000,
-  created_at: 1704067200,
+  balance: 15000, // 150.00
   updated_at: 1704067200,
   wallet: 'Cash',
   currency: 'USD',
@@ -63,9 +61,7 @@ const mockAccountEUR: Account = {
   id: 2,
   wallet_id: 1,
   currency_id: 2,
-  real_balance: 75000, // 750.00
-  actual_balance: 75000,
-  created_at: 1704067200,
+  balance: 75000, // 750.00
   updated_at: 1704067200,
   wallet: 'Bank',
   currency: 'EUR',
@@ -75,9 +71,7 @@ const mockAccountSavings: Account = {
   id: 3,
   wallet_id: 2,
   currency_id: 1,
-  real_balance: 120000, // 1200.00
-  actual_balance: 120000,
-  created_at: 1704067200,
+  balance: 120000, // 1200.00
   updated_at: 1704067200,
   wallet: 'Savings',
   currency: 'USD',
@@ -87,20 +81,14 @@ const mockWallets: Wallet[] = [
   {
     id: 1,
     name: 'Cash',
-    icon: '💵',
     color: '#4CAF50',
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_default: true,
     accounts: [mockAccount, mockAccountEUR],
   },
   {
     id: 2,
     name: 'Savings',
-    icon: '💰',
     color: '#FF9800',
-    created_at: 1704067200,
-    updated_at: 1704067200,
     accounts: [mockAccountSavings],
   },
 ]
@@ -112,8 +100,6 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_default: true,
     is_fiat: true,
   },
@@ -123,22 +109,29 @@ const mockCurrencies: Currency[] = [
     name: 'Euro',
     symbol: '€',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_fiat: true,
   },
+  {
+    id: 3,
+    code: 'BTC',
+    name: 'Bitcoin',
+    symbol: 'B',
+    decimal_places: 2,
+    is_default: false,
+    is_fiat: false
+  }
 ]
 
 const mockExpenseTags: Tag[] = [
-  { id: 10, name: 'food', created_at: 1704067200, updated_at: 1704067200 },
-  { id: 11, name: 'transport', created_at: 1704067200, updated_at: 1704067200 },
-  { id: 23, name: 'Gifts', created_at: 1704067200, updated_at: 1704067200 },
+  { id: 10, name: 'food' },
+  { id: 11, name: 'transport' },
+  { id: 23, name: 'Gifts' },
 ]
 
 const mockIncomeTags: Tag[] = [
-  { id: 20, name: 'salary', created_at: 1704067200, updated_at: 1704067200 },
-  { id: 21, name: 'freelance', created_at: 1704067200, updated_at: 1704067200 },
-  { id: 23, name: 'Gifts', created_at: 1704067200, updated_at: 1704067200 },
+  { id: 20, name: 'salary' },
+  { id: 21, name: 'freelance' },
+  { id: 23, name: 'Gifts' },
 ]
 
 const mockCounterparties: Counterparty[] = [
@@ -146,16 +139,12 @@ const mockCounterparties: Counterparty[] = [
     id: 1,
     name: 'Restaurant ABC',
     note: null,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     tag_ids: [10],
   },
   {
     id: 2,
     name: 'Company XYZ',
     note: null,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     tag_ids: [20],
   },
 ]
@@ -865,7 +854,7 @@ describe('TransactionForm', () => {
       })
     })
 
-    it('submits exchange and stores rate', async () => {
+    it('submits exchange and stores rate, sender is default', async () => {
       renderForm()
       const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
       fireEvent.click(exchangeBtn)
@@ -889,6 +878,91 @@ describe('TransactionForm', () => {
         // EUR (currency_id=2) rate: 85 EUR per 100 USD = 0.85 * 100 = 85
         expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 85)
       })
+    })
+
+    it('submits exchange and stores rate, receiver is default', async () => {
+      renderForm()
+      const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
+      fireEvent.click(exchangeBtn)
+
+      const account = await screen.findByRole('combobox', { name: /^account/i })
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+      fireEvent.change(account, { target: { value: '2' } })
+      fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      fireEvent.change(toAccountSelect, { target: { value: '1' } })
+
+      const rateBtn = await screen.findByRole('button', { name: 'Enter rate' })
+      fireEvent.click(rateBtn)
+
+      const rateInput = await screen.findByLabelText(/Exchange Rate/i)
+      fireEvent.change(rateInput, { target: { value: '0.85' } })
+
+      const submitBtn = screen.getByRole('button', { name: 'Add' })
+      fireEvent.submit(submitBtn.closest('form')!)
+
+      await waitFor(() => {
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 118)
+      })
+    })
+  })
+
+  it('submits exchange and stores rate for non defaults and sender without exchange rate', async () => {
+    renderForm()
+    const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
+    fireEvent.click(exchangeBtn)
+
+    const account = await screen.findByRole('combobox', { name: /^account/i })
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+    fireEvent.change(account, { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
+
+    const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+    fireEvent.change(toAccountSelect, { target: { value: '2' } })
+
+    const submitBtn = screen.getByRole('button', { name: 'Add' })
+    fireEvent.submit(submitBtn.closest('form')!)
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ rate: 100 }),
+              expect.objectContaining({ rate: 85 }),
+            ]),
+          })
+        )
+    })
+  })
+
+  it('submits exchange and stores rate for non defaults and receiver without exchange rate', async () => {
+    renderForm()
+    const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
+    fireEvent.click(exchangeBtn)
+
+    const account = await screen.findByRole('combobox', { name: /^account/i })
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+    fireEvent.change(account, { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
+
+    const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+    fireEvent.change(toAccountSelect, { target: { value: '3' } })
+
+    const submitBtn = screen.getByRole('button', { name: 'Add' })
+    fireEvent.submit(submitBtn.closest('form')!)
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create)
+        .toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ rate: 118 }),
+              expect.objectContaining({ rate: 100 }),
+            ]),
+          })
+        )
     })
   })
 })

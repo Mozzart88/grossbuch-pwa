@@ -17,6 +17,7 @@ vi.mock('../../pages', () => ({
   ExportPage: () => <div data-testid="export-page">Export</div>,
   DownloadPage: () => <div data-testid="download-page">Export</div>,
   BudgetsPage: () => <div data-testid="budgets-page">Budgets</div>,
+  SummariesPage: () => <div data-testid="summaries-page">Summaries</div>,
 }))
 
 // Mock TabBar
