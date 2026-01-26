@@ -25,11 +25,10 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
     "types": [
-      "vite/client"
+      "vite/client",
     ]
   },
   "include": [
-    "vitest.d.ts",
     "src"
   ],
   "exclude": [

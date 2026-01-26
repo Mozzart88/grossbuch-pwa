@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
-import type { TransactionLog, MonthSummary as MonthSummaryType } from '../../types'
-import { transactionRepository, accountRepository, currencyRepository } from '../../services/repositories'
+import { useState, useEffect, useCallback } from 'react'
+import type { TransactionLog, MonthSummary as MonthSummaryType, TransactionFilter } from '../../types'
+import { transactionRepository, accountRepository, currencyRepository, tagRepository, counterpartyRepository } from '../../services/repositories'
 import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
 import { MonthNavigator } from './MonthNavigator'
 import { MonthSummary } from './MonthSummary'
 import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 // Helper to convert blob ID to string for navigation
 function blobToHex(blob: Uint8Array): string {
@@ -51,7 +51,15 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
 
 export function TransactionList() {
   const navigate = useNavigate()
-  const [month, setMonth] = useState(getCurrentMonth())
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Get filter params from URL
+  const monthParam = searchParams.get('month') || getCurrentMonth()
+  const tagParam = searchParams.get('tag')
+  const counterpartyParam = searchParams.get('counterparty')
+  const typeParam = searchParams.get('type') as 'income' | 'expense' | null
+
+  const [month, setMonth] = useState(monthParam)
   const [transactions, setTransactions] = useState<TransactionLog[]>([])
   const [summary, setSummary] = useState<MonthSummaryType>({
     income: 0,
@@ -62,11 +70,21 @@ export function TransactionList() {
   const [decimalPlaces, setDecimalPlaces] = useState(2)
   const [loading, setLoading] = useState(true)
   const [daySummaries, setDaySummaries] = useState<Map<string, number>>(new Map())
+  const [filterName, setFilterName] = useState<string | null>(null)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
     // Initialize with today's date expanded
     const today = new Date().toISOString().slice(0, 10)
     return new Set([today])
   })
+
+  // Build filter object from URL params
+  const filter: TransactionFilter | undefined = (tagParam || counterpartyParam !== null || typeParam)
+    ? {
+      tagId: tagParam ? parseInt(tagParam, 10) : undefined,
+      counterpartyId: counterpartyParam !== null ? parseInt(counterpartyParam, 10) : undefined,
+      type: typeParam || undefined,
+    }
+    : undefined
 
   const toggleDate = (date: string) => {
     setExpandedDates(prev => {
@@ -80,9 +98,28 @@ export function TransactionList() {
     })
   }
 
+  // Update month when URL param changes
+  useEffect(() => {
+    setMonth(monthParam)
+  }, [monthParam])
+
+  // Handle month change - update URL with filter params preserved
+  const handleMonthChange = useCallback((newMonth: string) => {
+    const params = new URLSearchParams(searchParams)
+    params.set('month', newMonth)
+    setSearchParams(params, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  // Clear filter - keep month
+  const handleClearFilter = useCallback(() => {
+    const params = new URLSearchParams()
+    params.set('month', month)
+    setSearchParams(params, { replace: true })
+  }, [month, setSearchParams])
+
   useEffect(() => {
     loadData()
-  }, [month])
+  }, [month, tagParam, counterpartyParam, typeParam])
 
   const loadData = async () => {
     setLoading(true)
@@ -93,10 +130,30 @@ export function TransactionList() {
       const decimals = defaultCurrency?.decimal_places ?? 2
 
       const [txns, monthSum, totalBalance] = await Promise.all([
-        transactionRepository.findByMonth(month),
+        transactionRepository.findByMonthFiltered(month, filter),
         transactionRepository.getMonthSummary(month),
         accountRepository.getTotalBalance(),
       ])
+
+      // Load filter name for display
+      let filterDisplayName: string | null = null
+      if (tagParam) {
+        const tag = await tagRepository.findById(parseInt(tagParam, 10))
+        filterDisplayName = tag ? `Tag: ${tag.name}` : null
+      } else if (counterpartyParam !== null) {
+        const cpId = parseInt(counterpartyParam, 10)
+        if (cpId === 0) {
+          filterDisplayName = 'No counterparty'
+        } else {
+          const counterparty = await counterpartyRepository.findById(cpId)
+          filterDisplayName = counterparty ? `Counterparty: ${counterparty.name}` : null
+        }
+      }
+      if (typeParam) {
+        const typeLabel = typeParam === 'income' ? 'Income' : 'Expenses'
+        filterDisplayName = filterDisplayName ? `${filterDisplayName} (${typeLabel})` : typeLabel
+      }
+      setFilterName(filterDisplayName)
 
       setTransactions(txns)
       setDecimalPlaces(decimals)
@@ -111,7 +168,7 @@ export function TransactionList() {
       const dates = [...new Set(txns.map(tx => tx.date_time.split(' ')[0]))]
       const summaries = await Promise.all(
         dates.map(async (date) => {
-          const net = await transactionRepository.getDaySummary(date)
+          const net = await transactionRepository.getDaySummary(date, filter)
           return [date, net / Math.pow(10, decimals)] as const
         })
       )
@@ -127,12 +184,29 @@ export function TransactionList() {
     navigate(`/transaction/${hexId}`)
   }
 
+  const hasActiveFilter = !!(tagParam || counterpartyParam !== null || typeParam)
+
   const groupedTransactions = groupByDate(transactions)
 
   return (
     <div className="flex flex-col h-full">
-      <MonthNavigator month={month} onChange={setMonth} />
+      <MonthNavigator month={month} onChange={handleMonthChange} />
       <MonthSummary {...summary} decimalPlaces={decimalPlaces} month={month} clickable />
+
+      {/* Filter indicator */}
+      {hasActiveFilter && filterName && (
+        <div className="px-4 py-2 bg-primary-50 dark:bg-primary-900/20 flex items-center justify-between">
+          <span className="text-sm text-primary-700 dark:text-primary-300">
+            Filtered by: {filterName}
+          </span>
+          <button
+            onClick={handleClearFilter}
+            className="text-sm text-primary-600 dark:text-primary-400 hover:text-primary-800 dark:hover:text-primary-200 font-medium"
+          >
+            Clear
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center">

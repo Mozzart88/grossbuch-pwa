@@ -10,6 +10,7 @@ import type {
   MonthlyTagSummary,
   MonthlyCounterpartySummary,
   MonthlyCategoryBreakdown,
+  TransactionFilter,
 } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository } from './currencyRepository'
@@ -31,6 +32,72 @@ export const transactionRepository = {
       WHERE date_time LIKE ?
       ORDER BY date_time DESC
     `, [`${yearMonth}%`])
+  },
+
+  // Get transactions for a month with optional filters
+  async findByMonthFiltered(yearMonth: string, filter?: TransactionFilter): Promise<TransactionLog[]> {
+    // If no filter, use the standard view query
+    if (!filter || (!filter.tagId && filter.counterpartyId === undefined && !filter.type)) {
+      return this.findByMonth(yearMonth)
+    }
+
+    // Build a query similar to trx_log view but with filters
+    const conditions: string[] = [
+      `datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?`,
+      'tag_id NOT IN (?, ?, ?)'
+    ]
+    const params: unknown[] = [
+      `${yearMonth}%`,
+      SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.TRANSFER,
+      SYSTEM_TAGS.INITIAL
+    ]
+
+    // Filter by tag_id
+    if (filter.tagId !== undefined) {
+      conditions.push('tb.tag_id = ?')
+      params.push(filter.tagId)
+    }
+
+    // Filter by counterparty_id (0 means "No counterparty" - NULL in database)
+    if (filter.counterpartyId !== undefined) {
+      if (filter.counterpartyId === 0) {
+        conditions.push('t2c.counterparty_id IS NULL')
+      } else {
+        conditions.push('t2c.counterparty_id = ?')
+        params.push(filter.counterpartyId)
+      }
+    }
+
+    // Filter by type (income = '+', expense = '-')
+    if (filter.type) {
+      conditions.push(`tb.sign = ?`)
+      params.push(filter.type === 'income' ? '+' : '-')
+    }
+
+    const sql = `
+      SELECT
+        t.id as id,
+        datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
+        c.name as counterparty,
+        a.wallet as wallet,
+        a.currency as currency,
+        a.symbol as symbol,
+        a.decimal_places as decimal_places,
+        tag.name as tags,
+        iif(tb.sign = '-', -tb.amount, tb.amount) as amount,
+        tb.rate as rate
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY t.timestamp DESC
+    `
+
+    return querySQL<TransactionLog>(sql, params)
   },
 
   // Get full transaction log
@@ -130,9 +197,46 @@ export const transactionRepository = {
 
   // Get day summary with rate conversion to default currency
   // Returns net amount (income - expenses) for a specific date
-  async getDaySummary(date: string): Promise<number> {
+  async getDaySummary(date: string, filter?: TransactionFilter): Promise<number> {
     const startTs = Math.floor(new Date(`${date}T00:00:00`).getTime() / 1000)
     const endTs = Math.floor(new Date(`${date}T23:59:59`).getTime() / 1000) + 1
+
+    const conditions: string[] = [
+      `t.timestamp >= ? AND t.timestamp < ?`,
+      'tb.rate > 0'
+    ]
+    const params: unknown[] = [
+      SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.TRANSFER,
+      SYSTEM_TAGS.INITIAL,
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+    ]
+
+    if (filter) {
+      // Filter by tag_id
+      if (filter.tagId !== undefined) {
+        conditions.push('tb.tag_id = ?')
+        params.push(filter.tagId)
+      }
+
+      // Filter by counterparty_id (0 means "No counterparty" - NULL in database)
+      if (filter.counterpartyId !== undefined) {
+        if (filter.counterpartyId === 0) {
+          conditions.push('t2c.counterparty_id IS NULL')
+        } else {
+          conditions.push('t2c.counterparty_id = ?')
+          params.push(filter.counterpartyId)
+        }
+      }
+
+      // Filter by type (income = '+', expense = '-')
+      if (filter.type) {
+        conditions.push(`tb.sign = ?`)
+        params.push(filter.type === 'income' ? '+' : '-')
+      }
+
+    }
 
     const result = await queryOne<{ net: number }>(`
       WITH curr_dec AS (
@@ -150,16 +254,13 @@ export const transactionRepository = {
       JOIN trx_base tb ON tb.trx_id = t.id
       JOIN account a ON tb.account_id = a.id
       JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
       CROSS JOIN (SELECT decimal_places FROM currency
         JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
         WHERE tag_id = ? LIMIT 1) def
-      WHERE t.timestamp >= ? AND t.timestamp < ?
-        AND tb.rate > 0
-    `, [
-      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
-      SYSTEM_TAGS.DEFAULT,
-      startTs, endTs
-    ])
+      WHERE ${conditions.join(' AND ')}
+    `, params)
 
     return result?.net ?? 0
   },

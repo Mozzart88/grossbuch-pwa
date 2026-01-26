@@ -1,41 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { SummariesPage } from '../../../pages/SummariesPage'
 
-// Mock repositories
-vi.mock('../../../services/repositories', () => ({
-  transactionRepository: {
-    getMonthSummary: vi.fn(),
-    getMonthlyTagsSummary: vi.fn(),
-    getMonthlyCounterpartiesSummary: vi.fn(),
-    getMonthlyCategoryBreakdown: vi.fn(),
-  },
-  currencyRepository: {
-    findDefault: vi.fn(),
-  },
-  accountRepository: {
-    getTotalBalance: vi.fn(),
-  },
-}))
-
+vi.mock('../../../services/repositories')
 // Import after mock
 import { transactionRepository, currencyRepository, accountRepository } from '../../../services/repositories'
-
-const mockTransactionRepository = transactionRepository as {
-  getMonthSummary: ReturnType<typeof vi.fn>
-  getMonthlyTagsSummary: ReturnType<typeof vi.fn>
-  getMonthlyCounterpartiesSummary: ReturnType<typeof vi.fn>
-  getMonthlyCategoryBreakdown: ReturnType<typeof vi.fn>
-}
-
-const mockCurrencyRepository = currencyRepository as {
-  findDefault: ReturnType<typeof vi.fn>
-}
-
-const mockAccountRepository = accountRepository as {
-  getTotalBalance: ReturnType<typeof vi.fn>
-}
+const mockTransactionRepository = vi.mocked(transactionRepository)
+const mockCurrencyRepository = vi.mocked(currencyRepository)
+const mockAccountRepository = vi.mocked(accountRepository)
 
 // Mock dateUtils
 vi.mock('../../../utils/dateUtils', () => ({
@@ -56,6 +29,14 @@ vi.mock('../../../utils/dateUtils', () => ({
   },
 }))
 
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+  return {
+    ...actual,
+    useNavigate: vi.fn()
+  }
+})
+
 const renderWithRouter = (initialEntries = ['/summaries']) => {
   return render(
     <MemoryRouter initialEntries={initialEntries}>
@@ -72,6 +53,7 @@ describe('SummariesPage', () => {
       code: 'USD',
       symbol: '$',
       decimal_places: 2,
+      name: 'US Dollar'
     })
     mockTransactionRepository.getMonthSummary.mockResolvedValue({
       income: 100000,
@@ -133,7 +115,7 @@ describe('SummariesPage', () => {
   describe('Loading state', () => {
     it('shows loading spinner while fetching data', () => {
       // Make the promise hang to see loading state
-      mockCurrencyRepository.findDefault.mockImplementation(() => new Promise(() => {}))
+      mockCurrencyRepository.findDefault.mockImplementation(() => new Promise(() => { }))
 
       const { container } = renderWithRouter()
 
@@ -142,8 +124,14 @@ describe('SummariesPage', () => {
   })
 
   describe('Tags tab', () => {
-    it('displays tags summary by default', async () => {
+    it('displays tags summary when By Tags is clicked', async () => {
       renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('By Tags')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('By Tags'))
 
       await waitFor(() => {
         expect(screen.getByText('Food')).toBeInTheDocument()
@@ -153,6 +141,12 @@ describe('SummariesPage', () => {
 
     it('shows income and expense for each tag', async () => {
       renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('By Tags')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('By Tags'))
 
       await waitFor(() => {
         // The same amounts may appear in multiple places (net, income/out columns)
@@ -166,6 +160,12 @@ describe('SummariesPage', () => {
       mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([])
 
       renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('By Tags')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('By Tags'))
 
       await waitFor(() => {
         expect(screen.getByText('No transactions this month')).toBeInTheDocument()
@@ -207,14 +207,8 @@ describe('SummariesPage', () => {
   })
 
   describe('Income/Expense tab', () => {
-    it('displays category breakdown when tab is clicked', async () => {
+    it('displays category breakdown by default', async () => {
       renderWithRouter()
-
-      await waitFor(() => {
-        expect(screen.getByText('Income/Expense')).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByText('Income/Expense'))
 
       await waitFor(() => {
         // Should show category items - Salary for income, Food for expense
@@ -233,13 +227,39 @@ describe('SummariesPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Income/Expense')).toBeInTheDocument()
+        expect(screen.getByText('No transactions this month')).toBeInTheDocument()
+      })
+    })
+
+    it('shows empty state when no expenses', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 2, tag: 'Salary', amount: 100000, type: 'income' },
+      ])
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 0,
       })
 
-      fireEvent.click(screen.getByText('Income/Expense'))
+      renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('No transactions this month')).toBeInTheDocument()
+        expect(screen.getByText('No expenses this month')).toBeInTheDocument()
+      })
+    })
+
+    it('shows empty state when no incomes', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 1, tag: 'Food', amount: 30000, type: 'expense' },
+      ])
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 0,
+      })
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('No income this month')).toBeInTheDocument()
       })
     })
   })
@@ -269,6 +289,112 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Employer')).toBeInTheDocument()
       })
+    })
+  })
+
+  describe('Card click navigation', () => {
+    it('tag card is clickable', async () => {
+      renderWithRouter(['/summaries?tab=tags'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const foodCard = screen.getByText('Food').closest('div[class*="cursor-pointer"]')
+      expect(foodCard).toBeTruthy()
+    })
+
+    it('tag card is navigate to correct route', async () => {
+      const navigate = vi.fn()
+      vi.mocked(useNavigate).mockReturnValue(navigate)
+      renderWithRouter(['/summaries?tab=tags'])
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const foodCard = screen.getByText('Food')
+      fireEvent.click(foodCard)
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&tag=1')
+    })
+
+    it('counterparty card is clickable', async () => {
+      renderWithRouter(['/summaries?tab=counterparties'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Employer')).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const employerCard = screen.getByText('Employer').closest('div[class*="cursor-pointer"]')
+      expect(employerCard).toBeTruthy()
+    })
+
+    it('counterparty card is navigate to correct route', async () => {
+      const navigate = vi.fn()
+      vi.mocked(useNavigate).mockReturnValue(navigate)
+      renderWithRouter(['/summaries?tab=counterparties'])
+      await waitFor(() => {
+        expect(screen.getByText('Employer')).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const foodCard = screen.getByText('Employer')
+      fireEvent.click(foodCard)
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&counterparty=1')
+    })
+
+    it('category card is clickable in income/expense tab', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Salary')).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const salaryCard = screen.getByText('Salary').closest('div[class*="cursor-pointer"]')
+      expect(salaryCard).toBeTruthy()
+    })
+
+    it('category card is navigate to correct route', async () => {
+      const navigate = vi.fn()
+      vi.mocked(useNavigate).mockReturnValue(navigate)
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Salary')).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const foodCard = screen.getByText('Salary')
+      fireEvent.click(foodCard)
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=income&tag=2')
+    })
+
+    it('category section is navigate to correct route', async () => {
+      const navigate = vi.fn()
+      vi.mocked(useNavigate).mockReturnValue(navigate)
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText(/Expenses/)).toBeInTheDocument()
+      })
+
+      // Card should have cursor-pointer class
+      const foodCard = screen.getByText(/Expenses \(/)
+      fireEvent.click(foodCard)
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=expense')
+    })
+
+    it('cards have hover styles when clickable', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      // Card should have hover styles
+      const foodCard = screen.getByText('Food').closest('div[class*="cursor-pointer"]')
+      expect(foodCard?.className).toMatch(/hover:/)
     })
   })
 })

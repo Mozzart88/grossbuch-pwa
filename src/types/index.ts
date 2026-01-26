@@ -349,3 +349,10 @@ export interface MonthlyCategoryBreakdown {
   amount: number
   type: 'income' | 'expense'
 }
+
+// Transaction filter for filtered navigation
+export interface TransactionFilter {
+  tagId?: number
+  counterpartyId?: number
+  type?: 'income' | 'expense'
+}

@@ -40,46 +40,22 @@ export const tagRepository = {
 
   // Find user-visible tags (children of 'default' tag, id=2)
   async findUserTags(): Promise<Tag[]> {
-    return querySQL<Tag>(`
-      SELECT t.*
-      FROM tag t
-      JOIN tag_to_tag ttt ON ttt.child_id = t.id
-      WHERE ttt.parent_id = ?
-      ORDER BY t.name ASC
-    `, [SYSTEM_TAGS.DEFAULT])
+    return this.getTagsByParentId(SYSTEM_TAGS.DEFAULT)
   },
 
   // Find income category tags (children of 'income' tag, id=9)
   async findIncomeTags(): Promise<Tag[]> {
-    return querySQL<Tag>(`
-      SELECT t.*
-      FROM tag t
-      JOIN tag_to_tag ttt ON ttt.child_id = t.id
-      WHERE ttt.parent_id = ?
-      ORDER BY t.name ASC
-    `, [SYSTEM_TAGS.INCOME])
+    return this.getTagsByParentId(SYSTEM_TAGS.INCOME)
   },
 
   // Find expense category tags (children of 'expense' tag, id=10)
   async findExpenseTags(): Promise<Tag[]> {
-    return querySQL<Tag>(`
-      SELECT t.*
-      FROM tag t
-      JOIN tag_to_tag ttt ON ttt.child_id = t.id
-      WHERE ttt.parent_id = ?
-      ORDER BY t.name ASC
-    `, [SYSTEM_TAGS.EXPENSE])
+    return this.getTagsByParentId(SYSTEM_TAGS.EXPENSE)
   },
 
   // Find system tags (children of 'system' tag, id=1)
   async findSystemTags(): Promise<Tag[]> {
-    return querySQL<Tag>(`
-      SELECT t.*
-      FROM tag t
-      JOIN tag_to_tag ttt ON ttt.child_id = t.id
-      WHERE ttt.parent_id = ?
-      ORDER BY t.id ASC
-    `, [SYSTEM_TAGS.SYSTEM])
+    return this.getTagsByParentId(SYSTEM_TAGS.SYSTEM)
   },
 
   // Check if tag is a system tag (protected from deletion)
@@ -210,4 +186,15 @@ export const tagRepository = {
   async getSummary(): Promise<TagSummary[]> {
     return querySQL<TagSummary>('SELECT * FROM tags_summary')
   },
+
+  async getTagsByParentId(id: number): Promise<Tag[]> {
+    return querySQL<Tag>(`
+      SELECT 
+        child_id as id,
+        child_name as name
+      FROM tags_hierarchy
+      WHERE parent_id = ?
+      ORDER BY name ASC
+    `, [id])
+  }
 }

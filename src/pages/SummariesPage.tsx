@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
@@ -15,15 +15,16 @@ import type {
 } from '../types'
 
 const TABS = [
+  { id: 'income-expense', label: 'Income/Expense' },
   { id: 'tags', label: 'By Tags' },
   { id: 'counterparties', label: 'By Counterparties' },
-  { id: 'income-expense', label: 'Income/Expense' },
 ]
 
 export function SummariesPage() {
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('month') || getCurrentMonth()
-  const tabParam = searchParams.get('tab') || 'tags'
+  const tabParam = searchParams.get('tab') || 'income-expense'
 
   const [month, setMonth] = useState(monthParam)
   const [activeTab, setActiveTab] = useState(tabParam)
@@ -114,6 +115,20 @@ export function SummariesPage() {
     setActiveTab(tabId)
   }
 
+  // Navigation handlers for clicking cards
+  const handleTagClick = useCallback((tagId: number) => {
+    navigate(`/?month=${month}&tag=${tagId}`)
+  }, [month, navigate])
+
+  const handleCounterpartyClick = useCallback((counterpartyId: number) => {
+    navigate(`/?month=${month}&counterparty=${counterpartyId}`)
+  }, [month, navigate])
+
+  const handleCategoryClick = useCallback((type: 'income' | 'expense', tagId?: number) => {
+    const uri = `/?month=${month}&type=${type}${tagId === undefined ? '' : `&tag=${tagId}`}`
+    navigate(uri)
+  }, [month, navigate])
+
   const incomeCategories = categoryBreakdown.filter(c => c.type === 'income')
   const expenseCategories = categoryBreakdown.filter(c => c.type === 'expense')
 
@@ -144,6 +159,7 @@ export function SummariesPage() {
                     net={tag.net}
                     currencySymbol={currencySymbol}
                     decimalPlaces={decimalPlaces}
+                    onClick={() => handleTagClick(tag.tag_id)}
                   />
                 ))
               )}
@@ -164,6 +180,7 @@ export function SummariesPage() {
                     net={cp.net}
                     currencySymbol={currencySymbol}
                     decimalPlaces={decimalPlaces}
+                    onClick={() => handleCounterpartyClick(cp.counterparty_id)}
                   />
                 ))
               )}
@@ -178,7 +195,9 @@ export function SummariesPage() {
                 <>
                   {/* Income Section */}
                   <div className="mb-4">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
+                      onClick={() => handleCategoryClick('income')}
+                    >
                       Income ({formatCurrency(summary.income, currencySymbol, decimalPlaces)})
                     </h3>
                     {incomeCategories.length === 0 ? (
@@ -194,6 +213,7 @@ export function SummariesPage() {
                             currencySymbol={currencySymbol}
                             decimalPlaces={decimalPlaces}
                             type="income"
+                            onClick={() => handleCategoryClick('income', cat.tag_id)}
                           />
                         ))}
                       </div>
@@ -202,7 +222,9 @@ export function SummariesPage() {
 
                   {/* Expense Section */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1">
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
+                      onClick={() => handleCategoryClick('expense')}
+                    >
                       Expenses ({formatCurrency(summary.expenses, currencySymbol, decimalPlaces)})
                     </h3>
                     {expenseCategories.length === 0 ? (
@@ -218,6 +240,7 @@ export function SummariesPage() {
                             currencySymbol={currencySymbol}
                             decimalPlaces={decimalPlaces}
                             type="expense"
+                            onClick={() => handleCategoryClick('expense', cat.tag_id)}
                           />
                         ))}
                       </div>
@@ -253,11 +276,14 @@ interface SummaryCardProps {
   net: number
   currencySymbol: string
   decimalPlaces: number
+  onClick: () => void
 }
 
-function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlaces }: SummaryCardProps) {
+function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlaces, onClick }: SummaryCardProps) {
+  const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
+
   return (
-    <Card className="p-4">
+    <Card className={`p-4 ${clickableStyles}`} onClick={onClick}>
       <div className="flex items-center justify-between mb-2">
         <h4 className="font-medium text-gray-900 dark:text-gray-100">{title}</h4>
         <span className={`text-sm font-semibold ${net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -265,7 +291,7 @@ function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlace
         </span>
       </div>
       {income > 0 && expense > 0 &&
-        < div className="flex gap-4 text-sm">
+        <div className="flex gap-4 text-sm">
           <div>
             <span className="text-gray-500 dark:text-gray-400">In: </span>
             <span className="text-green-600 dark:text-green-400">{formatCurrency(income, currencySymbol, decimalPlaces)}</span>
@@ -276,7 +302,7 @@ function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlace
           </div>
         </div>
       }
-    </Card >
+    </Card>
   )
 }
 
@@ -288,14 +314,16 @@ interface CategoryCardProps {
   currencySymbol: string
   decimalPlaces: number
   type: 'income' | 'expense'
+  onClick: () => void
 }
 
-function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type }: CategoryCardProps) {
+function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type, onClick }: CategoryCardProps) {
   const percentage = total > 0 ? (amount / total) * 100 : 0
   const barColor = type === 'income' ? 'bg-green-500' : 'bg-red-500'
+  const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
 
   return (
-    <Card className="p-3">
+    <Card className={`p-3 ${clickableStyles}`} onClick={onClick}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</span>
         <span className={`text-sm font-semibold ${type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>

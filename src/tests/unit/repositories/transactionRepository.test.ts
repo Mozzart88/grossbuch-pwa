@@ -5,6 +5,7 @@ import type {
   TransactionLog,
   ExchangeView,
   TransferView,
+  MonthlyTagSummary,
 } from '../../../types'
 import { SYSTEM_TAGS } from '../../../types'
 
@@ -73,6 +74,16 @@ const sampleLine: TransactionLine = {
   note: null,
 }
 
+const mockMonthlyTagSummary: MonthlyTagSummary[] = [
+  {
+    expense: 100,
+    income: 0,
+    net: -100,
+    tag_id: 10,
+    tag: 'food'
+  }
+]
+
 describe('transactionRepository', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -117,6 +128,194 @@ describe('transactionRepository', () => {
         expect.stringContaining('ORDER BY date_time DESC'),
         expect.anything()
       )
+    })
+  })
+
+  describe('findByMonthFiltered', () => {
+    it('calls findByMonth when no filter provided', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      const result = await transactionRepository.findByMonthFiltered('2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT * FROM trx_log'),
+        expect.arrayContaining(['2025-01%'])
+      )
+      expect(result).toEqual([sampleTransactionLog])
+    })
+
+    it('calls findByMonth when filter has no active filters', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      const result = await transactionRepository.findByMonthFiltered('2025-01', {})
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT * FROM trx_log'),
+        expect.arrayContaining(['2025-01%'])
+      )
+      expect(result).toEqual([sampleTransactionLog])
+    })
+
+    it('filters by tag_id when provided', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { tagId: 10 })
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('tb.tag_id = ?'),
+        expect.arrayContaining([10])
+      )
+    })
+
+    it('filters by counterparty_id when provided', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { counterpartyId: 5 })
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('t2c.counterparty_id = ?'),
+        expect.arrayContaining([5])
+      )
+    })
+
+    it('handles "No counterparty" case (id=0) with NULL check', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { counterpartyId: 0 })
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('t2c.counterparty_id IS NULL'),
+        expect.anything()
+      )
+    })
+
+    it('filters by type income', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { type: 'income' })
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('tb.sign = ?'),
+        expect.arrayContaining(['+'])
+      )
+    })
+
+    it('filters by type expense', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { type: 'expense' })
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('tb.sign = ?'),
+        expect.arrayContaining(['-'])
+      )
+    })
+
+    it('combines multiple filters', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', {
+        tagId: 10,
+        counterpartyId: 5,
+        type: 'expense',
+      })
+
+      const call = mockQuerySQL.mock.calls[0]
+      expect(call![0]).toContain('tb.tag_id = ?')
+      expect(call![0]).toContain('t2c.counterparty_id = ?')
+      expect(call![0]).toContain('tb.sign = ?')
+      expect(call![1]).toContain(10)
+      expect(call![1]).toContain(5)
+      expect(call![1]).toContain('-')
+    })
+
+    it('orders by timestamp DESC', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { tagId: 10 })
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY t.timestamp DESC'),
+        expect.anything()
+      )
+    })
+
+    it('joins required tables for filtering', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { tagId: 10 })
+
+      const call = mockQuerySQL.mock.calls[0]
+      expect(call![0]).toContain('JOIN trx_base tb ON tb.trx_id = t.id')
+      expect(call![0]).toContain('JOIN accounts a ON tb.account_id = a.id')
+      expect(call![0]).toContain('JOIN tag ON tb.tag_id = tag.id')
+      expect(call![0]).toContain('LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id')
+    })
+  })
+
+  describe('getMonthlyTagsSummary', () => {
+    it('returns MonthlyTagsSummary ', async () => {
+      mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
+
+      const result = await transactionRepository.getMonthlyTagsSummary('2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining(`WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )`),
+        expect.arrayContaining([
+
+          1735700400,
+          1738368000,
+        ])
+      )
+
+      expect(result).toEqual(mockMonthlyTagSummary)
+    })
+  })
+
+  describe('getMonthlyCounterpartiesSummary', () => {
+    it('returns MonthlyTagsSummary ', async () => {
+      mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
+
+      const result = await transactionRepository.getMonthlyCounterpartiesSummary('2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining(`WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )`),
+        expect.arrayContaining([
+
+          1735700400,
+          1738368000,
+        ])
+      )
+
+      expect(result).toEqual(mockMonthlyTagSummary)
+    })
+  })
+
+  describe('getMonthlyCounterpartiesSummary', () => {
+    it('returns MonthlyTagsSummary ', async () => {
+      mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
+
+      const result = await transactionRepository.getMonthlyCategoryBreakdown('2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining(`WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )`),
+        expect.arrayContaining([
+
+          1735700400,
+          1738368000,
+        ])
+      )
+
+      expect(result).toEqual(mockMonthlyTagSummary)
     })
   })
 
@@ -341,6 +540,61 @@ describe('transactionRepository', () => {
       expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining("CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END"),
         expect.anything()
+      )
+    })
+
+    it('calculates net filtered by tag', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getDaySummary('2025-01-09', { tagId: 10 })
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('AND tb.tag_id = ?'),
+        expect.arrayContaining([10])
+      )
+    })
+
+    it('calculates net filtered by counterparty', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getDaySummary('2025-01-09', { counterpartyId: 10 })
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('AND t2c.counterparty_id = ?'),
+        expect.arrayContaining([10])
+      )
+    })
+
+    it('calculates net filtered by counterparty = 0', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getDaySummary('2025-01-09', { counterpartyId: 0 })
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('AND t2c.counterparty_id IS NULL'),
+        expect.anything()
+      )
+    })
+
+    it('calculates net filtered by type = expense', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getDaySummary('2025-01-09', { type: 'expense' })
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('AND tb.sign = ?'),
+        expect.arrayContaining(['-'])
+      )
+    })
+
+    it('calculates net filtered by type = income', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getDaySummary('2025-01-09', { type: 'income' })
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('AND tb.sign = ?'),
+        expect.arrayContaining(['+'])
       )
     })
   })

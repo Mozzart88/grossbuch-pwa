@@ -378,4 +378,54 @@ describe('currencyRepository', () => {
       )
     })
   })
+
+  describe('getRateForCurrency', () => {
+    it('returns latest exchange rate for currency', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValue(rate)
+
+      const result = await currencyRepository.getRateForCurrency(2)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('FROM exchange_rate'),
+        [2]
+      )
+      expect(result).toEqual(rate.rate)
+    })
+
+    it('returns 100 when currency is default', async () => {
+      mockQueryOne.mockResolvedValue({ is_default: true, decimal_places: 2 })
+
+      const result = await currencyRepository.getRateForCurrency(1)
+
+      expect(result).toEqual(100)
+    })
+
+    it('returns 100 when no currency', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.getRateForCurrency(1)
+
+      expect(result).toEqual(100)
+    })
+
+    it('returns 100 when no rate for currency', async () => {
+      mockQueryOne.mockResolvedValueOnce({ decimal_places: 2 })
+      mockQueryOne.mockResolvedValueOnce(null)
+
+      const result = await currencyRepository.getRateForCurrency(1)
+
+      expect(mockQueryOne).toHaveBeenCalledTimes(2)
+      expect(mockQueryOne).toHaveBeenLastCalledWith(
+        expect.stringContaining('FROM exchange_rate'),
+        [1]
+      )
+
+      // expect(mockQueryOne.mock.results[1]).toBeNull()
+      expect(mockQueryOne).toHaveLastResolvedWith(null)
+
+      expect(result).toEqual(100)
+    })
+  })
+
 })
