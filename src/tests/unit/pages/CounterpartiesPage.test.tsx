@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { CounterpartiesPage } from '../../../pages/CounterpartiesPage'
-import type { Counterparty, Category } from '../../../types'
+import type { Counterparty, Tag } from '../../../types'
 
 // Mock dependencies
 vi.mock('../../../services/repositories', () => ({
@@ -13,79 +13,63 @@ vi.mock('../../../services/repositories', () => ({
     delete: vi.fn(),
     canDelete: vi.fn(),
   },
-  categoryRepository: {
-    findAll: vi.fn(),
+  tagRepository: {
+    findUserTags: vi.fn(),
   },
 }))
 
+const mockShowToast = vi.fn()
 vi.mock('../../../components/ui', async () => {
   const actual = await vi.importActual('../../../components/ui')
   return {
     ...actual,
-    useToast: () => ({ showToast: vi.fn() }),
+    useToast: () => ({ showToast: mockShowToast }),
   }
 })
 
-import { counterpartyRepository, categoryRepository } from '../../../services/repositories'
+import { counterpartyRepository, tagRepository } from '../../../services/repositories'
 
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
-const mockCategoryRepository = vi.mocked(categoryRepository)
+const mockTagRepository = vi.mocked(tagRepository)
 
 const mockCounterparties: Counterparty[] = [
   {
     id: 1,
     name: 'Supermarket',
-    notes: 'Weekly groceries',
-    category_ids: [1],
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    note: 'Weekly groceries',
+    tag_ids: [12],
+    tags: ['food'],
+    created_at: 1704067200,
+    updated_at: 1704067200,
   },
   {
     id: 2,
     name: 'Employer Inc',
-    notes: null,
-    category_ids: [],
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    note: null,
+    tag_ids: [],
+    created_at: 1704067200,
+    updated_at: 1704067200,
   },
 ]
 
-const mockCategories: Category[] = [
+const mockTags: Tag[] = [
   {
-    id: 1,
-    name: 'Food',
-    type: 'expense',
-    icon: '🍔',
-    color: null,
-    parent_id: null,
-    is_preset: 1,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    id: 12,
+    name: 'food',
+    created_at: 1704067200,
+    updated_at: 1704067200,
   },
   {
-    id: 2,
-    name: 'Transport',
-    type: 'expense',
-    icon: '🚗',
-    color: null,
-    parent_id: null,
-    is_preset: 1,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    id: 14,
+    name: 'transport',
+    created_at: 1704067200,
+    updated_at: 1704067200,
   },
   {
-    id: 3,
-    name: 'Third Category',
-    type: 'expense',
-    icon: '📦',
-    color: null,
-    parent_id: null,
-    is_preset: 0,
-    sort_order: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    id: 15,
+    name: 'house',
+    created_at: 1704067200,
+    updated_at: 1704067200,
   },
 ]
 
@@ -93,7 +77,7 @@ describe('CounterpartiesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
-    mockCategoryRepository.findAll.mockResolvedValue(mockCategories)
+    mockTagRepository.findUserTags.mockResolvedValue(mockTags)
     mockCounterpartyRepository.canDelete.mockResolvedValue({ canDelete: true, transactionCount: 0 })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
@@ -149,19 +133,27 @@ describe('CounterpartiesPage', () => {
     })
   })
 
-  it('displays linked category name', async () => {
+  it('displays linked tag name', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Food')).toBeInTheDocument()
+      expect(screen.getByText('food')).toBeInTheDocument()
     })
   })
 
-  it('displays "All categories" when no linked categories', async () => {
+  it('displays "All tags" when no linked tags', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('All categories')).toBeInTheDocument()
+      expect(screen.getByText('All tags')).toBeInTheDocument()
+    })
+  })
+
+  it('displays note when present', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Weekly groceries')).toBeInTheDocument()
     })
   })
 
@@ -262,7 +254,7 @@ describe('CounterpartiesPage', () => {
     })
   })
 
-  it('allows toggling category selection', async () => {
+  it('allows toggling tag selection', async () => {
     renderWithRouter()
 
     await waitFor(() => {
@@ -275,9 +267,9 @@ describe('CounterpartiesPage', () => {
       expect(screen.getByText('Add Counterparty')).toBeInTheDocument()
     })
 
-    // Find the Food category button and click it
-    const categoryButtons = screen.getAllByRole('button')
-    const foodButton = categoryButtons.find(btn => btn.textContent?.includes('Food'))
+    // Find the food tag button and click it
+    const tagButtons = screen.getAllByRole('button')
+    const foodButton = tagButtons.find(btn => btn.textContent?.includes('food'))
     if (foodButton) {
       fireEvent.click(foodButton)
     }
@@ -316,12 +308,12 @@ describe('CounterpartiesPage', () => {
     consoleSpy.mockRestore()
   })
 
-  it('truncates long category lists', async () => {
-    // Counterparty with more than 2 categories
+  it('truncates long tag lists', async () => {
+    // Counterparty with more than 2 tags
     mockCounterpartyRepository.findAll.mockResolvedValue([
       {
         ...mockCounterparties[0],
-        category_ids: [1, 2, 3],
+        tag_ids: [12, 14, 15],
       },
     ])
 
@@ -345,6 +337,53 @@ describe('CounterpartiesPage', () => {
 
     await waitFor(() => {
       expect(mockCounterpartyRepository.delete).not.toHaveBeenCalled()
+      expect(mockShowToast).toHaveBeenCalledWith(
+        expect.stringContaining('Cannot delete'),
+        'error'
+      )
+    })
+  })
+
+  it('displays note field in form', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Add')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Add'))
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText('Additional info...')).toBeInTheDocument()
+    })
+  })
+
+  it('saves note when provided', async () => {
+    mockCounterpartyRepository.create.mockResolvedValue(3)
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Add')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Add'))
+
+    const nameInput = screen.getByPlaceholderText('e.g., Amazon, Supermarket')
+    const noteInput = screen.getByPlaceholderText('Additional info...')
+
+    fireEvent.change(nameInput, { target: { value: 'New Shop' } })
+    fireEvent.change(noteInput, { target: { value: 'Test note' } })
+
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => {
+      expect(mockCounterpartyRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'New Shop',
+          note: 'Test note',
+        })
+      )
     })
   })
 })

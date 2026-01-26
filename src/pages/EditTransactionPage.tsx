@@ -4,7 +4,16 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { TransactionForm } from '../components/transactions'
 import { transactionRepository } from '../services/repositories'
 import { Button, Spinner, useToast } from '../components/ui'
-import type { Transaction, TransactionInput } from '../types'
+import type { Transaction } from '../types'
+
+// Helper to convert hex string to Uint8Array
+function hexToBlob(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+  }
+  return bytes
+}
 
 export function EditTransactionPage() {
   const navigate = useNavigate()
@@ -22,7 +31,9 @@ export function EditTransactionPage() {
   const loadTransaction = async () => {
     if (!id) return
     try {
-      const tx = await transactionRepository.findById(parseInt(id))
+      // Convert hex string ID to Uint8Array
+      const blobId = hexToBlob(id)
+      const tx = await transactionRepository.findById(blobId)
       setTransaction(tx)
     } catch (error) {
       console.error('Failed to load transaction:', error)
@@ -32,10 +43,7 @@ export function EditTransactionPage() {
     }
   }
 
-  const handleSubmit = async (data: TransactionInput) => {
-    if (!id) return
-    await transactionRepository.update(parseInt(id), data)
-    showToast('Transaction updated', 'success')
+  const handleSubmit = () => {
     navigate('/')
   }
 
@@ -43,7 +51,8 @@ export function EditTransactionPage() {
     if (!id || !confirm('Are you sure you want to delete this transaction?')) return
     setDeleting(true)
     try {
-      await transactionRepository.delete(parseInt(id))
+      const blobId = hexToBlob(id)
+      await transactionRepository.delete(blobId)
       showToast('Transaction deleted', 'success')
       navigate('/')
     } catch (error) {
@@ -92,7 +101,7 @@ export function EditTransactionPage() {
       />
       <div className="p-4">
         <TransactionForm
-          transaction={transaction}
+          initialData={transaction}
           onSubmit={handleSubmit}
           onCancel={() => navigate('/')}
         />

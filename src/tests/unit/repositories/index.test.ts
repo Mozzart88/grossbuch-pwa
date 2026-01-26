@@ -6,8 +6,12 @@ describe('repositories index', () => {
     expect(repositories.accountRepository).toBeDefined()
   })
 
-  it('exports categoryRepository', () => {
-    expect(repositories.categoryRepository).toBeDefined()
+  it('exports tagRepository', () => {
+    expect(repositories.tagRepository).toBeDefined()
+  })
+
+  it('exports walletRepository', () => {
+    expect(repositories.walletRepository).toBeDefined()
   })
 
   it('exports counterpartyRepository', () => {

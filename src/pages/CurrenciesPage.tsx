@@ -16,6 +16,7 @@ export function CurrenciesPage() {
   const [name, setName] = useState('')
   const [symbol, setSymbol] = useState('')
   const [decimalPlaces, setDecimalPlaces] = useState('2')
+  const [isFiat, setIsFiat] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -40,12 +41,14 @@ export function CurrenciesPage() {
       setName(currency.name)
       setSymbol(currency.symbol)
       setDecimalPlaces(currency.decimal_places.toString())
+      setIsFiat(currency.is_fiat ?? true)
     } else {
       setEditingCurrency(null)
       setCode('')
       setName('')
       setSymbol('')
       setDecimalPlaces('2')
+      setIsFiat(true)
     }
     setModalOpen(true)
   }
@@ -66,6 +69,8 @@ export function CurrenciesPage() {
         name: name.trim(),
         symbol: symbol.trim(),
         decimal_places: parseInt(decimalPlaces) || 2,
+        is_fiat: isFiat,
+        is_crypto: !isFiat,
       }
 
       if (editingCurrency) {
@@ -99,6 +104,17 @@ export function CurrenciesPage() {
     }
   }
 
+  const handleSetDefault = async (currency: Currency) => {
+    try {
+      await currencyRepository.setDefault(currency.id)
+      showToast(`${currency.code} set as default`, 'success')
+      loadData()
+    } catch (error) {
+      console.error('Failed to set default currency:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to set default', 'error')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -128,25 +144,43 @@ export function CurrenciesPage() {
                   {currency.symbol}
                 </span>
                 <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">{currency.code}</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">
+                    {currency.code}
+                    {currency.is_default && (
+                      <span className="ml-2 text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
+                        Default
+                      </span>
+                    )}
+                    {currency.is_crypto && (
+                      <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded">
+                        Crypto
+                      </span>
+                    )}
+                  </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{currency.name}</p>
                 </div>
               </div>
               <div className="flex gap-2">
+                {!currency.is_default && (
+                  <button
+                    onClick={() => handleSetDefault(currency)}
+                    className="text-xs text-primary-600 dark:text-primary-400"
+                  >
+                    Set Default
+                  </button>
+                )}
                 <button
                   onClick={() => openModal(currency)}
                   className="text-xs text-primary-600 dark:text-primary-400"
                 >
                   Edit
                 </button>
-                {!currency.is_preset && (
-                  <button
-                    onClick={() => handleDelete(currency)}
-                    className="text-xs text-red-600 dark:text-red-400"
-                  >
-                    Delete
-                  </button>
-                )}
+                <button
+                  onClick={() => handleDelete(currency)}
+                  className="text-xs text-red-600 dark:text-red-400"
+                >
+                  Delete
+                </button>
               </div>
             </div>
           ))}
@@ -174,8 +208,8 @@ export function CurrenciesPage() {
             label="Symbol"
             value={symbol}
             onChange={(e) => setSymbol(e.target.value)}
-            placeholder="e.g., ₿, £"
-            maxLength={3}
+            placeholder="e.g., B, L"
+            maxLength={4}
             required
           />
           <Input
@@ -186,6 +220,33 @@ export function CurrenciesPage() {
             value={decimalPlaces}
             onChange={(e) => setDecimalPlaces(e.target.value)}
           />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Type
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFiat(true)}
+                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${isFiat
+                    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                  }`}
+              >
+                Fiat
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFiat(false)}
+                className={`px-4 py-2 text-sm rounded-lg border transition-colors ${!isFiat
+                    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                  }`}
+              >
+                Crypto
+              </button>
+            </div>
+          </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={closeModal} className="flex-1">
               Cancel

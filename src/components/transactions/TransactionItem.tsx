@@ -1,52 +1,108 @@
-import type { Transaction } from '../../types'
+import { type TransactionLog } from '../../types'
 import { formatCurrency } from '../../utils/formatters'
 import { formatTime } from '../../utils/dateUtils'
 
 interface TransactionItemProps {
-  transaction: Transaction
+  transaction: TransactionLog[]
   onClick: () => void
+}
+
+type transactionT = 'exchange' | 'transfer' | 'expense' | 'income'
+
+function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
+  return trx.some(l => {
+    return l.tags.includes(t)
+  })
+}
+
+const getTransactionType = (trx: TransactionLog[]): transactionT => {
+  if (isTypeOf(trx, 'exchange')) {
+    return 'exchange'
+  }
+  if (isTypeOf(trx, 'transfer')) {
+    return 'transfer'
+  }
+  return trx[0].amount < 0 ? 'expense' : 'income'
+}
+
+const getDecimalPlaces = (p: number): number => {
+  return Math.pow(10, p)
 }
 
 export function TransactionItem({ transaction, onClick }: TransactionItemProps) {
   const getAmountDisplay = () => {
-    const symbol = transaction.currency_symbol || '$'
+    const symbol = transaction[0].symbol
+    const decimalPlaces = transaction[0].decimal_places
 
-    switch (transaction.type) {
+    const amount = transaction.reduce((acc, l) => acc + l.amount, 0) / getDecimalPlaces(decimalPlaces)
+    switch (getTransactionType(transaction)) {
       case 'income':
         return {
-          text: `+${formatCurrency(transaction.amount, symbol)}`,
+          text: `${formatCurrency(amount, symbol)}`,
           color: 'text-green-600 dark:text-green-400',
-        }
-      case 'expense':
-        return {
-          text: `-${formatCurrency(transaction.amount, symbol)}`,
-          color: 'text-red-600 dark:text-red-400',
         }
       case 'transfer':
         return {
-          text: formatCurrency(transaction.amount, symbol),
+          text: formatCurrency(transaction[0].amount / getDecimalPlaces(decimalPlaces), symbol),
           color: 'text-blue-600 dark:text-blue-400',
         }
       case 'exchange':
+        const from = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
+        const to = transaction.find(l => l.amount >= 0 && l.tags.includes('exchange'))!
         return {
-          text: `${formatCurrency(transaction.amount, symbol)} → ${formatCurrency(transaction.to_amount || 0, transaction.to_currency_symbol || '$')}`,
+          text: `${formatCurrency(from.amount / getDecimalPlaces(from.decimal_places), from.symbol)} → ${formatCurrency(to.amount / getDecimalPlaces(to.decimal_places), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
+        }
+      default:
+        return {
+          text: `${formatCurrency(amount, symbol)}`,
+          color: 'text-gray-600 dark:text-gray-400',
         }
     }
   }
 
   const getDescription = () => {
-    switch (transaction.type) {
+    const transactionType = getTransactionType(transaction)
+    const from = transaction.find(l => l.amount < 0 && l.tags === transactionType)!
+    const to = transaction.find(l => l.amount >= 0 && l.tags === transactionType)!
+
+    switch (transactionType) {
       case 'transfer':
-        return `${transaction.account_name} → ${transaction.to_account_name}`
+        if (from.currency == to.currency)
+          return `${from.wallet} → ${to.wallet}`
+        return `${from.wallet}:${from.symbol} → ${to.wallet}:${to.symbol}`
       case 'exchange':
-        return `${transaction.account_name} → ${transaction.to_account_name}`
+        if (from.wallet === to.wallet)
+          return `${from.currency} → ${to.currency}`
+        return `${from.wallet}:${from.symbol} → ${to.wallet}:${to.symbol}`
       default:
-        return transaction.counterparty_name || transaction.category_name || ''
+        return transaction.find(l => l.counterparty)?.counterparty
+          || transaction[0].wallet
     }
   }
 
+  const getIcon = () => {
+    switch (transactionType) {
+      case 'transfer': return '↔️'
+      case 'exchange': return '💱'
+      case 'income': return '📈'
+      case 'expense': return '📉'
+      default: return '📝'
+    }
+  }
+
+  const getTitle = () => {
+    if (['transfer', 'exchange'].includes(transactionType)) {
+      return transactionType[0].toUpperCase() + transactionType.slice(1)
+    }
+    if (transaction[0].tags.length > 0) {
+      return transaction[0].tags[0]?.toUpperCase() + transaction[0].tags?.slice(1)
+    }
+    return 'Uncategorized'
+  }
+
   const amount = getAmountDisplay()
+  const transactionType = getTransactionType(transaction)
 
   return (
     <button
@@ -55,17 +111,13 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     >
       {/* Icon */}
       <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-lg">
-        {transaction.type === 'transfer' && '↔️'}
-        {transaction.type === 'exchange' && '💱'}
-        {transaction.type !== 'transfer' && transaction.type !== 'exchange' && (transaction.category_icon || '📝')}
+        {getIcon()}
       </div>
 
       {/* Details */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-          {transaction.type === 'transfer' || transaction.type === 'exchange'
-            ? transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)
-            : transaction.category_name || 'Uncategorized'}
+          {getTitle()}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
           {getDescription()}
@@ -75,7 +127,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       {/* Amount and time */}
       <div className="flex-shrink-0 text-right">
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction.date_time)}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
       </div>
     </button>
   )

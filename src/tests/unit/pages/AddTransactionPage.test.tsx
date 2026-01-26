@@ -16,16 +16,28 @@ vi.mock('react-router-dom', async () => {
 // Mock repositories
 vi.mock('../../../services/repositories', () => ({
   transactionRepository: {
+    createExpense: vi.fn(),
+    createIncome: vi.fn(),
+    createTransfer: vi.fn(),
+    createExchange: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(),
   },
-  accountRepository: {
-    findAll: vi.fn(),
+  walletRepository: {
+    findActive: vi.fn(),
   },
-  categoryRepository: {
-    findAll: vi.fn(),
+  tagRepository: {
+    findExpenseTags: vi.fn(),
+    findIncomeTags: vi.fn(),
   },
   counterpartyRepository: {
     findAll: vi.fn(),
+  },
+  currencyRepository: {
+    findAll: vi.fn(),
+    findDefault: vi.fn(),
+    setExchangeRate: vi.fn(),
+    getExchangeRate: vi.fn(),
   },
 }))
 
@@ -43,52 +55,88 @@ vi.mock('../../../components/ui', async () => {
 vi.mock('../../../utils/dateUtils', () => ({
   toDateTimeLocal: vi.fn(() => '2025-01-10T12:00'),
   fromDateTimeLocal: vi.fn((val: string) => val.replace('T', ' ') + ':00'),
+  getCurrentDateTime: vi.fn(() => '2025-01-10 12:00:00'),
 }))
 
-import { transactionRepository, accountRepository, categoryRepository, counterpartyRepository } from '../../../services/repositories'
+import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository } from '../../../services/repositories'
 
 const mockTransactionRepository = vi.mocked(transactionRepository)
-const mockAccountRepository = vi.mocked(accountRepository)
-const mockCategoryRepository = vi.mocked(categoryRepository)
+const mockWalletRepository = vi.mocked(walletRepository)
+const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
+const mockCurrencyRepository = vi.mocked(currencyRepository)
 
 describe('AddTransactionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockTransactionRepository.create.mockResolvedValue(1)
-    mockAccountRepository.findAll.mockResolvedValue([
+    mockTransactionRepository.create.mockResolvedValue({} as any)
+    mockTransactionRepository.update.mockResolvedValue({} as any)
+    mockWalletRepository.findActive.mockResolvedValue([
       {
         id: 1,
         name: 'Cash',
-        currency_id: 1,
-        initial_balance: 100,
         icon: '💵',
         color: '#4CAF50',
-        is_active: 1,
-        sort_order: 0,
-        created_at: '2025-01-01 00:00:00',
-        updated_at: '2025-01-01 00:00:00',
-        currency_symbol: '$',
-        currency_code: 'USD',
-        currency_decimal_places: 2,
-        current_balance: 150,
+        is_default: true,
+        created_at: 1704067200,
+        updated_at: 1704067200,
+        accounts: [
+          {
+            id: 1,
+            wallet_id: 1,
+            currency_id: 1,
+            wallet: 'Cash',
+            currency: 'USD',
+            real_balance: 15000,
+            actual_balance: 15000,
+            tags: undefined,
+            created_at: 1704067200,
+            updated_at: 1704067200,
+            is_default: true,
+          },
+        ],
       },
     ])
-    mockCategoryRepository.findAll.mockResolvedValue([
+    mockTagRepository.findExpenseTags.mockResolvedValue([
       {
-        id: 1,
-        name: 'Food',
-        type: 'expense',
-        icon: '🍔',
-        color: '#FF5722',
-        parent_id: null,
-        is_preset: 1,
-        sort_order: 0,
-        created_at: '2025-01-01 00:00:00',
-        updated_at: '2025-01-01 00:00:00',
+        id: 12,
+        name: 'food',
+        created_at: 1704067200,
+        updated_at: 1704067200,
+      },
+    ])
+    mockTagRepository.findIncomeTags.mockResolvedValue([
+      {
+        id: 11,
+        name: 'sale',
+        created_at: 1704067200,
+        updated_at: 1704067200,
       },
     ])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
+    mockCurrencyRepository.findAll.mockResolvedValue([
+      {
+        id: 1,
+        code: 'USD',
+        name: 'US Dollar',
+        symbol: '$',
+        decimal_places: 2,
+        created_at: 1704067200,
+        updated_at: 1704067200,
+        is_default: true,
+        is_fiat: true,
+      },
+    ])
+    mockCurrencyRepository.findDefault.mockResolvedValue({
+      id: 1,
+      code: 'USD',
+      name: 'US Dollar',
+      symbol: '$',
+      decimal_places: 2,
+      is_default: true,
+      is_fiat: true,
+    })
+    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
   })
 
   const renderPage = () => {
@@ -122,28 +170,35 @@ describe('AddTransactionPage', () => {
   })
 
   it('submits transaction and navigates to home', async () => {
-    const { container } = renderPage()
+    renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('Account')).toBeInTheDocument()
     })
 
     // Fill form
-    const amountInput = container.querySelector('input.text-2xl') as HTMLInputElement
+    const amountInput = screen.getByPlaceholderText('0.00')
     fireEvent.change(amountInput, { target: { value: '50' } })
 
     const categorySelect = screen.getByRole('combobox', { name: /category/i })
-    fireEvent.change(categorySelect, { target: { value: '1' } })
+    fireEvent.change(categorySelect, { target: { value: '12' } }) // food tag
 
     const submitButton = screen.getByRole('button', { name: 'Add' })
     fireEvent.click(submitButton)
 
     await waitFor(() => {
-      expect(mockTransactionRepository.create).toHaveBeenCalled()
-    })
-
-    await waitFor(() => {
-      expect(mockShowToast).toHaveBeenCalledWith('Transaction added', 'success')
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [
+            expect.objectContaining({
+              account_id: 1,
+              tag_id: 12,
+              sign: '-',
+              amount: 5000,
+            }),
+          ],
+        })
+      )
     })
 
     expect(mockNavigate).toHaveBeenCalledWith('/')

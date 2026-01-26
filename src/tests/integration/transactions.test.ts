@@ -4,11 +4,12 @@ import {
   closeTestDatabase,
   resetTestDatabase,
   createDatabaseMock,
+  insertWallet,
   insertAccount,
-  insertCategory,
   insertTransaction,
   getTestDatabase,
 } from './setup'
+import { SYSTEM_TAGS } from '../../types'
 
 describe('Transactions Integration', () => {
   let dbMock: ReturnType<typeof createDatabaseMock>
@@ -33,119 +34,95 @@ describe('Transactions Integration', () => {
     it('calculates balance with income transactions', async () => {
       const db = getTestDatabase()
 
-      // Create account and category
-      const accountId = insertAccount({ name: 'Cash', currency_id: 1, initial_balance: 1000 })
-      const categoryId = insertCategory({ name: 'Salary', type: 'income' })
+      // Create wallet and account
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
 
-      // Add income transaction
+      // Add income transaction (sale tag - id 11)
       insertTransaction({
-        type: 'income',
-        amount: 500,
-        currency_id: 1,
         account_id: accountId,
-        category_id: categoryId,
+        tag_id: SYSTEM_TAGS.SALE,
+        sign: '+',
+        amount: 50000,
       })
 
-      // Query balance
-      const result = db.exec(`
-        SELECT
-          a.initial_balance + COALESCE(
-            (SELECT SUM(
-              CASE
-                WHEN t.type = 'income' AND t.account_id = a.id THEN t.amount
-                WHEN t.type = 'expense' AND t.account_id = a.id THEN -t.amount
-                ELSE 0
-              END
-            ) FROM transactions t
-            WHERE t.account_id = a.id), 0
-          ) as balance
-        FROM accounts a WHERE a.id = ?
+      // Query balance from transactions
+      const trxResult = db.exec(`
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as balance
+        FROM trx_base WHERE account_id = ?
       `, [accountId])
 
-      expect(result[0].values[0][0]).toBe(1500) // 1000 + 500
+      expect(trxResult[0].values[0][0]).toBe(50000)
     })
 
     it('calculates balance with expense transactions', async () => {
       const db = getTestDatabase()
 
-      const accountId = insertAccount({ name: 'Cash', currency_id: 1, initial_balance: 1000 })
-      const categoryId = insertCategory({ name: 'Food', type: 'expense' })
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
 
+      // Expense transaction (food tag - id 12)
       insertTransaction({
-        type: 'expense',
-        amount: 200,
-        currency_id: 1,
         account_id: accountId,
-        category_id: categoryId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 20000,
       })
 
-      const result = db.exec(`
-        SELECT
-          a.initial_balance + COALESCE(
-            (SELECT SUM(
-              CASE
-                WHEN t.type = 'income' AND t.account_id = a.id THEN t.amount
-                WHEN t.type = 'expense' AND t.account_id = a.id THEN -t.amount
-                ELSE 0
-              END
-            ) FROM transactions t
-            WHERE t.account_id = a.id), 0
-          ) as balance
-        FROM accounts a WHERE a.id = ?
+      const trxResult = db.exec(`
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as balance
+        FROM trx_base WHERE account_id = ?
       `, [accountId])
 
-      expect(result[0].values[0][0]).toBe(800) // 1000 - 200
+      expect(trxResult[0].values[0][0]).toBe(-20000)
     })
 
     it('calculates balance with transfers', async () => {
       const db = getTestDatabase()
 
-      const account1Id = insertAccount({ name: 'Cash', currency_id: 1, initial_balance: 1000 })
-      const account2Id = insertAccount({ name: 'Bank', currency_id: 1, initial_balance: 500 })
+      const walletId1 = insertWallet({ name: 'Cash' })
+      const walletId2 = insertWallet({ name: 'Bank' })
+      const account1Id = insertAccount({ wallet_id: walletId1, currency_id: 1, balance: 100000 })
+      const account2Id = insertAccount({ wallet_id: walletId2, currency_id: 1, balance: 50000 })
 
-      insertTransaction({
-        type: 'transfer',
-        amount: 300,
-        currency_id: 1,
-        account_id: account1Id,
-        to_account_id: account2Id,
-      })
+      // Transfer: create a trx with two trx_base entries (double-entry)
+      const trxId = new Uint8Array(8)
+      crypto.getRandomValues(trxId)
+      const timestamp = Math.floor(Date.now() / 1000)
 
-      // Check source account
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
+
+      // Debit from source
+      const debitId = new Uint8Array(8)
+      crypto.getRandomValues(debitId)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId, account1Id, SYSTEM_TAGS.TRANSFER, '-', 30000, 0]
+      )
+
+      // Credit to destination
+      const creditId = new Uint8Array(8)
+      crypto.getRandomValues(creditId)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId, account2Id, SYSTEM_TAGS.TRANSFER, '+', 30000, 0]
+      )
+
+      // Check source account transactions
       const result1 = db.exec(`
-        SELECT
-          a.initial_balance + COALESCE(
-            (SELECT SUM(
-              CASE
-                WHEN t.type = 'transfer' AND t.account_id = a.id THEN -t.amount
-                WHEN t.type = 'transfer' AND t.to_account_id = a.id THEN t.amount
-                ELSE 0
-              END
-            ) FROM transactions t
-            WHERE t.account_id = a.id OR t.to_account_id = a.id), 0
-          ) as balance
-        FROM accounts a WHERE a.id = ?
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
+        FROM trx_base WHERE account_id = ?
       `, [account1Id])
 
-      expect(result1[0].values[0][0]).toBe(700) // 1000 - 300
+      expect(result1[0].values[0][0]).toBe(-30000)
 
-      // Check destination account
+      // Check destination account transactions
       const result2 = db.exec(`
-        SELECT
-          a.initial_balance + COALESCE(
-            (SELECT SUM(
-              CASE
-                WHEN t.type = 'transfer' AND t.account_id = a.id THEN -t.amount
-                WHEN t.type = 'transfer' AND t.to_account_id = a.id THEN t.amount
-                ELSE 0
-              END
-            ) FROM transactions t
-            WHERE t.account_id = a.id OR t.to_account_id = a.id), 0
-          ) as balance
-        FROM accounts a WHERE a.id = ?
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
+        FROM trx_base WHERE account_id = ?
       `, [account2Id])
 
-      expect(result2[0].values[0][0]).toBe(800) // 500 + 300
+      expect(result2[0].values[0][0]).toBe(30000)
     })
   })
 
@@ -153,49 +130,52 @@ describe('Transactions Integration', () => {
     it('calculates correct monthly totals', async () => {
       const db = getTestDatabase()
 
-      const accountId = insertAccount({ name: 'Cash', currency_id: 1 })
-      const incomeCatId = insertCategory({ name: 'Salary', type: 'income' })
-      const expenseCatId = insertCategory({ name: 'Food', type: 'expense' })
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
       // Add January transactions
+      // Income - timestamp for 2025-01-15
+      const jan15 = Math.floor(new Date('2025-01-15T10:00:00').getTime() / 1000)
       insertTransaction({
-        type: 'income',
-        amount: 3000,
-        currency_id: 1,
         account_id: accountId,
-        category_id: incomeCatId,
-        date_time: '2025-01-15 10:00:00',
+        tag_id: SYSTEM_TAGS.SALE,
+        sign: '+',
+        amount: 300000,
+        timestamp: jan15,
       })
 
+      // Expense - timestamp for 2025-01-20
+      const jan20 = Math.floor(new Date('2025-01-20T14:00:00').getTime() / 1000)
       insertTransaction({
-        type: 'expense',
-        amount: 500,
-        currency_id: 1,
         account_id: accountId,
-        category_id: expenseCatId,
-        date_time: '2025-01-20 14:00:00',
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 50000,
+        timestamp: jan20,
       })
 
+      // Expense - timestamp for 2025-01-25
+      const jan25 = Math.floor(new Date('2025-01-25T12:00:00').getTime() / 1000)
       insertTransaction({
-        type: 'expense',
-        amount: 200,
-        currency_id: 1,
         account_id: accountId,
-        category_id: expenseCatId,
-        date_time: '2025-01-25 12:00:00',
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 20000,
+        timestamp: jan25,
       })
 
-      // Query monthly summary
+      // Query monthly summary using trx_base directly
       const result = db.exec(`
         SELECT
-          COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as income,
-          COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
-        FROM transactions
-        WHERE substr(date_time, 1, 7) = '2025-01'
+          COALESCE(SUM(CASE WHEN sign = '+' THEN amount ELSE 0 END), 0) as income,
+          COALESCE(SUM(CASE WHEN sign = '-' THEN amount ELSE 0 END), 0) as expenses
+        FROM trx_base tb
+        JOIN trx t ON tb.trx_id = t.id
+        WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE '2025-01%'
       `)
 
-      expect(result[0].values[0][0]).toBe(3000) // Income
-      expect(result[0].values[0][1]).toBe(700) // Expenses
+      expect(result[0].values[0][0]).toBe(300000) // Income
+      expect(result[0].values[0][1]).toBe(70000) // Expenses (50000 + 20000)
     })
 
     it('returns zero for months with no transactions', async () => {
@@ -203,10 +183,11 @@ describe('Transactions Integration', () => {
 
       const result = db.exec(`
         SELECT
-          COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as income,
-          COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
-        FROM transactions
-        WHERE substr(date_time, 1, 7) = '2025-02'
+          COALESCE(SUM(CASE WHEN sign = '+' THEN amount ELSE 0 END), 0) as income,
+          COALESCE(SUM(CASE WHEN sign = '-' THEN amount ELSE 0 END), 0) as expenses
+        FROM trx_base tb
+        JOIN trx t ON tb.trx_id = t.id
+        WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE '2025-02%'
       `)
 
       expect(result[0].values[0][0]).toBe(0)
@@ -215,51 +196,65 @@ describe('Transactions Integration', () => {
   })
 
   describe('Foreign Key Constraints', () => {
-    it('prevents deleting currency with linked accounts', async () => {
+    it('prevents deleting currency with linked transactions', async () => {
       const db = getTestDatabase()
 
-      insertAccount({ name: 'Cash', currency_id: 1 })
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
+      // Add a transaction to the account
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 10000,
+      })
+
+      // Currency CASCADE deletes account, but account RESTRICT fails due to trx_base
       expect(() => {
-        db.run('DELETE FROM currencies WHERE id = 1')
+        db.run('DELETE FROM currency WHERE id = 1')
       }).toThrow()
     })
 
     it('prevents deleting account with transactions', async () => {
       const db = getTestDatabase()
 
-      const accountId = insertAccount({ name: 'Cash', currency_id: 1 })
-      const categoryId = insertCategory({ name: 'Food', type: 'expense' })
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
       insertTransaction({
-        type: 'expense',
-        amount: 100,
-        currency_id: 1,
         account_id: accountId,
-        category_id: categoryId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 10000,
       })
 
+      // trx_base has ON DELETE RESTRICT for account_id
       expect(() => {
-        db.run('DELETE FROM accounts WHERE id = ?', [accountId])
+        db.run('DELETE FROM account WHERE id = ?', [accountId])
       }).toThrow()
     })
 
-    it('prevents deleting category with transactions', async () => {
+    it('prevents deleting tag with transactions', async () => {
       const db = getTestDatabase()
 
-      const accountId = insertAccount({ name: 'Cash', currency_id: 1 })
-      const categoryId = insertCategory({ name: 'Food', type: 'expense' })
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Create a custom tag
+      db.run('INSERT INTO tag (name) VALUES (?)', ['CustomTag'])
+      const tagId = Number(db.exec('SELECT last_insert_rowid()')[0].values[0][0])
 
       insertTransaction({
-        type: 'expense',
-        amount: 100,
-        currency_id: 1,
         account_id: accountId,
-        category_id: categoryId,
+        tag_id: tagId,
+        sign: '-',
+        amount: 10000,
       })
 
+      // trx_base has ON DELETE RESTRICT for tag_id
       expect(() => {
-        db.run('DELETE FROM categories WHERE id = ?', [categoryId])
+        db.run('DELETE FROM tag WHERE id = ?', [tagId])
       }).toThrow()
     })
   })
@@ -268,66 +263,99 @@ describe('Transactions Integration', () => {
     it('stores exchange rate correctly', async () => {
       const db = getTestDatabase()
 
-      const usdAccountId = insertAccount({ name: 'USD Wallet', currency_id: 1, initial_balance: 1000 })
-      const eurAccountId = insertAccount({ name: 'EUR Wallet', currency_id: 2, initial_balance: 0 })
+      const walletId = insertWallet({ name: 'Multi-currency' })
+      const usdAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
+      const eurAccountId = insertAccount({ wallet_id: walletId, currency_id: 2, balance: 0 })
 
-      db.run(`
-        INSERT INTO transactions
-          (type, amount, currency_id, account_id, to_account_id, to_amount, to_currency_id, exchange_rate, date_time)
-        VALUES ('exchange', 100, 1, ?, ?, 92.5, 2, 0.925, '2025-01-09 14:30:00')
-      `, [usdAccountId, eurAccountId])
+      // Exchange: USD to EUR
+      const trxId = new Uint8Array(8)
+      crypto.getRandomValues(trxId)
+      const timestamp = Math.floor(Date.now() / 1000)
 
-      const result = db.exec(`
-        SELECT amount, to_amount, exchange_rate FROM transactions WHERE type = 'exchange'
-      `)
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
 
-      expect(result[0].values[0][0]).toBe(100)
-      expect(result[0].values[0][1]).toBe(92.5)
-      expect(result[0].values[0][2]).toBe(0.925)
+      // Debit USD
+      const debitId = new Uint8Array(8)
+      crypto.getRandomValues(debitId)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId, usdAccountId, SYSTEM_TAGS.EXCHANGE, '-', 10000, 0]
+      )
+
+      // Credit EUR (at 0.925 rate, 100 USD = 92.50 EUR = 9250 cents)
+      const creditId = new Uint8Array(8)
+      crypto.getRandomValues(creditId)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId, eurAccountId, SYSTEM_TAGS.EXCHANGE, '+', 9250, 0]
+      )
+
+      // Verify both entries exist
+      const result = db.exec('SELECT COUNT(*) FROM trx_base WHERE trx_id = ?', [trxId])
+      expect(result[0].values[0][0]).toBe(2)
+
+      // Verify amounts
+      const debitResult = db.exec('SELECT amount FROM trx_base WHERE id = ?', [debitId])
+      expect(debitResult[0].values[0][0]).toBe(10000)
+
+      const creditResult = db.exec('SELECT amount FROM trx_base WHERE id = ?', [creditId])
+      expect(creditResult[0].values[0][0]).toBe(9250)
     })
 
     it('affects both account balances correctly', async () => {
       const db = getTestDatabase()
 
-      const usdAccountId = insertAccount({ name: 'USD Wallet', currency_id: 1, initial_balance: 1000 })
-      const eurAccountId = insertAccount({ name: 'EUR Wallet', currency_id: 2, initial_balance: 0 })
+      const walletId = insertWallet({ name: 'Multi-currency' })
+      const usdAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
+      const eurAccountId = insertAccount({ wallet_id: walletId, currency_id: 2, balance: 0 })
 
-      db.run(`
-        INSERT INTO transactions
-          (type, amount, currency_id, account_id, to_account_id, to_amount, to_currency_id, date_time)
-        VALUES ('exchange', 100, 1, ?, ?, 92.5, 2, '2025-01-09 14:30:00')
-      `, [usdAccountId, eurAccountId])
+      // Exchange transaction
+      const trxId = new Uint8Array(8)
+      crypto.getRandomValues(trxId)
+      const timestamp = Math.floor(Date.now() / 1000)
 
-      // USD account should decrease by 100
-      const usdResult = db.exec(`
-        SELECT initial_balance - COALESCE(
-          (SELECT SUM(amount) FROM transactions WHERE type = 'exchange' AND account_id = ?), 0
-        ) as balance
-        FROM accounts WHERE id = ?
-      `, [usdAccountId, usdAccountId])
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
 
-      expect(usdResult[0].values[0][0]).toBe(900)
+      // Debit USD
+      const debitId = new Uint8Array(8)
+      crypto.getRandomValues(debitId)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId, usdAccountId, SYSTEM_TAGS.EXCHANGE, '-', 10000, 0]
+      )
 
-      // EUR account should increase by 92.5
-      const eurResult = db.exec(`
-        SELECT initial_balance + COALESCE(
-          (SELECT SUM(to_amount) FROM transactions WHERE type = 'exchange' AND to_account_id = ?), 0
-        ) as balance
-        FROM accounts WHERE id = ?
-      `, [eurAccountId, eurAccountId])
+      // Credit EUR
+      const creditId = new Uint8Array(8)
+      crypto.getRandomValues(creditId)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId, eurAccountId, SYSTEM_TAGS.EXCHANGE, '+', 9250, 0]
+      )
 
-      expect(eurResult[0].values[0][0]).toBe(92.5)
+      // Check USD account net
+      const usdNet = db.exec(`
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END)
+        FROM trx_base WHERE account_id = ?
+      `, [usdAccountId])
+      expect(usdNet[0].values[0][0]).toBe(-10000)
+
+      // Check EUR account net
+      const eurNet = db.exec(`
+        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END)
+        FROM trx_base WHERE account_id = ?
+      `, [eurAccountId])
+      expect(eurNet[0].values[0][0]).toBe(9250)
     })
   })
 
   describe('Data Integrity', () => {
-    it('enforces unique category names', async () => {
+    it('enforces unique tag names', async () => {
       const db = getTestDatabase()
 
-      insertCategory({ name: 'Food', type: 'expense' })
+      db.run('INSERT INTO tag (name) VALUES (?)', ['UniqueTag'])
 
       expect(() => {
-        insertCategory({ name: 'Food', type: 'expense' })
+        db.run('INSERT INTO tag (name) VALUES (?)', ['UniqueTag'])
       }).toThrow()
     })
 
@@ -336,28 +364,7 @@ describe('Transactions Integration', () => {
 
       // USD already exists from seed data
       expect(() => {
-        db.run('INSERT INTO currencies (code, name, symbol) VALUES (?, ?, ?)', ['USD', 'Another Dollar', '$'])
-      }).toThrow()
-    })
-
-    it('validates transaction types', async () => {
-      const db = getTestDatabase()
-
-      const accountId = insertAccount({ name: 'Cash', currency_id: 1 })
-
-      expect(() => {
-        db.run(`
-          INSERT INTO transactions (type, amount, currency_id, account_id, date_time)
-          VALUES ('invalid', 100, 1, ?, '2025-01-09 14:30:00')
-        `, [accountId])
-      }).toThrow()
-    })
-
-    it('validates category types', async () => {
-      const db = getTestDatabase()
-
-      expect(() => {
-        db.run('INSERT INTO categories (name, type) VALUES (?, ?)', ['Invalid', 'invalid'])
+        db.run('INSERT INTO currency (code, name, symbol) VALUES (?, ?, ?)', ['USD', 'Another Dollar', '$'])
       }).toThrow()
     })
   })

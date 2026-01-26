@@ -1,30 +1,46 @@
 import { useState, useEffect } from 'react'
-import type { Transaction, TransactionInput, TransactionType, Account, Category, Counterparty } from '../../types'
-import { accountRepository, categoryRepository, counterpartyRepository } from '../../services/repositories'
+import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput } from '../../types'
+import { SYSTEM_TAGS } from '../../types'
+import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository } from '../../services/repositories'
 import { Button, Input, Select } from '../ui'
-import { toDateTimeLocal, fromDateTimeLocal } from '../../utils/dateUtils'
+import { toDateTimeLocal } from '../../utils/dateUtils'
+
+type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
 
 interface TransactionFormProps {
-  transaction?: Transaction
-  onSubmit: (data: TransactionInput) => Promise<void>
+  initialData?: Transaction
+  onSubmit: () => void
   onCancel: () => void
 }
 
-export function TransactionForm({ transaction, onSubmit, onCancel }: TransactionFormProps) {
-  const [type, setType] = useState<TransactionType>(transaction?.type || 'expense')
-  const [amount, setAmount] = useState(transaction?.amount?.toString() || '')
-  const [accountId, setAccountId] = useState(transaction?.account_id?.toString() || '')
-  const [categoryId, setCategoryId] = useState(transaction?.category_id?.toString() || '')
-  const [counterpartyId, setCounterpartyId] = useState(transaction?.counterparty_id?.toString() || '')
-  const [toAccountId, setToAccountId] = useState(transaction?.to_account_id?.toString() || '')
-  const [toAmount, setToAmount] = useState(transaction?.to_amount?.toString() || '')
-  const [exchangeRate, setExchangeRate] = useState(transaction?.exchange_rate?.toString() || '')
-  const [dateTime, setDateTime] = useState(toDateTimeLocal(transaction?.date_time || new Date()))
-  const [notes, setNotes] = useState(transaction?.notes || '')
-  const [exchangeMode, setExchangeMode] = useState<'amounts' | 'rate'>('amounts')
+// Extended account with display info
+interface AccountOption extends Account {
+  walletName: string
+  currencyCode: string
+  currencySymbol: string
+  decimalPlaces: number
+}
 
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [categories, setCategories] = useState<Category[]>([])
+export function TransactionForm({ initialData, onSubmit, onCancel }: TransactionFormProps) {
+  const [mode, setMode] = useState<TransactionMode>('expense')
+  const [amount, setAmount] = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [tagId, setTagId] = useState('')
+  const [counterpartyId, setCounterpartyId] = useState('')
+  const [counterpartyName, setCounterpartyName] = useState('')
+  const [toAccountId, setToAccountId] = useState('')
+  const [toAmount, setToAmount] = useState('')
+  const [exchangeRate, setExchangeRate] = useState('')
+  const [fee, setFee] = useState('')
+  const [feeTagId, setFeeTagId] = useState(SYSTEM_TAGS.FEE.toString())
+  const [note, setNote] = useState('')
+  const [exchangeMode, setExchangeMode] = useState<'amounts' | 'rate'>('amounts')
+  const [datetime, setDateTime] = useState(Date.now())
+
+  const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [incomeTags, setIncomeTags] = useState<Tag[]>([])
+  const [expenseTags, setExpenseTags] = useState<Tag[]>([])
+  const [feeTags, setFeeTags] = useState<Tag[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -34,20 +50,111 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
     loadData()
   }, [])
 
+  useEffect(() => {
+    if (initialData && accounts.length > 0) {
+      populateFromInitialData()
+    }
+  }, [initialData, accounts])
+
+  const populateFromInitialData = () => {
+    if (!initialData || !initialData.lines || initialData.lines.length === 0) return
+    setDateTime(new Date(initialData.timestamp * 1000).getTime())
+
+    const lines = initialData.lines as TransactionLine[]
+    const firstLine = lines[0]
+
+    // Detect mode
+    let detectedMode: TransactionMode = 'expense'
+    if (lines.some((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.TRANSFER)) {
+      detectedMode = 'transfer'
+    } else if (lines.some((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.EXCHANGE)) {
+      detectedMode = 'exchange'
+    } else if (firstLine.sign === '+') {
+      detectedMode = 'income'
+    }
+
+    setMode(detectedMode)
+
+    if (detectedMode === 'income' || detectedMode === 'expense') {
+      setAccountId(firstLine.account_id.toString())
+      setTagId(firstLine.tag_id.toString())
+      setNote(firstLine.note || '')
+
+      const acc = accounts.find(a => a.id === firstLine.account_id)
+      const dp = acc?.decimalPlaces ?? 2
+      setAmount((firstLine.amount / Math.pow(10, dp)).toString())
+
+      if (initialData.counterparty_id) {
+        setCounterpartyId(initialData.counterparty_id.toString())
+      }
+    } else if (detectedMode === 'transfer' || detectedMode === 'exchange') {
+      const fromLine = lines.find((l: TransactionLine) => l.sign === '-')!
+      const toLine = lines.find((l: TransactionLine) => l.sign === '+')!
+      const feeLine = lines.find((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.FEE || (l.tag_id !== fromLine.tag_id && l.sign === '-'))
+
+      setAccountId(fromLine.account_id.toString())
+      setToAccountId(toLine.account_id.toString())
+      setNote(fromLine.note || (initialData.lines as TransactionLine[]).find((l: TransactionLine) => l.note)?.note || '')
+
+      const fromAcc = accounts.find(a => a.id === fromLine.account_id)
+      const fromDp = fromAcc?.decimalPlaces ?? 2
+      setAmount((fromLine.amount / Math.pow(10, fromDp)).toString())
+
+      const toAcc = accounts.find(a => a.id === toLine.account_id)
+      const toDp = toAcc?.decimalPlaces ?? 2
+      setToAmount((toLine.amount / Math.pow(10, toDp)).toString())
+
+      if (feeLine) {
+        setFee((feeLine.amount / Math.pow(10, fromDp)).toString())
+        setFeeTagId(feeLine.tag_id.toString())
+      }
+
+      if (detectedMode === 'exchange') {
+        const rate = toLine.amount / fromLine.amount
+        setExchangeRate(rate.toFixed(6))
+      }
+    }
+  }
+
   const loadData = async () => {
     try {
-      const [accs, cats, cps] = await Promise.all([
-        accountRepository.findAll(),
-        categoryRepository.findAll(),
+      const [wallets, incomeTags, expenseTags, allFeeTags, cps, currencies] = await Promise.all([
+        walletRepository.findActive(),
+        tagRepository.findIncomeTags(),
+        tagRepository.findExpenseTags(),
+        tagRepository.findExpenseTags(), // Fee tags are expense-type
         counterpartyRepository.findAll(),
+        currencyRepository.findAll(),
       ])
-      setAccounts(accs)
-      setCategories(cats)
+
+      setDateTime(Date.now())
+      // Build account options with wallet/currency info
+      const accountOptions: AccountOption[] = []
+      for (const wallet of wallets) {
+        if (wallet.accounts) {
+          for (const acc of wallet.accounts) {
+            const currency = currencies.find(c => c.id === acc.currency_id)
+            accountOptions.push({
+              ...acc,
+              walletName: wallet.name,
+              currencyCode: currency?.code ?? '',
+              currencySymbol: currency?.symbol ?? '',
+              decimalPlaces: currency?.decimal_places ?? 2,
+            })
+          }
+        }
+      }
+
+      setAccounts(accountOptions)
+      setIncomeTags(incomeTags)
+      setExpenseTags(expenseTags)
+      setFeeTags(allFeeTags)
       setCounterparties(cps)
 
-      // Set default account if not editing
-      if (!transaction && accs.length > 0) {
-        setAccountId(accs[0].id.toString())
+      // Set default account only if not editing
+      if (!initialData && accountOptions.length > 0) {
+        const defaultAcc = accountOptions.find(a => a.is_default) || accountOptions[0]
+        setAccountId(defaultAcc.id.toString())
       }
     } catch (error) {
       console.error('Failed to load form data:', error)
@@ -56,43 +163,36 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
     }
   }
 
-  const selectedAccount = accounts.find((a) => a.id.toString() === accountId)
-  const selectedToAccount = accounts.find((a) => a.id.toString() === toAccountId)
-  const currencyId = selectedAccount?.currency_id
-  const toCurrencyId = selectedToAccount?.currency_id
+  // Filter tags based on mode
+  const filteredTags = mode === 'income' ? incomeTags : mode === 'expense' ? expenseTags : []
 
-  // Get decimal places for amount inputs
-  const decimalPlaces = selectedAccount?.currency_decimal_places ?? 2
-  const toDecimalPlaces = selectedToAccount?.currency_decimal_places ?? 2
+  const selectedAccount = accounts.find(a => a.id.toString() === accountId)
+  const selectedToAccount = accounts.find(a => a.id.toString() === toAccountId)
+  const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
+  const toDecimalPlaces = selectedToAccount?.decimalPlaces ?? 2
 
   // Calculate step and placeholder based on decimal places
   const getStep = (decimals: number) => (1 / Math.pow(10, decimals)).toFixed(decimals)
   const getPlaceholder = (decimals: number) => '0.' + '0'.repeat(decimals)
 
   // Format balance for display
-  const formatBalance = (balance: number | undefined, decimals: number) => {
-    return (balance ?? 0).toFixed(decimals)
+  const formatBalance = (balance: number, decimals: number) => {
+    return (balance / Math.pow(10, decimals)).toFixed(decimals)
   }
 
-  // Filter categories by transaction type
-  const filteredCategories = categories.filter((c) => {
-    if (type === 'income') return c.type === 'income' || c.type === 'both'
-    if (type === 'expense') return c.type === 'expense' || c.type === 'both'
-    return false
-  })
-
-  // Filter counterparties by selected category
-  const filteredCounterparties = categoryId
-    ? counterparties.filter((cp) => !cp.category_ids?.length || cp.category_ids.includes(parseInt(categoryId)))
-    : counterparties
+  // Convert display amount to integer
+  const toIntegerAmount = (displayAmount: string, decimals: number): number => {
+    const parsed = parseFloat(displayAmount) || 0
+    return Math.round(parsed * Math.pow(10, decimals))
+  }
 
   // Handle exchange rate calculation
   useEffect(() => {
-    if (type === 'exchange' && exchangeMode === 'rate' && amount && exchangeRate) {
+    if (mode === 'exchange' && exchangeMode === 'rate' && amount && exchangeRate) {
       const calculated = parseFloat(amount) * parseFloat(exchangeRate)
       setToAmount(calculated.toFixed(toDecimalPlaces))
     }
-  }, [amount, exchangeRate, exchangeMode, type, toDecimalPlaces])
+  }, [amount, exchangeRate, exchangeMode, mode, toDecimalPlaces])
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -103,22 +203,25 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
     if (!accountId) {
       newErrors.accountId = 'Account is required'
     }
-    if ((type === 'income' || type === 'expense') && !categoryId) {
-      newErrors.categoryId = 'Category is required'
+    if ((mode === 'income' || mode === 'expense') && !tagId) {
+      newErrors.tagId = 'Category is required'
     }
-    if ((type === 'transfer' || type === 'exchange') && !toAccountId) {
+    if ((mode === 'transfer' || mode === 'exchange') && !toAccountId) {
       newErrors.toAccountId = 'Destination account is required'
     }
-    if (type === 'transfer' && accountId === toAccountId) {
+    if (mode === 'transfer' && accountId === toAccountId) {
       newErrors.toAccountId = 'Cannot transfer to the same account'
     }
-    if (type === 'exchange') {
+    if (mode === 'exchange') {
       if (!toAmount || parseFloat(toAmount) <= 0) {
         newErrors.toAmount = 'Destination amount is required'
       }
-      if (currencyId === toCurrencyId) {
+      if (selectedAccount?.currency_id === selectedToAccount?.currency_id) {
         newErrors.toAccountId = 'Exchange requires different currencies'
       }
+    }
+    if (fee && parseFloat(fee) < 0) {
+      newErrors.fee = 'Fee cannot be negative'
     }
 
     setErrors(newErrors)
@@ -131,36 +234,142 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
 
     setSubmitting(true)
     try {
-      const data: TransactionInput = {
-        type,
-        amount: parseFloat(amount),
-        currency_id: currencyId!,
-        account_id: parseInt(accountId),
-        date_time: fromDateTimeLocal(dateTime),
-        notes: notes || undefined,
-      }
+      const intAmount = toIntegerAmount(amount, decimalPlaces)
+      const intFee = fee ? toIntegerAmount(fee, decimalPlaces) : undefined
 
-      if (type === 'income' || type === 'expense') {
-        data.category_id = parseInt(categoryId)
-        if (counterpartyId) {
-          data.counterparty_id = parseInt(counterpartyId)
+      // Get exchange rate for the account's currency (100 = 1.00 in default currency)
+      const selectedAccount = accounts.find(a => a.id.toString() === accountId)
+      const accountRate = selectedAccount
+        ? (await currencyRepository.getExchangeRate(selectedAccount.currency_id))?.rate ?? 100
+        : 100
+
+      const payload: TransactionInput = {
+        counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
+        counterparty_name: counterpartyName || undefined,
+        timestamp: Math.floor(datetime / 1000),
+        lines: []
+      }
+      if (mode === 'income' || mode === 'expense') {
+        const sign = mode === 'income' ? '+' : '-' as const
+        payload.lines.push(
+          {
+            account_id: parseInt(accountId),
+            tag_id: parseInt(tagId),
+            sign,
+            amount: intAmount,
+            rate: accountRate,
+            note: note || undefined,
+          },
+        )
+      } else if (mode === 'transfer') {
+        payload.lines.push(
+          {
+            account_id: parseInt(accountId),
+            tag_id: SYSTEM_TAGS.TRANSFER,
+            sign: '-' as const,
+            amount: intAmount,
+            rate: accountRate,
+            note: note || undefined,
+          })
+        payload.lines.push({
+          account_id: parseInt(toAccountId),
+          tag_id: SYSTEM_TAGS.TRANSFER,
+          sign: '+' as const,
+          amount: intAmount,
+          rate: accountRate, // Same currency for transfers
+        })
+
+        if (intFee) {
+          payload.lines.push({
+            account_id: parseInt(accountId),
+            tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
+            sign: '-' as const,
+            amount: intFee,
+            rate: accountRate,
+          })
         }
-      }
+      } else if (mode === 'exchange') {
+        const intToAmount = toIntegerAmount(toAmount, toDecimalPlaces)
 
-      if (type === 'transfer') {
-        data.to_account_id = parseInt(toAccountId)
-      }
+        // Calculate rate: how many units of 'to' currency per 1 unit of 'from' currency
+        // Rate stored as integer where 100 = 1.00
+        const fromDisplay = parseFloat(amount) || 0
+        const toDisplay = parseFloat(toAmount) || 0
 
-      if (type === 'exchange') {
-        data.to_account_id = parseInt(toAccountId)
-        data.to_amount = parseFloat(toAmount)
-        data.to_currency_id = toCurrencyId
-        if (exchangeRate) {
-          data.exchange_rate = parseFloat(exchangeRate)
+        // Find which currency is default to determine rate direction
+        const fromCurrency = accounts.find(a => a.id.toString() === accountId)
+        const toCurrency = accounts.find(a => a.id.toString() === toAccountId)
+
+        // Rate for 'from' currency: how much default currency you get for 1 unit
+        // If from is default currency, rate = 100. Otherwise calculate from exchange.
+        let fromRate = 100
+        let toRate = 100
+
+        if (fromCurrency && toCurrency && fromDisplay > 0 && toDisplay > 0) {
+          // The actual exchange: fromAmount of fromCurrency = toAmount of toCurrency
+          // If toCurrency is the default, then fromRate = toAmount/fromAmount * 100
+          // If fromCurrency is the default, then toRate = fromAmount/toAmount * 100
+
+          // For now, calculate rate as toAmount/fromAmount * 100 adjusted for decimals
+          const fromDisplayNormalized = fromDisplay * Math.pow(10, fromCurrency.decimalPlaces)
+          const toDisplayNormalized = toDisplay * Math.pow(10, toCurrency.decimalPlaces)
+
+          await currencyRepository.getExchangeRate(fromCurrency.currency_id)
+            .then(v => {
+              if (v) fromRate = v.rate
+            })
+          await currencyRepository.getExchangeRate(toCurrency.currency_id)
+            .then(v => {
+              if (v) toRate = v.rate
+            })
+          // Cross rate calculation
+          // const crossRate = (toDisplayNormalized / fromDisplayNormalized) * 100
+
+          // Update exchange_rate table for the non-default currency
+          // Rate semantics: rate=100 means 1.00 to the default currency
+          // If from is default currency, set rate for 'to' currency
+          // If to is default currency, set rate for 'from' currency
+          const defaultCurrency = await currencyRepository.findDefault()
+
+          if (defaultCurrency) {
+            if (fromCurrency.currency_id === defaultCurrency.id) {
+              // From is default (USD), to is foreign (EUR)
+              // Rate = how many EUR per 1 USD = toAmount/fromAmount * 10^decimal_places
+              toRate = Math.round((toDisplayNormalized / fromDisplayNormalized) * 100)
+              await currencyRepository.setExchangeRate(toCurrency.currency_id, toRate)
+            } else if (toCurrency.currency_id === defaultCurrency.id) {
+              // To is default (USD), from is foreign (EUR)
+              // Rate = how many EUR per 1 USD = fromAmount/toAmount * 10^decimal_places
+              fromRate = Math.round((fromDisplayNormalized / toDisplayNormalized) * 100)
+              await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRate)
+            }
+          }
         }
+
+        payload.lines.push({
+          account_id: parseInt(accountId),
+          tag_id: SYSTEM_TAGS.EXCHANGE,
+          sign: '-' as const,
+          amount: intAmount,
+          rate: fromRate,
+          note: note || undefined,
+        })
+        payload.lines.push({
+          account_id: parseInt(toAccountId),
+          tag_id: SYSTEM_TAGS.EXCHANGE,
+          sign: '+' as const,
+          amount: intToAmount,
+          rate: toRate,
+        })
+      }
+      if (initialData) {
+        await transactionRepository.update(initialData.id, payload)
+      } else {
+        await transactionRepository.create(payload)
       }
 
-      await onSubmit(data)
+
+      onSubmit()
     } catch (error) {
       console.error('Failed to save transaction:', error)
     } finally {
@@ -171,7 +380,7 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-300 border-t-primary-600" />
+        <div role="status" className="animate-spin rounded-full h-8 w-8 border-2 border-gray-300 border-t-primary-600" />
       </div>
     )
   }
@@ -180,16 +389,15 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Transaction Type */}
       <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        {(['expense', 'income', 'transfer', 'exchange'] as TransactionType[]).map((t) => (
+        {(['expense', 'income', 'transfer', 'exchange'] as TransactionMode[]).map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => setType(t)}
-            className={`py-2 text-sm font-medium rounded-md transition-colors ${
-              type === t
-                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-            }`}
+            onClick={() => setMode(t)}
+            className={`py-2 text-sm font-medium rounded-md transition-colors ${mode === t
+              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
           >
             {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
@@ -198,10 +406,11 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
 
       {/* Amount */}
       <div className="space-y-1">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Amount {selectedAccount && `(${selectedAccount.currency_symbol})`}
+        <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Amount {selectedAccount && `(${selectedAccount.currencySymbol})`}
         </label>
         <input
+          id="amount"
           type="number"
           step={getStep(decimalPlaces)}
           min="0"
@@ -220,62 +429,108 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
         onChange={(e) => setAccountId(e.target.value)}
         options={accounts.map((a) => ({
           value: a.id,
-          label: `${a.name} (${a.currency_symbol}${formatBalance(a.current_balance, a.currency_decimal_places ?? 2)})`,
+          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
         }))}
         placeholder="Select account"
         error={errors.accountId}
       />
 
-      {/* Category (for income/expense) */}
-      {(type === 'income' || type === 'expense') && (
+      {/* Category/Tag (for income/expense) */}
+      {(mode === 'income' || mode === 'expense') && (
         <Select
           label="Category"
-          value={categoryId}
-          onChange={(e) => setCategoryId(e.target.value)}
-          options={filteredCategories.map((c) => ({
-            value: c.id,
-            label: `${c.icon || ''} ${c.name}`,
+          value={tagId}
+          onChange={(e) => setTagId(e.target.value)}
+          options={filteredTags.map((t) => ({
+            value: t.id,
+            label: t.name,
           }))}
           placeholder="Select category"
-          error={errors.categoryId}
+          error={errors.tagId}
         />
       )}
 
       {/* Counterparty (for income/expense, optional) */}
-      {(type === 'income' || type === 'expense') && (
-        <Select
-          label="Counterparty (optional)"
-          value={counterpartyId}
-          onChange={(e) => setCounterpartyId(e.target.value)}
-          options={[
-            { value: '', label: 'None' },
-            ...filteredCounterparties.map((cp) => ({
-              value: cp.id,
-              label: cp.name,
-            })),
-          ]}
-        />
+      {(mode === 'income' || mode === 'expense') && (
+        <>
+          <Select
+            label="Counterparty (optional)"
+            value={counterpartyId}
+            onChange={(e) => {
+              setCounterpartyId(e.target.value)
+              if (e.target.value) setCounterpartyName('')
+            }}
+            options={[
+              { value: '', label: 'None / New' },
+              ...counterparties.map((cp) => ({
+                value: cp.id,
+                label: cp.name,
+              })),
+            ]}
+          />
+          {!counterpartyId && (
+            <Input
+              label="Or enter new counterparty"
+              value={counterpartyName}
+              onChange={(e) => setCounterpartyName(e.target.value)}
+              placeholder="New counterparty name"
+            />
+          )}
+        </>
       )}
 
       {/* To Account (for transfer/exchange) */}
-      {(type === 'transfer' || type === 'exchange') && (
+      {(mode === 'transfer' || mode === 'exchange') && (
         <Select
           label="To Account"
           value={toAccountId}
           onChange={(e) => setToAccountId(e.target.value)}
           options={accounts
-            .filter((a) => type === 'transfer' ? a.currency_id === currencyId : true)
+            .filter((a) => mode === 'transfer' ? a.currency_id === selectedAccount?.currency_id : true)
             .map((a) => ({
               value: a.id,
-              label: `${a.name} (${a.currency_symbol}${formatBalance(a.current_balance, a.currency_decimal_places ?? 2)})`,
+              label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
             }))}
           placeholder="Select destination account"
           error={errors.toAccountId}
         />
       )}
 
+      {/* Fee (for transfer/exchange) */}
+      {(mode === 'transfer' || mode === 'exchange') && (
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <label htmlFor="fee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Fee (optional) {selectedAccount && `(${selectedAccount.currencySymbol})`}
+            </label>
+            <input
+              id="fee"
+              type="number"
+              step={getStep(decimalPlaces)}
+              min="0"
+              value={fee}
+              onChange={(e) => setFee(e.target.value)}
+              placeholder="0.00"
+              className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+            />
+            {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
+          </div>
+          {fee && parseFloat(fee) > 0 && (
+            <Select
+              label="Fee Category"
+              value={feeTagId}
+              onChange={(e) => setFeeTagId(e.target.value)}
+              options={feeTags.map((t) => ({
+                value: t.id,
+                label: t.name,
+              }))}
+            />
+          )}
+        </div>
+      )}
+
       {/* Exchange specific fields */}
-      {type === 'exchange' && (
+      {mode === 'exchange' && (
         <>
           {/* Exchange mode toggle */}
           <div className="flex gap-2 text-sm">
@@ -308,10 +563,11 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
           )}
 
           <div className="space-y-1">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Receive Amount {selectedToAccount && `(${selectedToAccount.currency_symbol})`}
+            <label htmlFor="toAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Receive Amount {selectedToAccount && `(${selectedToAccount.currencySymbol})`}
             </label>
             <input
+              id="toAmount"
               type="number"
               step={getStep(toDecimalPlaces)}
               min="0"
@@ -326,22 +582,21 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
         </>
       )}
 
-      {/* Date/Time */}
       <Input
-        label="Date & Time"
-        type="datetime-local"
-        value={dateTime}
-        onChange={(e) => setDateTime(e.target.value)}
+        type='datetime-local'
+        onChange={e => {
+          setDateTime(new Date(e.target.value).getTime())
+        }}
+        value={toDateTimeLocal(new Date(datetime))}
       />
-
       {/* Notes */}
       <div className="space-y-1">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           Notes (optional)
         </label>
         <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
           rows={2}
           className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
           placeholder="Add notes..."
@@ -354,7 +609,7 @@ export function TransactionForm({ transaction, onSubmit, onCancel }: Transaction
           Cancel
         </Button>
         <Button type="submit" disabled={submitting} className="flex-1">
-          {submitting ? 'Saving...' : transaction ? 'Update' : 'Add'}
+          {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
         </Button>
       </div>
     </form>

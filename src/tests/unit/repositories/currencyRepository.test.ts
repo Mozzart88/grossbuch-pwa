@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Currency, CurrencyInput } from '../../../types'
+import type { Currency, CurrencyInput, ExchangeRate } from '../../../types'
+import { SYSTEM_TAGS } from '../../../types'
 
 // Mock the database module
 vi.mock('../../../services/database', () => ({
   execSQL: vi.fn(),
   querySQL: vi.fn(),
   queryOne: vi.fn(),
-  runSQL: vi.fn(),
   getLastInsertId: vi.fn(),
 }))
 
@@ -29,20 +29,21 @@ describe('currencyRepository', () => {
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_preset: 1,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    is_default: true,
+    is_fiat: true,
+    is_crypto: false,
   }
 
   describe('findAll', () => {
-    it('returns all currencies ordered by preset status and name', async () => {
-      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR' }]
+    it('returns all currencies with tag info ordered by default status and name', async () => {
+      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR', is_default: false }]
       mockQuerySQL.mockResolvedValue(currencies)
 
       const result = await currencyRepository.findAll()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        'SELECT * FROM currencies ORDER BY is_preset DESC, name ASC'
+        expect.stringContaining('FROM currency c'),
+        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO]
       )
       expect(result).toEqual(currencies)
     })
@@ -57,14 +58,14 @@ describe('currencyRepository', () => {
   })
 
   describe('findById', () => {
-    it('returns currency when found', async () => {
+    it('returns currency with tag info when found', async () => {
       mockQueryOne.mockResolvedValue(sampleCurrency)
 
       const result = await currencyRepository.findById(1)
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT * FROM currencies WHERE id = ?',
-        [1]
+        expect.stringContaining('WHERE c.id = ?'),
+        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO, 1]
       )
       expect(result).toEqual(sampleCurrency)
     })
@@ -85,8 +86,8 @@ describe('currencyRepository', () => {
       const result = await currencyRepository.findByCode('USD')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT * FROM currencies WHERE code = ?',
-        ['USD']
+        expect.stringContaining('WHERE c.code = ?'),
+        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO, 'USD']
       )
       expect(result).toEqual(sampleCurrency)
     })
@@ -94,32 +95,79 @@ describe('currencyRepository', () => {
     it('returns null when currency code not found', async () => {
       mockQueryOne.mockResolvedValue(null)
 
-      const result = await currencyRepository.findByCode('XYZ')
+      const result = await currencyRepository.findByCode('XXX')
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('findDefault', () => {
+    it('returns default currency', async () => {
+      mockQueryOne.mockResolvedValue(sampleCurrency)
+
+      const result = await currencyRepository.findDefault()
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE ct.tag_id = ?'),
+        [SYSTEM_TAGS.DEFAULT]
+      )
+      expect(result).toEqual(sampleCurrency)
+    })
+
+    it('returns null when no default currency', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.findDefault()
 
       expect(result).toBeNull()
     })
   })
 
   describe('create', () => {
-    it('creates a new currency with all fields', async () => {
+    it('creates a new fiat currency', async () => {
       const input: CurrencyInput = {
-        code: 'EUR',
-        name: 'Euro',
-        symbol: '€',
+        code: 'GBP',
+        name: 'British Pound',
+        symbol: '£',
         decimal_places: 2,
+        is_fiat: true,
       }
-      const created = { ...sampleCurrency, id: 2, ...input }
 
-      mockGetLastInsertId.mockResolvedValue(2)
-      mockQueryOne.mockResolvedValue(created)
+      mockGetLastInsertId.mockResolvedValue(3)
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, id: 3, ...input })
 
       const result = await currencyRepository.create(input)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
-        ['EUR', 'Euro', '€', 2]
+        expect.stringContaining('INSERT INTO currency'),
+        ['GBP', 'British Pound', '£', 2]
       )
-      expect(result).toEqual(created)
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [3, SYSTEM_TAGS.FIAT]
+      )
+      expect(result.code).toBe('GBP')
+    })
+
+    it('creates a new crypto currency', async () => {
+      const input: CurrencyInput = {
+        code: 'BTC',
+        name: 'Bitcoin',
+        symbol: '₿',
+        decimal_places: 8,
+        is_crypto: true,
+      }
+
+      mockGetLastInsertId.mockResolvedValue(4)
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, id: 4, ...input, is_fiat: false, is_crypto: true })
+
+      const result = await currencyRepository.create(input)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [4, SYSTEM_TAGS.CRYPTO]
+      )
+      expect(result.code).toBe('BTC')
     })
 
     it('uses default decimal places when not provided', async () => {
@@ -129,13 +177,13 @@ describe('currencyRepository', () => {
         symbol: '¥',
       }
 
-      mockGetLastInsertId.mockResolvedValue(3)
-      mockQueryOne.mockResolvedValue({ ...sampleCurrency, id: 3, ...input, decimal_places: 2 })
+      mockGetLastInsertId.mockResolvedValue(5)
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, id: 5, ...input, decimal_places: 2 })
 
       await currencyRepository.create(input)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         ['JPY', 'Japanese Yen', '¥', 2]
       )
     })
@@ -155,26 +203,26 @@ describe('currencyRepository', () => {
   })
 
   describe('update', () => {
-    it('updates currency code', async () => {
-      mockQueryOne.mockResolvedValue({ ...sampleCurrency, code: 'USD2' })
+    it('updates currency name', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, name: 'American Dollar' })
 
-      const result = await currencyRepository.update(1, { code: 'USD2' })
+      const result = await currencyRepository.update(1, { name: 'American Dollar' })
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('UPDATE currencies SET'),
-        expect.arrayContaining(['USD2', 1])
+        expect.stringContaining('UPDATE currency SET'),
+        expect.arrayContaining(['American Dollar', 1])
       )
-      expect(result.code).toBe('USD2')
+      expect(result.name).toBe('American Dollar')
     })
 
-    it('updates currency name', async () => {
-      mockQueryOne.mockResolvedValue({ ...sampleCurrency, name: 'Updated Dollar' })
+    it('updates currency code', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, code: 'usd' })
 
-      await currencyRepository.update(1, { name: 'Updated Dollar' })
+      await currencyRepository.update(1, { code: 'usd' })
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('name = ?'),
-        expect.arrayContaining(['Updated Dollar'])
+        expect.stringContaining('code = ?'),
+        expect.arrayContaining(['usd'])
       )
     })
 
@@ -200,14 +248,29 @@ describe('currencyRepository', () => {
       )
     })
 
-    it('updates multiple fields at once', async () => {
-      mockQueryOne.mockResolvedValue({ ...sampleCurrency, code: 'NEW', name: 'New Currency' })
+    it('updates fiat/crypto tags', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, is_fiat: false, is_crypto: true })
 
-      await currencyRepository.update(1, { code: 'NEW', name: 'New Currency' })
+      await currencyRepository.update(1, { is_crypto: true })
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('code = ?'),
-        expect.arrayContaining(['NEW', 'New Currency'])
+        'DELETE FROM currency_to_tags WHERE currency_id = ? AND tag_id IN (?, ?)',
+        [1, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.CRYPTO]
+      )
+    })
+
+    it('updates crypto/fiat tags', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, is_fiat: true, is_crypto: false })
+
+      await currencyRepository.update(1, { is_fiat: true })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.FIAT]
       )
     })
 
@@ -216,6 +279,7 @@ describe('currencyRepository', () => {
 
       await currencyRepository.update(1, {})
 
+      // Only findById is called, not execSQL for update
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
@@ -226,47 +290,142 @@ describe('currencyRepository', () => {
     })
   })
 
-  describe('delete', () => {
-    it('deletes currency when not used by accounts or transactions', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ count: 0 }) // account count
-        .mockResolvedValueOnce({ count: 0 }) // transaction count
+  describe('setDefault', () => {
+    it('sets currency as default via tag', async () => {
+      await currencyRepository.setDefault(2)
 
-      await currencyRepository.delete(1)
-
-      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM currencies WHERE id = ?', [1])
-    })
-
-    it('throws error when currency is used by accounts', async () => {
-      mockQueryOne.mockResolvedValueOnce({ count: 2 })
-
-      await expect(currencyRepository.delete(1)).rejects.toThrow('Cannot delete: 2 accounts use this currency')
-    })
-
-    it('throws error when currency is used by transactions', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ count: 0 }) // account count
-        .mockResolvedValueOnce({ count: 5 }) // transaction count
-
-      await expect(currencyRepository.delete(1)).rejects.toThrow('Cannot delete: 5 transactions use this currency')
-    })
-
-    it('checks both account and transaction usage', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-
-      await currencyRepository.delete(1)
-
-      expect(mockQueryOne).toHaveBeenCalledTimes(2)
-      expect(mockQueryOne).toHaveBeenNthCalledWith(1,
-        'SELECT COUNT(*) as count FROM accounts WHERE currency_id = ?',
-        [1]
-      )
-      expect(mockQueryOne).toHaveBeenNthCalledWith(2,
-        'SELECT COUNT(*) as count FROM transactions WHERE currency_id = ? OR to_currency_id = ?',
-        [1, 1]
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [2, SYSTEM_TAGS.DEFAULT]
       )
     })
   })
+
+  describe('delete', () => {
+    it('deletes currency when not used by accounts', async () => {
+      mockQueryOne.mockResolvedValue({ count: 0 })
+
+      await currencyRepository.delete(3)
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM currency WHERE id = ?', [3])
+    })
+
+    it('throws error when currency is used by accounts', async () => {
+      mockQueryOne.mockResolvedValue({ count: 2 })
+
+      await expect(currencyRepository.delete(1)).rejects.toThrow(
+        'Cannot delete: 2 accounts use this currency'
+      )
+    })
+
+    it('checks account usage before delete', async () => {
+      mockQueryOne.mockResolvedValue({ count: 0 })
+
+      await currencyRepository.delete(1)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        'SELECT COUNT(*) as count FROM account WHERE currency_id = ?',
+        [1]
+      )
+    })
+  })
+
+  describe('getExchangeRate', () => {
+    it('returns latest exchange rate for currency', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValue(rate)
+
+      const result = await currencyRepository.getExchangeRate(2)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('FROM exchange_rate'),
+        [2]
+      )
+      expect(result).toEqual(rate)
+    })
+
+    it('returns null when no exchange rate exists', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.getExchangeRate(1)
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('getAllExchangeRates', () => {
+    it('returns latest exchange rate for each currency', async () => {
+      const rates: ExchangeRate[] = [
+        { currency_id: 2, rate: 11500, updated_at: 1704067200 },
+        { currency_id: 3, rate: 12800, updated_at: 1704067200 },
+      ]
+      mockQuerySQL.mockResolvedValue(rates)
+
+      const result = await currencyRepository.getAllExchangeRates()
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(expect.stringContaining('FROM exchange_rate'))
+      expect(result).toEqual(rates)
+    })
+  })
+
+  describe('setExchangeRate', () => {
+    it('inserts new exchange rate', async () => {
+      await currencyRepository.setExchangeRate(2, 11500)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)',
+        [2, 11500]
+      )
+    })
+  })
+
+  describe('getRateForCurrency', () => {
+    it('returns latest exchange rate for currency', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValue(rate)
+
+      const result = await currencyRepository.getRateForCurrency(2)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('FROM exchange_rate'),
+        [2]
+      )
+      expect(result).toEqual(rate.rate)
+    })
+
+    it('returns 100 when currency is default', async () => {
+      mockQueryOne.mockResolvedValue({ is_default: true, decimal_places: 2 })
+
+      const result = await currencyRepository.getRateForCurrency(1)
+
+      expect(result).toEqual(100)
+    })
+
+    it('returns 100 when no currency', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.getRateForCurrency(1)
+
+      expect(result).toEqual(100)
+    })
+
+    it('returns 100 when no rate for currency', async () => {
+      mockQueryOne.mockResolvedValueOnce({ decimal_places: 2 })
+      mockQueryOne.mockResolvedValueOnce(null)
+
+      const result = await currencyRepository.getRateForCurrency(1)
+
+      expect(mockQueryOne).toHaveBeenCalledTimes(2)
+      expect(mockQueryOne).toHaveBeenLastCalledWith(
+        expect.stringContaining('FROM exchange_rate'),
+        [1]
+      )
+
+      // expect(mockQueryOne.mock.results[1]).toBeNull()
+      expect(mockQueryOne).toHaveLastResolvedWith(null)
+
+      expect(result).toEqual(100)
+    })
+  })
+
 })

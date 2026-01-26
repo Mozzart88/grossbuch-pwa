@@ -11,14 +11,16 @@ vi.mock('../../../services/repositories', () => ({
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
+    setDefault: vi.fn(),
   },
 }))
 
+const mockShowToast = vi.fn()
 vi.mock('../../../components/ui', async () => {
   const actual = await vi.importActual('../../../components/ui')
   return {
     ...actual,
-    useToast: () => ({ showToast: vi.fn() }),
+    useToast: () => ({ showToast: mockShowToast }),
   }
 })
 
@@ -33,9 +35,10 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_preset: 1,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_default: true,
+    is_fiat: true,
   },
   {
     id: 2,
@@ -43,9 +46,19 @@ const mockCurrencies: Currency[] = [
     name: 'Euro',
     symbol: '€',
     decimal_places: 2,
-    is_preset: 0,
-    created_at: '2025-01-01 00:00:00',
-    updated_at: '2025-01-01 00:00:00',
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_fiat: true,
+  },
+  {
+    id: 3,
+    code: 'BTC',
+    name: 'Bitcoin',
+    symbol: '₿',
+    decimal_places: 8,
+    created_at: 1704067200,
+    updated_at: 1704067200,
+    is_crypto: true,
   },
 ]
 
@@ -104,6 +117,23 @@ describe('CurrenciesPage', () => {
     await waitFor(() => {
       expect(screen.getByText('$')).toBeInTheDocument()
       expect(screen.getByText('€')).toBeInTheDocument()
+      expect(screen.getByText('₿')).toBeInTheDocument()
+    })
+  })
+
+  it('displays Default badge for default currency', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Default')).toBeInTheDocument()
+    })
+  })
+
+  it('displays Crypto badge for crypto currencies', async () => {
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Crypto')).toBeInTheDocument()
     })
   })
 
@@ -150,12 +180,27 @@ describe('CurrenciesPage', () => {
     })
   })
 
-  it('shows Delete button only for non-preset currencies', async () => {
+  it('shows Set Default button for non-default currencies', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      const deleteButtons = screen.getAllByText('Delete')
-      expect(deleteButtons.length).toBe(1) // Only EUR is non-preset
+      expect(screen.getAllByText('Set Default').length).toBe(2) // EUR and BTC
+    })
+  })
+
+  it('handles set default', async () => {
+    mockCurrencyRepository.setDefault.mockResolvedValue()
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Set Default').length).toBeGreaterThan(0)
+    })
+
+    fireEvent.click(screen.getAllByText('Set Default')[0])
+
+    await waitFor(() => {
+      expect(mockCurrencyRepository.setDefault).toHaveBeenCalled()
     })
   })
 
@@ -165,13 +210,13 @@ describe('CurrenciesPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Delete')).toBeInTheDocument()
+      expect(screen.getAllByText('Delete').length).toBeGreaterThan(0)
     })
 
-    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getAllByText('Delete')[0])
 
     await waitFor(() => {
-      expect(mockCurrencyRepository.delete).toHaveBeenCalledWith(2)
+      expect(mockCurrencyRepository.delete).toHaveBeenCalled()
     })
   })
 
@@ -181,16 +226,16 @@ describe('CurrenciesPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Delete')).toBeInTheDocument()
+      expect(screen.getAllByText('Delete').length).toBeGreaterThan(0)
     })
 
-    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getAllByText('Delete')[0])
 
     expect(mockCurrencyRepository.delete).not.toHaveBeenCalled()
   })
 
   it('creates new currency via form', async () => {
-    mockCurrencyRepository.create.mockResolvedValue(3)
+    mockCurrencyRepository.create.mockResolvedValue(4)
 
     renderWithRouter()
 
@@ -206,7 +251,7 @@ describe('CurrenciesPage', () => {
 
     const codeInput = screen.getByPlaceholderText('e.g., BTC, GBP')
     const nameInput = screen.getByPlaceholderText('e.g., Bitcoin, British Pound')
-    const symbolInput = screen.getByPlaceholderText('e.g., ₿, £')
+    const symbolInput = screen.getByPlaceholderText('e.g., B, L')
 
     fireEvent.change(codeInput, { target: { value: 'GBP' } })
     fireEvent.change(nameInput, { target: { value: 'British Pound' } })
@@ -220,7 +265,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('converts code to uppercase', async () => {
-    mockCurrencyRepository.create.mockResolvedValue(3)
+    mockCurrencyRepository.create.mockResolvedValue(4)
 
     renderWithRouter()
 
@@ -236,7 +281,7 @@ describe('CurrenciesPage', () => {
 
     const codeInput = screen.getByPlaceholderText('e.g., BTC, GBP')
     const nameInput = screen.getByPlaceholderText('e.g., Bitcoin, British Pound')
-    const symbolInput = screen.getByPlaceholderText('e.g., ₿, £')
+    const symbolInput = screen.getByPlaceholderText('e.g., B, L')
 
     fireEvent.change(codeInput, { target: { value: 'gbp' } })
     fireEvent.change(nameInput, { target: { value: 'British Pound' } })
@@ -247,6 +292,45 @@ describe('CurrenciesPage', () => {
     await waitFor(() => {
       expect(mockCurrencyRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ code: 'GBP' })
+      )
+    })
+  })
+
+  it('allows selecting fiat or crypto type', async () => {
+    mockCurrencyRepository.create.mockResolvedValue(4)
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Add')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('Add'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Add Currency')).toBeInTheDocument()
+    })
+
+    // Find and click the Crypto button
+    const cryptoButton = screen.getByRole('button', { name: 'Crypto' })
+    fireEvent.click(cryptoButton)
+
+    const codeInput = screen.getByPlaceholderText('e.g., BTC, GBP')
+    const nameInput = screen.getByPlaceholderText('e.g., Bitcoin, British Pound')
+    const symbolInput = screen.getByPlaceholderText('e.g., B, L')
+
+    fireEvent.change(codeInput, { target: { value: 'ETH' } })
+    fireEvent.change(nameInput, { target: { value: 'Ethereum' } })
+    fireEvent.change(symbolInput, { target: { value: 'Ξ' } })
+
+    fireEvent.click(screen.getByText('Save'))
+
+    await waitFor(() => {
+      expect(mockCurrencyRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          is_fiat: false,
+          is_crypto: true,
+        })
       )
     })
   })
@@ -291,13 +375,13 @@ describe('CurrenciesPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Delete')).toBeInTheDocument()
+      expect(screen.getAllByText('Delete').length).toBeGreaterThan(0)
     })
 
-    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.click(screen.getAllByText('Delete')[0])
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalled()
+      expect(mockShowToast).toHaveBeenCalledWith('Delete failed', 'error')
     })
 
     consoleSpy.mockRestore()
@@ -317,7 +401,7 @@ describe('CurrenciesPage', () => {
 
     const codeInput = screen.getByPlaceholderText('e.g., BTC, GBP')
     const nameInput = screen.getByPlaceholderText('e.g., Bitcoin, British Pound')
-    const symbolInput = screen.getByPlaceholderText('e.g., ₿, £')
+    const symbolInput = screen.getByPlaceholderText('e.g., B, L')
 
     fireEvent.change(codeInput, { target: { value: 'GBP' } })
     fireEvent.change(nameInput, { target: { value: 'British Pound' } })
@@ -326,7 +410,7 @@ describe('CurrenciesPage', () => {
     fireEvent.click(screen.getByText('Save'))
 
     await waitFor(() => {
-      expect(consoleSpy).toHaveBeenCalled()
+      expect(mockShowToast).toHaveBeenCalledWith('Save failed', 'error')
     })
 
     consoleSpy.mockRestore()

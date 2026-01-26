@@ -1,74 +1,193 @@
-import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
-import type { Transaction, TransactionInput } from '../../types'
-import { toLocalDateTime } from '../../utils/dateUtils'
+import { querySQL, queryOne, execSQL } from '../database'
+import type {
+  Transaction,
+  TransactionInput,
+  TransactionLine,
+  TransactionLineInput,
+  TransactionLog,
+  ExchangeView,
+  TransferView,
+  MonthlyTagSummary,
+  MonthlyCounterpartySummary,
+  MonthlyCategoryBreakdown,
+  TransactionFilter,
+} from '../../types'
+import { SYSTEM_TAGS } from '../../types'
+import { currencyRepository } from './currencyRepository'
+import { accountRepository } from './accountRepository'
+
+// Helper to convert Uint8Array to hex string for SQL
+// function blobToHex(blob: Uint8Array): string {
+//   return Array.from(blob)
+//     .map((b) => b.toString(16).padStart(2, '0'))
+//     .join('')
+// }
 
 export const transactionRepository = {
-  async findByMonth(month: string): Promise<Transaction[]> {
-    return querySQL<Transaction>(`
-      SELECT
-        t.*,
-        c.name as category_name,
-        c.icon as category_icon,
-        a.name as account_name,
-        cp.name as counterparty_name,
-        cur.code as currency_code,
-        cur.symbol as currency_symbol,
-        ta.name as to_account_name,
-        tcur.code as to_currency_code,
-        tcur.symbol as to_currency_symbol
-      FROM transactions t
-      LEFT JOIN categories c ON t.category_id = c.id
-      LEFT JOIN accounts a ON t.account_id = a.id
-      LEFT JOIN counterparties cp ON t.counterparty_id = cp.id
-      LEFT JOIN currencies cur ON t.currency_id = cur.id
-      LEFT JOIN accounts ta ON t.to_account_id = ta.id
-      LEFT JOIN currencies tcur ON t.to_currency_id = tcur.id
-      WHERE substr(t.date_time, 1, 7) = ?
-      ORDER BY t.date_time DESC, t.id DESC
-    `, [month])
+  // Get transactions for a month using the view
+  async findByMonth(yearMonth: string): Promise<TransactionLog[]> {
+    // yearMonth format: "YYYY-MM"
+    return querySQL<TransactionLog>(`
+      SELECT * FROM trx_log
+      WHERE date_time LIKE ?
+      ORDER BY date_time DESC
+    `, [`${yearMonth}%`])
   },
 
-  async findById(id: number): Promise<Transaction | null> {
-    const transactions = await querySQL<Transaction>(`
-      SELECT
-        t.*,
-        c.name as category_name,
-        c.icon as category_icon,
-        a.name as account_name,
-        cp.name as counterparty_name,
-        cur.code as currency_code,
-        cur.symbol as currency_symbol,
-        ta.name as to_account_name,
-        tcur.code as to_currency_code,
-        tcur.symbol as to_currency_symbol
-      FROM transactions t
-      LEFT JOIN categories c ON t.category_id = c.id
-      LEFT JOIN accounts a ON t.account_id = a.id
-      LEFT JOIN counterparties cp ON t.counterparty_id = cp.id
-      LEFT JOIN currencies cur ON t.currency_id = cur.id
-      LEFT JOIN accounts ta ON t.to_account_id = ta.id
-      LEFT JOIN currencies tcur ON t.to_currency_id = tcur.id
-      WHERE t.id = ?
-    `, [id])
-    return transactions[0] || null
-  },
-
-  async getMonthSummary(month: string, currencyId?: number): Promise<{ income: number; expenses: number }> {
-    let sql = `
-      SELECT
-        COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as expenses
-      FROM transactions
-      WHERE substr(date_time, 1, 7) = ?
-    `
-    const bind: unknown[] = [month]
-
-    if (currencyId) {
-      sql += ' AND currency_id = ?'
-      bind.push(currencyId)
+  // Get transactions for a month with optional filters
+  async findByMonthFiltered(yearMonth: string, filter?: TransactionFilter): Promise<TransactionLog[]> {
+    // If no filter, use the standard view query
+    if (!filter || (!filter.tagId && filter.counterpartyId === undefined && !filter.type)) {
+      return this.findByMonth(yearMonth)
     }
 
-    const result = await queryOne<{ income: number; expenses: number }>(sql, bind)
+    // Build a query similar to trx_log view but with filters
+    const conditions: string[] = [
+      `datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?`,
+      'tag_id NOT IN (?, ?, ?)'
+    ]
+    const params: unknown[] = [
+      `${yearMonth}%`,
+      SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.TRANSFER,
+      SYSTEM_TAGS.INITIAL
+    ]
+
+    // Filter by tag_id
+    if (filter.tagId !== undefined) {
+      conditions.push('tb.tag_id = ?')
+      params.push(filter.tagId)
+    }
+
+    // Filter by counterparty_id (0 means "No counterparty" - NULL in database)
+    if (filter.counterpartyId !== undefined) {
+      if (filter.counterpartyId === 0) {
+        conditions.push('t2c.counterparty_id IS NULL')
+      } else {
+        conditions.push('t2c.counterparty_id = ?')
+        params.push(filter.counterpartyId)
+      }
+    }
+
+    // Filter by type (income = '+', expense = '-')
+    if (filter.type) {
+      conditions.push(`tb.sign = ?`)
+      params.push(filter.type === 'income' ? '+' : '-')
+    }
+
+    const sql = `
+      SELECT
+        t.id as id,
+        datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
+        c.name as counterparty,
+        a.wallet as wallet,
+        a.currency as currency,
+        a.symbol as symbol,
+        a.decimal_places as decimal_places,
+        tag.name as tags,
+        iif(tb.sign = '-', -tb.amount, tb.amount) as amount,
+        tb.rate as rate
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY t.timestamp DESC
+    `
+
+    return querySQL<TransactionLog>(sql, params)
+  },
+
+  // Get full transaction log
+  async getLog(limit?: number, offset?: number): Promise<TransactionLog[]> {
+    let sql = 'SELECT * FROM trx_log ORDER BY date_time DESC'
+    const params: unknown[] = []
+
+    if (limit) {
+      sql += ' LIMIT ?'
+      params.push(limit)
+    }
+    if (offset) {
+      sql += ' OFFSET ?'
+      params.push(offset)
+    }
+
+    return querySQL<TransactionLog>(sql, params)
+  },
+
+  // Get transaction by ID with all lines
+  async findById(id: Uint8Array): Promise<Transaction | null> {
+    // const hexId = blobToHex(id)
+
+    const trx = await queryOne<Transaction>(`
+      SELECT
+        t.*,
+        c.name as counterparty,
+        tc.counterparty_id
+      FROM trx t
+      LEFT JOIN trx_to_counterparty tc ON tc.trx_id = t.id
+      LEFT JOIN counterparty c ON tc.counterparty_id = c.id
+      WHERE t.id = ?
+    `, [id])
+
+    if (!trx) return null
+
+    // Load transaction lines
+    trx.lines = await querySQL<TransactionLine>(`
+      SELECT
+        tb.*,
+        a.wallet,
+        a.currency,
+        tag.name as tag,
+        tn.note
+      FROM trx_base tb
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_note tn ON tn.trx_base_id = tb.id
+      WHERE tb.trx_id = ?
+    `, [id])
+
+    return trx
+  },
+
+  // Get month summary with rate conversion to default currency
+  // Rate stored as: value * 10^decimal_places (integer)
+  // Conversion: amount / rate * 10^def_decimal_places
+  async getMonthSummary(yearMonth: string): Promise<{ income: number; expenses: number }> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    const result = await queryOne<{ income: number; expenses: number }>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        COALESCE(SUM(CASE WHEN tb.sign = '+' AND tb.tag_id NOT IN (?, ?, ?)
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-' AND tb.tag_id NOT IN (?, ?, ?)
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as expenses
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+    `, [
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs
+    ])
 
     return {
       income: result?.income ?? 0,
@@ -76,207 +195,605 @@ export const transactionRepository = {
     }
   },
 
+  // Get day summary with rate conversion to default currency
+  // Returns net amount (income - expenses) for a specific date
+  async getDaySummary(date: string, filter?: TransactionFilter): Promise<number> {
+    const startTs = Math.floor(new Date(`${date}T00:00:00`).getTime() / 1000)
+    const endTs = Math.floor(new Date(`${date}T23:59:59`).getTime() / 1000) + 1
+
+    const conditions: string[] = [
+      `t.timestamp >= ? AND t.timestamp < ?`,
+      'tb.rate > 0'
+    ]
+    const params: unknown[] = [
+      SYSTEM_TAGS.EXCHANGE,
+      SYSTEM_TAGS.TRANSFER,
+      SYSTEM_TAGS.INITIAL,
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+    ]
+
+    if (filter) {
+      // Filter by tag_id
+      if (filter.tagId !== undefined) {
+        conditions.push('tb.tag_id = ?')
+        params.push(filter.tagId)
+      }
+
+      // Filter by counterparty_id (0 means "No counterparty" - NULL in database)
+      if (filter.counterpartyId !== undefined) {
+        if (filter.counterpartyId === 0) {
+          conditions.push('t2c.counterparty_id IS NULL')
+        } else {
+          conditions.push('t2c.counterparty_id = ?')
+          params.push(filter.counterpartyId)
+        }
+      }
+
+      // Filter by type (income = '+', expense = '-')
+      if (filter.type) {
+        conditions.push(`tb.sign = ?`)
+        params.push(filter.type === 'income' ? '+' : '-')
+      }
+
+    }
+
+    const result = await queryOne<{ net: number }>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        COALESCE(SUM(CASE
+          WHEN tb.tag_id NOT IN (?, ?, ?)
+          THEN (CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END)
+               * (tb.amount * cd.divisor) / (tb.rate * cd.divisor)
+               * power(10, def.decimal_places)
+          ELSE 0 END), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE ${conditions.join(' AND ')}
+    `, params)
+
+    return result?.net ?? 0
+  },
+
+  // Get monthly tags summary with rate conversion to default currency
+  async getMonthlyTagsSummary(yearMonth: string): Promise<MonthlyTagSummary[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    return querySQL<MonthlyTagSummary>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        tb.tag_id,
+        tag.name as tag,
+        COALESCE(SUM(CASE WHEN tb.sign = '+'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END
+          * (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN tag ON tb.tag_id = tag.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+        AND tb.tag_id NOT IN (?, ?, ?)
+      GROUP BY tb.tag_id, tag.name
+      ORDER BY ABS(net) DESC
+    `, [
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
+  // Get monthly counterparties summary with rate conversion to default currency
+  async getMonthlyCounterpartiesSummary(yearMonth: string): Promise<MonthlyCounterpartySummary[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    return querySQL<MonthlyCounterpartySummary>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        COALESCE(tc.counterparty_id, 0) as counterparty_id,
+        COALESCE(cp.name, 'No counterparty') as counterparty,
+        COALESCE(SUM(CASE WHEN tb.sign = '+'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN tb.sign = '-'
+          THEN (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)
+          ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END
+          * (tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      LEFT JOIN trx_to_counterparty tc ON tc.trx_id = t.id
+      LEFT JOIN counterparty cp ON tc.counterparty_id = cp.id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+        AND tb.tag_id NOT IN (?, ?, ?)
+      GROUP BY tc.counterparty_id, cp.name
+      ORDER BY ABS(net) DESC
+    `, [
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
+  // Get monthly category breakdown by income/expense type
+  async getMonthlyCategoryBreakdown(yearMonth: string): Promise<MonthlyCategoryBreakdown[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    return querySQL<MonthlyCategoryBreakdown>(`
+      WITH curr_dec AS (
+        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
+        FROM currency c
+      )
+      SELECT
+        tb.tag_id,
+        tag.name as tag,
+        COALESCE(SUM((tb.amount * cd.divisor) / (tb.rate * cd.divisor) * power(10, def.decimal_places)), 0) as amount,
+        CASE WHEN tb.sign = '+' THEN 'income' ELSE 'expense' END as type
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN tag ON tb.tag_id = tag.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN curr_dec cd ON a.currency_id = cd.currency_id
+      CROSS JOIN (SELECT decimal_places FROM currency
+        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
+        WHERE tag_id = ? LIMIT 1) def
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.rate > 0
+        AND tb.tag_id NOT IN (?, ?, ?)
+      GROUP BY tb.tag_id, tag.name, tb.sign
+      ORDER BY amount DESC
+    `, [
+      SYSTEM_TAGS.DEFAULT,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
+  // Create a new transaction
   async create(input: TransactionInput): Promise<Transaction> {
-    const columns = [
-      'type', 'amount', 'currency_id', 'account_id', 'category_id',
-      'counterparty_id', 'to_account_id', 'to_amount', 'to_currency_id',
-      'exchange_rate', 'date_time', 'notes'
-    ]
+    // Insert transaction header
+    const timestamp = input.timestamp ?? Math.floor(Date.now() / 1000)
 
-    const values = [
-      input.type,
-      input.amount,
-      input.currency_id,
-      input.account_id,
-      input.category_id ?? null,
-      input.counterparty_id ?? null,
-      input.to_account_id ?? null,
-      input.to_amount ?? null,
-      input.to_currency_id ?? null,
-      input.exchange_rate ?? null,
-      input.date_time ?? toLocalDateTime(new Date()),
-      input.notes ?? null
-    ]
+    await execSQL(
+      'INSERT INTO trx (id, timestamp) VALUES (randomblob(8), ?)',
+      [timestamp]
+    )
 
-    const placeholders = columns.map(() => '?').join(', ')
-    await execSQL(`INSERT INTO transactions (${columns.join(', ')}) VALUES (${placeholders})`, values)
+    // Get the created transaction ID
+    const trxResult = await queryOne<{ id: Uint8Array }>(
+      'SELECT id FROM trx ORDER BY rowid DESC LIMIT 1'
+    )
+    if (!trxResult) throw new Error('Failed to create transaction')
+    const trxId = trxResult.id
+    // const hexId = blobToHex(trxId)
 
-    const id = await getLastInsertId()
-    const transaction = await this.findById(id)
+    // Link counterparty if provided
+    if (input.counterparty_id) {
+      await execSQL(
+        'INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)',
+        [trxId, input.counterparty_id]
+      )
+    } else if (input.counterparty_name) {
+      // Auto-create counterparty if name provided
+      await execSQL(`
+        INSERT INTO counterparty (name)
+        SELECT ?
+        WHERE NOT EXISTS (SELECT 1 FROM counterparty WHERE name = ?)
+      `, [input.counterparty_name, input.counterparty_name])
+
+      await execSQL(`
+        INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
+        VALUES (?, (SELECT id FROM counterparty WHERE name = ?))
+      `, [trxId, input.counterparty_name])
+    }
+
+    // Insert transaction lines
+    for (const line of input.lines) {
+      await this.addLine(trxId, line)
+    }
+
+    const transaction = await this.findById(trxId)
     if (!transaction) throw new Error('Failed to create transaction')
     return transaction
   },
 
-  async update(id: number, input: Partial<TransactionInput>): Promise<Transaction> {
+  // Add a line to an existing transaction
+  async addLine(trxId: Uint8Array, line: TransactionLineInput): Promise<TransactionLine> {
+    // Auto-populate rate if not provided or is 0
+    let rate = line.rate ?? 0
+    if (rate === 0) {
+      // Get account's currency_id and fetch the rate
+      const account = await accountRepository.findById(line.account_id)
+      if (account) {
+        rate = await currencyRepository.getRateForCurrency(account.currency_id)
+      }
+    }
+
+    await execSQL(`
+      INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate)
+      VALUES (randomblob(8), ?, ?, ?, ?, ?, ?)
+    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount, rate])
+
+    // Get the created line ID
+    const lineResult = await queryOne<{ id: Uint8Array }>(
+      'SELECT id FROM trx_base ORDER BY rowid DESC LIMIT 1'
+    )
+    if (!lineResult) throw new Error('Failed to create transaction line')
+
+    // Add note if provided
+    if (line.note) {
+      // const hexLineId = blobToHex(lineResult.id)
+      await execSQL(
+        'INSERT INTO trx_note (trx_base_id, note) VALUES (?, ?)',
+        [lineResult.id, line.note]
+      )
+    }
+
+    const result = await queryOne<TransactionLine>(`
+      SELECT
+        tb.*,
+        a.wallet,
+        a.currency,
+        tag.name as tag,
+        tn.note
+      FROM trx_base tb
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_note tn ON tn.trx_base_id = tb.id
+      WHERE tb.id = ?
+    `, [lineResult.id])
+
+    if (!result) throw new Error('Failed to retrieve transaction line')
+    return result
+  },
+
+  // Update a transaction line
+  async updateLine(
+    lineId: Uint8Array,
+    input: Partial<TransactionLineInput>
+  ): Promise<TransactionLine> {
+    // const hexId = blobToHex(lineId)
     const fields: string[] = []
     const values: unknown[] = []
 
-    if (input.type !== undefined) {
-      fields.push('type = ?')
-      values.push(input.type)
+    if (input.account_id !== undefined) {
+      fields.push('account_id = ?')
+      values.push(input.account_id)
+    }
+    if (input.tag_id !== undefined) {
+      fields.push('tag_id = ?')
+      values.push(input.tag_id)
+    }
+    if (input.sign !== undefined) {
+      fields.push('sign = ?')
+      values.push(input.sign)
     }
     if (input.amount !== undefined) {
       fields.push('amount = ?')
       values.push(input.amount)
     }
-    if (input.currency_id !== undefined) {
-      fields.push('currency_id = ?')
-      values.push(input.currency_id)
-    }
-    if (input.account_id !== undefined) {
-      fields.push('account_id = ?')
-      values.push(input.account_id)
-    }
-    if (input.category_id !== undefined) {
-      fields.push('category_id = ?')
-      values.push(input.category_id)
-    }
-    if (input.counterparty_id !== undefined) {
-      fields.push('counterparty_id = ?')
-      values.push(input.counterparty_id)
-    }
-    if (input.to_account_id !== undefined) {
-      fields.push('to_account_id = ?')
-      values.push(input.to_account_id)
-    }
-    if (input.to_amount !== undefined) {
-      fields.push('to_amount = ?')
-      values.push(input.to_amount)
-    }
-    if (input.to_currency_id !== undefined) {
-      fields.push('to_currency_id = ?')
-      values.push(input.to_currency_id)
-    }
-    if (input.exchange_rate !== undefined) {
-      fields.push('exchange_rate = ?')
-      values.push(input.exchange_rate)
-    }
-    if (input.date_time !== undefined) {
-      fields.push('date_time = ?')
-      values.push(input.date_time)
-    }
-    if (input.notes !== undefined) {
-      fields.push('notes = ?')
-      values.push(input.notes)
+    if (input.rate !== undefined) {
+      fields.push('rate = ?')
+      values.push(input.rate)
     }
 
     if (fields.length > 0) {
-      fields.push("updated_at = datetime('now')")
-      values.push(id)
-      await execSQL(`UPDATE transactions SET ${fields.join(', ')} WHERE id = ?`, values)
+      await execSQL(
+        `UPDATE trx_base SET ${fields.join(', ')} WHERE id = ?`,
+        [...values, lineId]
+      )
     }
 
-    const transaction = await this.findById(id)
-    if (!transaction) throw new Error('Transaction not found')
-    return transaction
-  },
-
-  async delete(id: number): Promise<void> {
-    await execSQL('DELETE FROM transactions WHERE id = ?', [id])
-  },
-
-  // Get latest exchange rates to convert any currency to the target currency
-  // Returns Map<fromCurrencyId, rate> where rate * fromAmount = toAmount in target currency
-  async getExchangeRates(toCurrencyId: number): Promise<Map<number, number>> {
-    const rates = new Map<number, number>()
-
-    // Rate for same currency is always 1
-    rates.set(toCurrencyId, 1)
-
-    // Get latest exchange transactions for each currency pair
-    // Direct: from other currency to target currency
-    const directRates = await querySQL<{
-      currency_id: number
-      rate: number
-    }>(`
-      SELECT
-        t.currency_id,
-        t.to_amount / t.amount as rate
-      FROM transactions t
-      WHERE t.type = 'exchange'
-        AND t.to_currency_id = ?
-        AND t.id = (
-          SELECT t2.id FROM transactions t2
-          WHERE t2.type = 'exchange'
-            AND t2.currency_id = t.currency_id
-            AND t2.to_currency_id = ?
-          ORDER BY t2.date_time DESC
-          LIMIT 1
+    // Update note
+    if (input.note !== undefined) {
+      await execSQL('DELETE FROM trx_note WHERE trx_base_id = ?', [lineId])
+      if (input.note) {
+        await execSQL(
+          'INSERT INTO trx_note (trx_base_id, note) VALUES (?, ?)',
+          [lineId, input.note]
         )
-    `, [toCurrencyId, toCurrencyId])
-
-    for (const row of directRates) {
-      rates.set(row.currency_id, row.rate)
-    }
-
-    // Inverse: from target currency to other currency (need to invert the rate)
-    const inverseRates = await querySQL<{
-      to_currency_id: number
-      rate: number
-    }>(`
-      SELECT
-        t.to_currency_id,
-        t.amount / t.to_amount as rate
-      FROM transactions t
-      WHERE t.type = 'exchange'
-        AND t.currency_id = ?
-        AND t.id = (
-          SELECT t2.id FROM transactions t2
-          WHERE t2.type = 'exchange'
-            AND t2.currency_id = ?
-            AND t2.to_currency_id = t.to_currency_id
-          ORDER BY t2.date_time DESC
-          LIMIT 1
-        )
-    `, [toCurrencyId, toCurrencyId])
-
-    for (const row of inverseRates) {
-      // Only add if we don't have a direct rate (direct rate is more accurate)
-      if (!rates.has(row.to_currency_id)) {
-        rates.set(row.to_currency_id, row.rate)
       }
     }
 
-    return rates
+    const result = await queryOne<TransactionLine>(`
+      SELECT
+        tb.*,
+        a.wallet,
+        a.currency,
+        tag.name as tag,
+        tn.note
+      FROM trx_base tb
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_note tn ON tn.trx_base_id = tb.id
+      WHERE tb.id = ?
+    `, [lineId])
+
+    if (!result) throw new Error('Transaction line not found')
+    return result
   },
 
-  async findAllForExport(startDate?: string, endDate?: string): Promise<Transaction[]> {
-    let sql = `
-      SELECT
-        t.*,
-        c.name as category_name,
-        a.name as account_name,
-        cp.name as counterparty_name,
-        cur.code as currency_code,
-        ta.name as to_account_name,
-        tcur.code as to_currency_code
-      FROM transactions t
-      LEFT JOIN categories c ON t.category_id = c.id
-      LEFT JOIN accounts a ON t.account_id = a.id
-      LEFT JOIN counterparties cp ON t.counterparty_id = cp.id
-      LEFT JOIN currencies cur ON t.currency_id = cur.id
-      LEFT JOIN accounts ta ON t.to_account_id = ta.id
-      LEFT JOIN currencies tcur ON t.to_currency_id = tcur.id
-    `
+  // Delete a transaction line
+  async deleteLine(lineId: Uint8Array): Promise<void> {
+    // const hexId = blobToHex(lineId)
+    await execSQL('DELETE FROM trx_base WHERE id = ?', [lineId])
+  },
 
-    const conditions: string[] = []
-    const bind: unknown[] = []
+  // Delete entire transaction
+  async delete(id: Uint8Array): Promise<void> {
+    // const hexId = blobToHex(id)
+    await execSQL('DELETE FROM trx WHERE id = ?', [id])
+  },
 
-    if (startDate) {
-      conditions.push('t.date_time >= ?')
-      bind.push(startDate)
+  // Update an existing transaction
+  async update(id: Uint8Array, input: TransactionInput): Promise<Transaction> {
+    const timestamp = input.timestamp ?? Math.floor(Date.now() / 1000)
+
+    // Update transaction header
+    await execSQL(
+      'UPDATE trx SET timestamp = ? WHERE id = ?',
+      [timestamp, id]
+    )
+
+    // Manage counterparty
+    await execSQL('DELETE FROM trx_to_counterparty WHERE trx_id = ?', [id])
+    if (input.counterparty_id) {
+      await execSQL(
+        'INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)',
+        [id, input.counterparty_id]
+      )
+    } else if (input.counterparty_name) {
+      // Auto-create counterparty if name provided
+      await execSQL(`
+        INSERT INTO counterparty (name)
+        SELECT ?
+        WHERE NOT EXISTS (SELECT 1 FROM counterparty WHERE name = ?)
+      `, [input.counterparty_name, input.counterparty_name])
+
+      await execSQL(`
+        INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
+        VALUES (?, (SELECT id FROM counterparty WHERE name = ?))
+      `, [id, input.counterparty_name])
     }
-    if (endDate) {
-      conditions.push('t.date_time <= ?')
-      bind.push(endDate)
+
+    // Wipe and recreate transaction lines
+    await execSQL('DELETE FROM trx_base WHERE trx_id = ?', [id])
+    for (const line of input.lines) {
+      await this.addLine(id, line)
+    }
+
+    const transaction = await this.findById(id)
+    if (!transaction) throw new Error('Failed to update transaction')
+    return transaction
+  },
+
+  // Get exchanges view
+  async getExchanges(limit?: number): Promise<ExchangeView[]> {
+    let sql = 'SELECT * FROM exchanges ORDER BY date_time DESC'
+    if (limit) {
+      sql += ` LIMIT ${limit}`
+    }
+    return querySQL<ExchangeView>(sql)
+  },
+
+  // Get transfers view
+  async getTransfers(limit?: number): Promise<TransferView[]> {
+    let sql = 'SELECT * FROM transfers ORDER BY date_time DESC'
+    if (limit) {
+      sql += ` LIMIT ${limit}`
+    }
+    return querySQL<TransferView>(sql)
+  },
+
+  // Helper to create income transaction
+  async createIncome(
+    accountId: number,
+    tagId: number,
+    amount: number,
+    options?: {
+      rate?: number
+      counterpartyId?: number
+      counterpartyName?: string
+      note?: string
+      timestamp?: number
+    }
+  ): Promise<Transaction> {
+    return this.create({
+      counterparty_id: options?.counterpartyId,
+      counterparty_name: options?.counterpartyName,
+      timestamp: options?.timestamp,
+      lines: [
+        {
+          account_id: accountId,
+          tag_id: tagId,
+          sign: '+',
+          amount: amount,
+          rate: options?.rate ?? 100,
+          note: options?.note,
+        },
+      ],
+    })
+  },
+
+  // Helper to create expense transaction
+  async createExpense(
+    accountId: number,
+    tagId: number,
+    amount: number,
+    options?: {
+      rate?: number
+      counterpartyId?: number
+      counterpartyName?: string
+      note?: string
+      timestamp?: number
+    }
+  ): Promise<Transaction> {
+    return this.create({
+      counterparty_id: options?.counterpartyId,
+      counterparty_name: options?.counterpartyName,
+      timestamp: options?.timestamp,
+      lines: [
+        {
+          account_id: accountId,
+          tag_id: tagId,
+          sign: '-',
+          amount: amount,
+          rate: options?.rate ?? 100,
+          note: options?.note,
+        },
+      ],
+    })
+  },
+
+  // Helper to create transfer transaction
+  async createTransfer(
+    fromAccountId: number,
+    toAccountId: number,
+    amount: number,
+    options?: {
+      rate?: number
+      fee?: number
+      feeTagId?: number
+      counterpartyId?: number
+      note?: string
+      timestamp?: number
+    }
+  ): Promise<Transaction> {
+    const rate = options?.rate ?? 100
+    const lines: TransactionLineInput[] = [
+      {
+        account_id: fromAccountId,
+        tag_id: SYSTEM_TAGS.TRANSFER,
+        sign: '-',
+        amount: amount,
+        rate,
+      },
+      {
+        account_id: toAccountId,
+        tag_id: SYSTEM_TAGS.TRANSFER,
+        sign: '+',
+        amount: amount,
+        rate,
+      },
+    ]
+
+    // Add fee line if applicable
+    if (options?.fee && options.fee > 0) {
+      lines.push({
+        account_id: fromAccountId,
+        tag_id: options.feeTagId ?? SYSTEM_TAGS.FEE,
+        sign: '-',
+        amount: options.fee,
+        rate,
+      })
+    }
+
+    return this.create({
+      counterparty_id: options?.counterpartyId,
+      timestamp: options?.timestamp,
+      lines,
+      note: options?.note,
+    })
+  },
+
+  // Helper to create exchange transaction
+  async createExchange(
+    fromAccountId: number,
+    toAccountId: number,
+    fromAmount: number,
+    toAmount: number,
+    options?: {
+      fromRate?: number
+      toRate?: number
+      counterpartyId?: number
+      note?: string
+      timestamp?: number
+    }
+  ): Promise<Transaction> {
+    return this.create({
+      counterparty_id: options?.counterpartyId,
+      timestamp: options?.timestamp,
+      lines: [
+        {
+          account_id: fromAccountId,
+          tag_id: SYSTEM_TAGS.EXCHANGE,
+          sign: '-',
+          amount: fromAmount,
+          rate: options?.fromRate ?? 100,
+        },
+        {
+          account_id: toAccountId,
+          tag_id: SYSTEM_TAGS.EXCHANGE,
+          sign: '+',
+          amount: toAmount,
+          rate: options?.toRate ?? 100,
+        },
+      ],
+      note: options?.note,
+    })
+  },
+
+  // Export all transactions for a date range
+  async findAllForExport(startTs?: number, endTs?: number): Promise<TransactionLog[]> {
+    let sql = 'SELECT * FROM trx_log'
+    const conditions: string[] = []
+    const params: unknown[] = []
+
+    if (startTs) {
+      conditions.push('date_time >= datetime(?, \'unixepoch\', \'localtime\')')
+      params.push(startTs)
+    }
+    if (endTs) {
+      conditions.push('date_time <= datetime(?, \'unixepoch\', \'localtime\')')
+      params.push(endTs)
     }
 
     if (conditions.length > 0) {
       sql += ' WHERE ' + conditions.join(' AND ')
     }
 
-    sql += ' ORDER BY t.date_time ASC'
+    sql += ' ORDER BY date_time ASC'
 
-    return querySQL<Transaction>(sql, bind)
+    return querySQL<TransactionLog>(sql, params)
   },
 }

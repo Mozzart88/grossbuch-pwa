@@ -3,8 +3,7 @@ export function formatCurrency(amount: number, symbol: string, decimalPlaces: nu
     minimumFractionDigits: decimalPlaces,
     maximumFractionDigits: decimalPlaces,
   })
-  const sign = amount < 0 ? '-' : ''
-  return `${sign}${symbol}${formatted}`
+  return `${symbol}${formatted}`
 }
 
 export function formatAmount(amount: number, decimalPlaces: number = 2): string {

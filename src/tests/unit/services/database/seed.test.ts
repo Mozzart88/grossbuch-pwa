@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { SYSTEM_TAGS } from '../../../../types'
 
 // Mock connection module
 vi.mock('../../../../services/database/connection', () => ({
@@ -34,7 +35,7 @@ describe('seedDatabase', () => {
 
       // Check USD was inserted
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         expect.arrayContaining(['USD', 'US Dollar', '$', 2])
       )
     })
@@ -45,7 +46,7 @@ describe('seedDatabase', () => {
       await seedDatabase()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         expect.arrayContaining(['EUR', 'Euro', '€', 2])
       )
     })
@@ -56,7 +57,7 @@ describe('seedDatabase', () => {
       await seedDatabase()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         expect.arrayContaining(['RUB', 'Russian Ruble', '₽', 2])
       )
     })
@@ -67,7 +68,7 @@ describe('seedDatabase', () => {
       await seedDatabase()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         expect.arrayContaining(['ARS', 'Argentine Peso', '$', 2])
       )
     })
@@ -78,7 +79,7 @@ describe('seedDatabase', () => {
       await seedDatabase()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         expect.arrayContaining(['USDT', 'Tether', '₮', 2])
       )
     })
@@ -89,139 +90,73 @@ describe('seedDatabase', () => {
       await seedDatabase()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO currencies'),
+        expect.stringContaining('INSERT INTO currency'),
         expect.arrayContaining(['USDC', 'USD Coin', '$', 2])
       )
     })
 
-    it('seeds all 6 preset currencies', async () => {
+    it('seeds all 6 currencies', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       await seedDatabase()
 
       const currencyInserts = mockExecSQL.mock.calls.filter(
-        call => call[0].includes('INSERT INTO currencies')
+        call => call[0].includes('INSERT INTO currency (')
       )
       expect(currencyInserts).toHaveLength(6)
     })
-
-    it('marks currencies as preset', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      // All currency inserts should have is_preset = 1
-      const calls = mockExecSQL.mock.calls.filter(call => call[0].includes('INSERT INTO currencies'))
-      expect(calls.length).toBeGreaterThan(0)
-      calls.forEach(call => {
-        expect(call[0]).toContain('is_preset')
-      })
-    })
   })
 
-  describe('Category seeding', () => {
-    it('seeds expense categories', async () => {
+  describe('Currency type tagging', () => {
+    it('tags fiat currencies with FIAT tag', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       await seedDatabase()
 
+      // USD (id=1) should be tagged as fiat
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Food & Dining', 'expense', '🍔'])
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.FIAT]
       )
-
+      // EUR (id=2), RUB (id=3), ARS (id=4) should also be fiat
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Transport', 'expense', '🚗'])
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [2, SYSTEM_TAGS.FIAT]
       )
-
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Utilities', 'expense', '💡'])
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [3, SYSTEM_TAGS.FIAT]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [4, SYSTEM_TAGS.FIAT]
       )
     })
 
-    it('seeds income categories', async () => {
+    it('tags crypto currencies with CRYPTO tag', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      await seedDatabase()
+
+      // USDT (id=5) and USDC (id=6) should be tagged as crypto
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [5, SYSTEM_TAGS.CRYPTO]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [6, SYSTEM_TAGS.CRYPTO]
+      )
+    })
+
+    it('sets first currency (USD) as default', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       await seedDatabase()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Salary', 'income', '💰'])
-      )
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Freelance', 'income', '💻'])
-      )
-    })
-
-    it('seeds both type categories', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Gifts', 'both', '🎁'])
-      )
-    })
-
-    it('seeds all preset categories', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      const categoryInserts = mockExecSQL.mock.calls.filter(
-        call => call[0].includes('INSERT INTO categories')
-      )
-      // 11 expense + 6 income + 1 both = 18 categories
-      expect(categoryInserts).toHaveLength(18)
-    })
-
-    it('marks categories as preset', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      const calls = mockExecSQL.mock.calls.filter(call => call[0].includes('INSERT INTO categories'))
-      expect(calls.length).toBeGreaterThan(0)
-      calls.forEach(call => {
-        expect(call[0]).toContain('is_preset')
-      })
-    })
-
-    it('seeds Housing expense category', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Housing', 'expense', '🏠'])
-      )
-    })
-
-    it('seeds Healthcare expense category', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Healthcare', 'expense', '🏥'])
-      )
-    })
-
-    it('seeds Investment income category', async () => {
-      mockQueryOne.mockResolvedValue(null)
-
-      await seedDatabase()
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO categories'),
-        expect.arrayContaining(['Investment', 'income', '📈'])
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.DEFAULT]
       )
     })
   })
@@ -236,37 +171,28 @@ describe('seedDatabase', () => {
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
-    it('checks currencies table before seeding', async () => {
+    it('checks currency table before seeding', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       await seedDatabase()
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT id FROM currencies LIMIT 1'
+        'SELECT id FROM currency LIMIT 1'
       )
     })
   })
 
-  describe('Execution order', () => {
-    it('seeds currencies before categories', async () => {
+  describe('Note about tags', () => {
+    it('does not seed categories (now tags are seeded in migration)', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       await seedDatabase()
 
-      const calls = mockExecSQL.mock.calls
-      let firstCurrencyIndex = -1
-      let firstCategoryIndex = -1
-
-      calls.forEach((call, index) => {
-        if (call[0].includes('INSERT INTO currencies') && firstCurrencyIndex === -1) {
-          firstCurrencyIndex = index
-        }
-        if (call[0].includes('INSERT INTO categories') && firstCategoryIndex === -1) {
-          firstCategoryIndex = index
-        }
-      })
-
-      expect(firstCurrencyIndex).toBeLessThan(firstCategoryIndex)
+      // Should not have any category inserts
+      const categoryInserts = mockExecSQL.mock.calls.filter(
+        call => call[0].includes('INSERT INTO categories') || call[0].includes('INSERT INTO tag (')
+      )
+      expect(categoryInserts).toHaveLength(0)
     })
   })
 })
