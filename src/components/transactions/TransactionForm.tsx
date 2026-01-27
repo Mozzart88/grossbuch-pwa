@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository } from '../../services/repositories'
-import { Button, Input, Select } from '../ui'
+import { Button, Input, Select, LiveSearch } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
@@ -452,31 +452,23 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
       {/* Counterparty (for income/expense, optional) */}
       {(mode === 'income' || mode === 'expense') && (
-        <>
-          <Select
-            label="Counterparty (optional)"
-            value={counterpartyId}
-            onChange={(e) => {
-              setCounterpartyId(e.target.value)
-              if (e.target.value) setCounterpartyName('')
-            }}
-            options={[
-              { value: '', label: 'None / New' },
-              ...counterparties.map((cp) => ({
-                value: cp.id,
-                label: cp.name,
-              })),
-            ]}
-          />
-          {!counterpartyId && (
-            <Input
-              label="Or enter new counterparty"
-              value={counterpartyName}
-              onChange={(e) => setCounterpartyName(e.target.value)}
-              placeholder="New counterparty name"
-            />
-          )}
-        </>
+        <LiveSearch
+          label="Counterparty (optional)"
+          options={counterparties.map((cp) => ({
+            value: cp.id,
+            label: cp.name,
+          }))}
+          value={counterpartyId}
+          onChange={(val) => {
+            setCounterpartyId(val.toString())
+            setCounterpartyName('')
+          }}
+          onCreateNew={(name) => {
+            setCounterpartyId('')
+            setCounterpartyName(name)
+          }}
+          placeholder="Search or create..."
+        />
       )}
 
       {/* To Account (for transfer/exchange) */}
