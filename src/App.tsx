@@ -22,6 +22,7 @@ import {
   PinSetupPage,
   PinLoginPage,
   ChangePinPage,
+  MigrationPage,
 } from './pages'
 
 function AuthGate({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // First time setup
   if (status === 'first_time_setup') {
     return <PinSetupPage />
+  }
+
+  // Needs migration (unencrypted database detected)
+  if (status === 'needs_migration') {
+    return <MigrationPage />
   }
 
   // Needs authentication or auth failed

@@ -4,7 +4,7 @@ import proxyUri from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3-opfs-async-pr
 
 interface WorkerMessage {
   id: number
-  type: 'init' | 'init_encrypted' | 'exec' | 'query' | 'close' | 'check_db_exists' | 'rekey' | 'wipe'
+  type: 'init' | 'init_encrypted' | 'exec' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe'
   sql?: string
   bind?: unknown[]
   key?: string      // Hex-encoded encryption key
@@ -102,6 +102,97 @@ async function wipeDatabase(): Promise<void> {
   }
 }
 
+async function checkIsEncrypted(): Promise<boolean> {
+  const sqlite3 = await getSqlite3()
+
+  // Close existing connection if any
+  if (db) {
+    db.close()
+    db = null
+  }
+
+  let testDb = null
+  try {
+    // Try opening without encryption key
+    testDb = new sqlite3.oo1.OpfsDb(DB_FILENAME, 'r')
+    // If we can read schema without key, it's unencrypted
+    testDb.exec('SELECT count(*) FROM sqlite_master')
+    testDb.close()
+    return false // Unencrypted - can read without key
+  } catch {
+    if (testDb) {
+      try {
+        testDb.close()
+      } catch {
+        // Ignore close errors
+      }
+    }
+    return true // Encrypted (or corrupted) - cannot read without key
+  }
+}
+
+async function migrateToEncrypted(encryptionKey: string): Promise<void> {
+  const sqlite3 = await getSqlite3()
+  const tempFilename = '/expense-tracker-temp.sqlite3'
+
+  // Close existing connection if any
+  if (db) {
+    db.close()
+    db = null
+  }
+
+  // 1. Open unencrypted source database
+  const sourceDb = new sqlite3.oo1.OpfsDb(DB_FILENAME, 'r')
+
+  try {
+    // 2. Create and attach encrypted database
+    await createFile(tempFilename.replace('/', ''))
+    sourceDb.exec(`ATTACH DATABASE '${tempFilename}' AS encrypted KEY "x'${encryptionKey}'"`)
+
+    // 3. Export all data to encrypted database using sqlcipher_export
+    sourceDb.exec(`SELECT sqlcipher_export('encrypted')`)
+
+    // 4. Detach encrypted database
+    sourceDb.exec('DETACH DATABASE encrypted')
+
+    // 5. Close source database
+    sourceDb.close()
+
+    // 6. Now swap the files: delete old, rename temp to main
+    const root = await navigator.storage.getDirectory()
+
+    // Delete the old unencrypted file
+    await root.removeEntry(DB_FILENAME.replace('/', ''))
+
+    // Read the encrypted temp file
+    const tempHandle = await root.getFileHandle(tempFilename.replace('/', ''))
+    const tempFile = await tempHandle.getFile()
+    const encryptedContent = await tempFile.arrayBuffer()
+
+    // Write to the main filename
+    const mainHandle = await root.getFileHandle(DB_FILENAME.replace('/', ''), { create: true })
+    const writable = await mainHandle.createWritable()
+    await writable.write(encryptedContent)
+    await writable.close()
+
+    // Delete the temp file
+    await root.removeEntry(tempFilename.replace('/', ''))
+
+  } catch (error) {
+    try {
+      sourceDb.close()
+    } catch {
+      // Ignore close errors
+    }
+    throw error
+  }
+}
+
+async function createFile(fileName: string) {
+  const root = await navigator.storage.getDirectory()
+  return await root.getFileHandle(fileName, { create: true })
+}
+
 function execSQL(sql: string, bind?: unknown[]): void {
   if (!db) throw new Error('Database not initialized')
   db.exec({ sql, bind })
@@ -158,6 +249,17 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       case 'check_db_exists':
         response.success = true
         response.data = await checkDatabaseExists()
+        break
+
+      case 'check_encrypted':
+        response.success = true
+        response.data = await checkIsEncrypted()
+        break
+
+      case 'migrate_to_encrypted':
+        if (!key) throw new Error('Encryption key required for migration')
+        await migrateToEncrypted(key)
+        response.success = true
         break
 
       case 'rekey':

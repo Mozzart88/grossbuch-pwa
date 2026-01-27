@@ -1,5 +1,7 @@
 export {
   isDatabaseSetup,
+  needsMigration,
+  migrateDatabase,
   hasValidSession,
   setupPin,
   login,

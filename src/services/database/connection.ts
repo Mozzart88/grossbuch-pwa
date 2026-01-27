@@ -78,6 +78,15 @@ export async function checkDatabaseExists(): Promise<boolean> {
   return result as boolean
 }
 
+export async function checkIsEncrypted(): Promise<boolean> {
+  const result = await sendMessage('check_encrypted')
+  return result as boolean
+}
+
+export async function migrateToEncrypted(key: string): Promise<void> {
+  await sendMessage('migrate_to_encrypted', { key })
+}
+
 export async function rekeyDatabase(key: string, newKey: string): Promise<void> {
   await sendMessage('rekey', { key, newKey })
 }

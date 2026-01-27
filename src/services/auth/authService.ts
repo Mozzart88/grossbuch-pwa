@@ -14,7 +14,9 @@ import {
 } from './sessionToken'
 import {
   checkDatabaseExists,
+  checkIsEncrypted,
   initEncryptedDatabase,
+  migrateToEncrypted,
   rekeyDatabase,
   wipeDatabase,
   execSQL,
@@ -97,6 +99,58 @@ async function saveAuthSettings(settings: AuthSettings): Promise<void> {
  */
 export async function isDatabaseSetup(): Promise<boolean> {
   return checkDatabaseExists()
+}
+
+/**
+ * Check if database needs migration (exists but is unencrypted)
+ */
+export async function needsMigration(): Promise<boolean> {
+  const dbExists = await checkDatabaseExists()
+  if (!dbExists) return false
+
+  const isEncrypted = await checkIsEncrypted()
+  return !isEncrypted
+}
+
+/**
+ * Migrate an unencrypted database to encrypted with PIN
+ */
+export async function migrateDatabase(pin: string): Promise<void> {
+  // Generate encryption key from PIN
+  const { key: encryptionKey, salt: pbkdf2Salt } = await deriveEncryptionKey(pin)
+
+  // Store salt in localStorage (needed for future logins)
+  storeSalt(pbkdf2Salt)
+
+  // Perform migration using sqlcipher_export
+  await migrateToEncrypted(encryptionKey)
+
+  // Initialize the newly encrypted database
+  await initEncryptedDatabase(encryptionKey)
+
+  // Check if auth_settings table exists, run migrations if needed
+  if (await queryOne<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='auth_settings'"
+  ) === null) {
+    await runMigrations()
+  }
+
+  // Generate PIN hash for verification (with same salt for simplicity)
+  const { key: pinHash } = await hashPin(pin, pbkdf2Salt)
+
+  // Generate JWT salt for session tokens
+  const jwtSalt = generateJwtSalt()
+
+  // Save auth settings to database
+  await saveAuthSettings({
+    pin_hash: pinHash,
+    jwt_salt: jwtSalt,
+    pbkdf2_salt: pbkdf2Salt,
+  })
+
+  // Create session token
+  const sessionToken = await createSessionToken(jwtSalt)
+  storeSessionToken(sessionToken)
 }
 
 /**
