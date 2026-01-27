@@ -18,6 +18,9 @@ vi.mock('../../pages', () => ({
   DownloadPage: () => <div data-testid="download-page">Export</div>,
   BudgetsPage: () => <div data-testid="budgets-page">Budgets</div>,
   SummariesPage: () => <div data-testid="summaries-page">Summaries</div>,
+  PinSetupPage: () => <div data-testid="pin-setup-page">PIN Setup</div>,
+  PinLoginPage: () => <div data-testid="pin-login-page">PIN Login</div>,
+  ChangePinPage: () => <div data-testid="change-pin-page">Change PIN</div>,
 }))
 
 // Mock TabBar
@@ -33,11 +36,33 @@ vi.mock('../../components/ui', async () => {
 let mockDatabaseState = {
   isReady: true,
   error: null as string | null,
+  setDatabaseReady: vi.fn(),
+  setDatabaseError: vi.fn(),
+  runDatabaseMigrations: vi.fn(),
+  reset: vi.fn(),
 }
 
 vi.mock('../../store/DatabaseContext', () => ({
   DatabaseProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useDatabase: () => mockDatabaseState,
+}))
+
+// Mock auth context with configurable state
+let mockAuthState = {
+  status: 'authenticated' as const,
+  failedAttempts: 0,
+  error: null as string | null,
+  setupPin: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
+  changePin: vi.fn(),
+  wipeAndReset: vi.fn(),
+  clearError: vi.fn(),
+}
+
+vi.mock('../../store/AuthContext', () => ({
+  AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useAuth: () => mockAuthState,
 }))
 
 // Mock theme context
@@ -52,23 +77,54 @@ describe('App', () => {
     mockDatabaseState = {
       isReady: true,
       error: null,
+      setDatabaseReady: vi.fn(),
+      setDatabaseError: vi.fn(),
+      runDatabaseMigrations: vi.fn(),
+      reset: vi.fn(),
+    }
+    mockAuthState = {
+      status: 'authenticated',
+      failedAttempts: 0,
+      error: null,
+      setupPin: vi.fn(),
+      login: vi.fn(),
+      logout: vi.fn(),
+      changePin: vi.fn(),
+      wipeAndReset: vi.fn(),
+      clearError: vi.fn(),
     }
   })
 
-  describe('Loading state', () => {
-    it('shows loading spinner when database not ready', () => {
-      mockDatabaseState = { isReady: false, error: null }
+  describe('Auth states', () => {
+    it('shows loading spinner when checking auth', () => {
+      mockAuthState.status = 'checking'
 
       const { container } = render(<App />)
 
       expect(container.querySelector('.animate-spin')).toBeTruthy()
-      expect(screen.getByText('Loading database...')).toBeInTheDocument()
+      expect(screen.getByText('Loading...')).toBeInTheDocument()
+    })
+
+    it('shows PIN setup page for first time users', () => {
+      mockAuthState.status = 'first_time_setup'
+
+      render(<App />)
+
+      expect(screen.getByTestId('pin-setup-page')).toBeInTheDocument()
+    })
+
+    it('shows PIN login page when authentication is needed', () => {
+      mockAuthState.status = 'needs_auth'
+
+      render(<App />)
+
+      expect(screen.getByTestId('pin-login-page')).toBeInTheDocument()
     })
   })
 
-  describe('Error state', () => {
+  describe('Database error state', () => {
     it('shows error message when database has error', () => {
-      mockDatabaseState = { isReady: false, error: 'Failed to initialize database' }
+      mockDatabaseState = { ...mockDatabaseState, isReady: false, error: 'Failed to initialize database' }
 
       render(<App />)
 
@@ -77,7 +133,7 @@ describe('App', () => {
     })
 
     it('shows browser support message on error', () => {
-      mockDatabaseState = { isReady: false, error: 'OPFS not supported' }
+      mockDatabaseState = { ...mockDatabaseState, isReady: false, error: 'OPFS not supported' }
 
       render(<App />)
 
@@ -85,7 +141,7 @@ describe('App', () => {
     })
 
     it('shows error icon on database error', () => {
-      mockDatabaseState = { isReady: false, error: 'Some error' }
+      mockDatabaseState = { ...mockDatabaseState, isReady: false, error: 'Some error' }
 
       const { container } = render(<App />)
 

@@ -41,11 +41,18 @@ function getWorker(): Worker {
   return worker
 }
 
-function sendMessage(type: string, sql?: string, bind?: unknown[]): Promise<unknown> {
+interface SendMessageOptions {
+  sql?: string
+  bind?: unknown[]
+  key?: string
+  newKey?: string
+}
+
+function sendMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++messageId
     pendingRequests.set(id, { resolve, reject })
-    getWorker().postMessage({ id, type, sql, bind })
+    getWorker().postMessage({ id, type, ...options })
   })
 }
 
@@ -56,12 +63,36 @@ export async function initDatabase(): Promise<void> {
   return initPromise
 }
 
+export async function initEncryptedDatabase(key: string): Promise<void> {
+  if (initPromise) {
+    // Already initialized, close first
+    await closeDatabase()
+  }
+
+  initPromise = sendMessage('init_encrypted', { key }) as Promise<void>
+  return initPromise
+}
+
+export async function checkDatabaseExists(): Promise<boolean> {
+  const result = await sendMessage('check_db_exists')
+  return result as boolean
+}
+
+export async function rekeyDatabase(key: string, newKey: string): Promise<void> {
+  await sendMessage('rekey', { key, newKey })
+}
+
+export async function wipeDatabase(): Promise<void> {
+  await sendMessage('wipe')
+  initPromise = null
+}
+
 export async function execSQL(sql: string, bind?: unknown[]): Promise<void> {
-  await sendMessage('exec', sql, bind)
+  await sendMessage('exec', { sql, bind })
 }
 
 export async function querySQL<T>(sql: string, bind?: unknown[]): Promise<T[]> {
-  const result = await sendMessage('query', sql, bind)
+  const result = await sendMessage('query', { sql, bind })
   return result as T[]
 }
 
@@ -71,7 +102,7 @@ export async function queryOne<T>(sql: string, bind?: unknown[]): Promise<T | nu
 }
 
 export async function runSQL(sql: string, bind?: unknown[]): Promise<ExecResult> {
-  const result = await sendMessage('exec', sql, bind)
+  const result = await sendMessage('exec', { sql, bind })
   return result as ExecResult
 }
 

@@ -12,6 +12,7 @@ const settingsLinks = [
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
   { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
   { to: '/settings/budgets', label: 'Budgets', icon: '💰', description: 'Manage your budgets' },
+  { to: '/settings/security', label: 'Security', icon: '🔒', description: 'Change PIN and security settings' },
 ]
 
 export function SettingsPage() {

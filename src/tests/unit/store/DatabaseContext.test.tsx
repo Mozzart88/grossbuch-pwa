@@ -1,23 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import { DatabaseProvider, useDatabase } from '../../../store/DatabaseContext'
 
-// Mock the database initialization
-vi.mock('../../../services/database', () => ({
-  initDatabase: vi.fn(),
+// Mock the migrations
+vi.mock('../../../services/database/migrations', () => ({
+  runMigrations: vi.fn(),
 }))
 
-import { initDatabase } from '../../../services/database'
+import { runMigrations } from '../../../services/database/migrations'
 
-const mockInitDatabase = vi.mocked(initDatabase)
+const mockRunMigrations = vi.mocked(runMigrations)
 
 // Test component to access context
 function TestConsumer() {
-  const { isReady, error } = useDatabase()
+  const { isReady, error, setDatabaseReady, setDatabaseError, reset } = useDatabase()
   return (
     <div>
       <span data-testid="ready">{isReady ? 'ready' : 'not-ready'}</span>
       <span data-testid="error">{error || 'no-error'}</span>
+      <button data-testid="set-ready" onClick={() => setDatabaseReady()}>Set Ready</button>
+      <button data-testid="set-error" onClick={() => setDatabaseError('Test error')}>Set Error</button>
+      <button data-testid="reset" onClick={() => reset()}>Reset</button>
     </div>
   )
 }
@@ -25,12 +28,11 @@ function TestConsumer() {
 describe('DatabaseContext', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockRunMigrations.mockResolvedValue(undefined)
   })
 
   describe('DatabaseProvider', () => {
     it('renders children', () => {
-      mockInitDatabase.mockResolvedValue(undefined)
-
       render(
         <DatabaseProvider>
           <div data-testid="child">Child content</div>
@@ -40,9 +42,18 @@ describe('DatabaseContext', () => {
       expect(screen.getByTestId('child')).toBeInTheDocument()
     })
 
-    it('starts with isReady false', () => {
-      mockInitDatabase.mockResolvedValue(undefined)
+    it('starts with isReady false (no auto-init)', () => {
+      render(
+        <DatabaseProvider>
+          <TestConsumer />
+        </DatabaseProvider>
+      )
 
+      // DatabaseContext no longer auto-inits - AuthContext controls initialization
+      expect(screen.getByTestId('ready')).toHaveTextContent('not-ready')
+    })
+
+    it('sets isReady to true when setDatabaseReady is called', async () => {
       render(
         <DatabaseProvider>
           <TestConsumer />
@@ -50,95 +61,85 @@ describe('DatabaseContext', () => {
       )
 
       expect(screen.getByTestId('ready')).toHaveTextContent('not-ready')
+
+      await act(async () => {
+        screen.getByTestId('set-ready').click()
+      })
+
+      expect(screen.getByTestId('ready')).toHaveTextContent('ready')
     })
 
-    it('sets isReady to true after successful initialization', async () => {
-      mockInitDatabase.mockResolvedValue(undefined)
-
+    it('sets error when setDatabaseError is called', async () => {
       render(
         <DatabaseProvider>
           <TestConsumer />
         </DatabaseProvider>
       )
 
-      await waitFor(() => {
-        expect(screen.getByTestId('ready')).toHaveTextContent('ready')
+      expect(screen.getByTestId('error')).toHaveTextContent('no-error')
+
+      await act(async () => {
+        screen.getByTestId('set-error').click()
       })
+
+      expect(screen.getByTestId('error')).toHaveTextContent('Test error')
     })
 
-    it('sets error on initialization failure with Error object', async () => {
-      const errorMessage = 'Database initialization failed'
-      mockInitDatabase.mockRejectedValue(new Error(errorMessage))
-
+    it('resets state when reset is called', async () => {
       render(
         <DatabaseProvider>
           <TestConsumer />
         </DatabaseProvider>
       )
 
-      await waitFor(() => {
-        expect(screen.getByTestId('error')).toHaveTextContent(errorMessage)
+      // Set ready first
+      await act(async () => {
+        screen.getByTestId('set-ready').click()
       })
+      expect(screen.getByTestId('ready')).toHaveTextContent('ready')
+
+      // Now reset
+      await act(async () => {
+        screen.getByTestId('reset').click()
+      })
+      expect(screen.getByTestId('ready')).toHaveTextContent('not-ready')
+      expect(screen.getByTestId('error')).toHaveTextContent('no-error')
     })
 
-    it('sets default error message for non-Error rejection', async () => {
-      mockInitDatabase.mockRejectedValue('some string error')
-
+    it('clears error when setDatabaseReady is called', async () => {
       render(
         <DatabaseProvider>
           <TestConsumer />
         </DatabaseProvider>
       )
 
-      await waitFor(() => {
-        expect(screen.getByTestId('error')).toHaveTextContent('Failed to initialize database')
+      // Set error first
+      await act(async () => {
+        screen.getByTestId('set-error').click()
       })
-    })
+      expect(screen.getByTestId('error')).toHaveTextContent('Test error')
 
-    it('calls initDatabase on mount', async () => {
-      mockInitDatabase.mockResolvedValue(undefined)
-
-      render(
-        <DatabaseProvider>
-          <TestConsumer />
-        </DatabaseProvider>
-      )
-
-      await waitFor(() => {
-        expect(mockInitDatabase).toHaveBeenCalledTimes(1)
+      // Now set ready, which should clear error
+      await act(async () => {
+        screen.getByTestId('set-ready').click()
       })
-    })
-
-    it('maintains error state and isReady false on failure', async () => {
-      mockInitDatabase.mockRejectedValue(new Error('Failed'))
-
-      render(
-        <DatabaseProvider>
-          <TestConsumer />
-        </DatabaseProvider>
-      )
-
-      await waitFor(() => {
-        expect(screen.getByTestId('error')).not.toHaveTextContent('no-error')
-        expect(screen.getByTestId('ready')).toHaveTextContent('not-ready')
-      })
+      expect(screen.getByTestId('error')).toHaveTextContent('no-error')
+      expect(screen.getByTestId('ready')).toHaveTextContent('ready')
     })
   })
 
   describe('useDatabase', () => {
-    it('provides context values', async () => {
-      mockInitDatabase.mockResolvedValue(undefined)
-
+    it('provides context values', () => {
       render(
         <DatabaseProvider>
           <TestConsumer />
         </DatabaseProvider>
       )
 
-      await waitFor(() => {
-        expect(screen.getByTestId('ready')).toBeInTheDocument()
-        expect(screen.getByTestId('error')).toBeInTheDocument()
-      })
+      expect(screen.getByTestId('ready')).toBeInTheDocument()
+      expect(screen.getByTestId('error')).toBeInTheDocument()
+      expect(screen.getByTestId('set-ready')).toBeInTheDocument()
+      expect(screen.getByTestId('set-error')).toBeInTheDocument()
     })
 
     it('returns default values outside provider', () => {

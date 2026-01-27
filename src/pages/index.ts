@@ -12,4 +12,7 @@ export { DownloadPage } from './DownloadPage'
 export { TagsPage } from './TagsPage'
 export { BudgetsPage } from './BudgetsPage'
 export { SummariesPage } from './SummariesPage'
+export { PinSetupPage } from './PinSetupPage'
+export { PinLoginPage } from './PinLoginPage'
+export { ChangePinPage } from './ChangePinPage'
 

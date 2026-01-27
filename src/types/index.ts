@@ -1,3 +1,6 @@
+// Re-export auth types
+export * from './auth'
+
 // Icon
 export interface Icon {
   id: number
