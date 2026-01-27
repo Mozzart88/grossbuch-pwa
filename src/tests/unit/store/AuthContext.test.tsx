@@ -6,6 +6,8 @@ import { DatabaseProvider } from '../../../store/DatabaseContext'
 // Mock auth service
 vi.mock('../../../services/auth', () => ({
   isDatabaseSetup: vi.fn().mockResolvedValue(false),
+  needsMigration: vi.fn().mockResolvedValue(false),
+  migrateDatabase: vi.fn().mockResolvedValue(undefined),
   hasValidSession: vi.fn().mockResolvedValue(false),
   setupPin: vi.fn().mockResolvedValue(undefined),
   login: vi.fn().mockResolvedValue(true),
@@ -29,6 +31,8 @@ vi.mock('../../../store/DatabaseContext', () => ({
 
 import {
   isDatabaseSetup,
+  needsMigration,
+  migrateDatabase as authMigrateDatabase,
   hasValidSession,
   setupPin as authSetupPin,
   login as authLogin,
@@ -38,6 +42,8 @@ import {
 } from '../../../services/auth'
 
 const mockIsDatabaseSetup = vi.mocked(isDatabaseSetup)
+const mockNeedsMigration = vi.mocked(needsMigration)
+const mockMigrateDatabase = vi.mocked(authMigrateDatabase)
 const mockHasValidSession = vi.mocked(hasValidSession)
 const mockSetupPin = vi.mocked(authSetupPin)
 const mockLogin = vi.mocked(authLogin)
@@ -54,6 +60,7 @@ function TestConsumer() {
       <span data-testid="failed-attempts">{auth.failedAttempts}</span>
       <span data-testid="error">{auth.error || 'no-error'}</span>
       <button data-testid="setup-pin" onClick={() => auth.setupPin('123456')}>Setup</button>
+      <button data-testid="migrate" onClick={() => auth.migrateDatabase('123456')}>Migrate</button>
       <button data-testid="login" onClick={() => auth.login('123456')}>Login</button>
       <button data-testid="logout" onClick={() => auth.logout()}>Logout</button>
       <button data-testid="change-pin" onClick={() => auth.changePin('old', 'new')}>Change</button>
@@ -77,6 +84,7 @@ describe('AuthContext', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockIsDatabaseSetup.mockResolvedValue(false)
+    mockNeedsMigration.mockResolvedValue(false)
     mockHasValidSession.mockResolvedValue(false)
   })
 
@@ -151,6 +159,80 @@ describe('AuthContext', () => {
       await waitFor(() => {
         expect(screen.getByTestId('status')).toHaveTextContent('auth_failed')
         expect(screen.getByTestId('error')).toHaveTextContent('Failed to check auth status')
+      })
+    })
+
+    it('sets needs_migration when DB exists but is unencrypted', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+      mockNeedsMigration.mockResolvedValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_migration')
+      })
+    })
+  })
+
+  describe('migrateDatabase', () => {
+    it('calls auth service migrateDatabase and sets authenticated on success', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+      mockNeedsMigration.mockResolvedValue(true)
+      mockMigrateDatabase.mockResolvedValue(undefined)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_migration')
+      })
+
+      await act(async () => {
+        screen.getByTestId('migrate').click()
+      })
+
+      await waitFor(() => {
+        expect(mockMigrateDatabase).toHaveBeenCalledWith('123456')
+        expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+      })
+    })
+
+    it('sets error when migration fails', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+      mockNeedsMigration.mockResolvedValue(true)
+      mockMigrateDatabase.mockRejectedValue(new Error('Migration failed'))
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_migration')
+      })
+
+      await act(async () => {
+        screen.getByTestId('migrate').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('error')).toHaveTextContent('Migration failed')
+      })
+    })
+
+    it('returns false when migration throws', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+      mockNeedsMigration.mockResolvedValue(true)
+      mockMigrateDatabase.mockRejectedValue(new Error('Encryption error'))
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_migration')
+      })
+
+      await act(async () => {
+        screen.getByTestId('migrate').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('error')).toHaveTextContent('Encryption error')
       })
     })
   })

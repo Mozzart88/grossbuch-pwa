@@ -9,6 +9,8 @@ import {
 import type { AuthStatus, AuthState } from '../types/auth'
 import {
   isDatabaseSetup,
+  needsMigration as authNeedsMigration,
+  migrateDatabase as authMigrateDatabase,
   hasValidSession,
   setupPin as authSetupPin,
   login as authLogin,
@@ -20,6 +22,7 @@ import { useDatabase } from './DatabaseContext'
 
 interface AuthContextValue extends AuthState {
   setupPin: (pin: string) => Promise<boolean>
+  migrateDatabase: (pin: string) => Promise<boolean>
   login: (pin: string) => Promise<boolean>
   logout: () => void
   changePin: (oldPin: string, newPin: string) => Promise<boolean>
@@ -32,6 +35,7 @@ const AuthContext = createContext<AuthContextValue>({
   failedAttempts: 0,
   error: null,
   setupPin: async () => false,
+  migrateDatabase: async () => false,
   login: async () => false,
   logout: () => {},
   changePin: async () => false,
@@ -56,7 +60,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // Database exists - check for valid session
+        // Check if database needs migration (unencrypted)
+        const migrationNeeded = await authNeedsMigration()
+        if (migrationNeeded) {
+          setStatus('needs_migration')
+          return
+        }
+
+        // Database exists and is encrypted - check for valid session
         const hasSession = await hasValidSession()
 
         if (hasSession) {
@@ -86,6 +97,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('PIN setup failed:', err)
       const message = err instanceof Error ? err.message : 'Failed to setup PIN'
+      setError(message)
+      setDatabaseError(message)
+      return false
+    }
+  }, [setDatabaseReady, setDatabaseError])
+
+  const migrateDatabase = useCallback(async (pin: string): Promise<boolean> => {
+    try {
+      setError(null)
+      await authMigrateDatabase(pin)
+      setDatabaseReady()
+      setStatus('authenticated')
+      return true
+    } catch (err) {
+      console.error('Database migration failed:', err)
+      const message = err instanceof Error ? err.message : 'Failed to migrate database'
       setError(message)
       setDatabaseError(message)
       return false
@@ -169,6 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         failedAttempts,
         error,
         setupPin,
+        migrateDatabase,
         login,
         logout,
         changePin,

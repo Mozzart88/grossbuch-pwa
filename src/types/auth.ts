@@ -2,6 +2,7 @@
 export type AuthStatus =
   | 'checking'        // Initial state, checking if DB exists
   | 'first_time_setup' // No DB exists, user needs to create PIN
+  | 'needs_migration' // DB exists but is unencrypted, needs migration
   | 'needs_auth'      // DB exists but no valid session
   | 'authenticated'   // Valid session, can access app
   | 'auth_failed'     // PIN validation failed

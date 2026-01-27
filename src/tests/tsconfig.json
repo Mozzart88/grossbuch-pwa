@@ -1,5 +1,5 @@
 {
-  // "extends": "./tsconfig.json",
+  // "extends": "../../tsconfig.app.json",
   "compilerOptions": {
     "target": "es2020",
     "moduleResolution": "bundler",
@@ -16,8 +16,8 @@
     "jsx": "react-jsx"
   },
   "include": [
-    "src/tests/**/*.test.ts",
-    "src/tests/**/*.test.tsx",
-    "src/tests/setup.ts"
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "setup.ts"
   ]
 }
