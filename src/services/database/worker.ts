@@ -142,7 +142,7 @@ async function migrateToEncrypted(encryptionKey: string): Promise<void> {
   }
 
   // 1. Open unencrypted source database
-  const sourceDb = new sqlite3.oo1.OpfsDb(DB_FILENAME, 'r')
+  const sourceDb = new sqlite3.oo1.OpfsDb(DB_FILENAME, 'rwt')
 
   try {
     // 2. Create and attach encrypted database
