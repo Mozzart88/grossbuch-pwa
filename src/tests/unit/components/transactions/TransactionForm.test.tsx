@@ -741,11 +741,11 @@ describe('TransactionForm', () => {
       expect(counterpartySelect).toBeInTheDocument()
     })
 
-    it('shows new counterparty input when none selected', async () => {
+    it('shows LiveSearch with search or create placeholder', async () => {
       renderForm()
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('New counterparty name')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('Search or create...')).toBeInTheDocument()
       })
     })
   })
@@ -791,7 +791,18 @@ describe('TransactionForm', () => {
 
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
       fireEvent.change(screen.getByRole('combobox', { name: /category/i }), { target: { value: '10' } })
-      fireEvent.change(screen.getByRole('combobox', { name: /counterparty/i }), { target: { value: '1' } })
+
+      // Use LiveSearch to select existing counterparty
+      const counterpartyInput = screen.getByRole('combobox', { name: /counterparty/i })
+      fireEvent.focus(counterpartyInput)
+      fireEvent.change(counterpartyInput, { target: { value: 'Restaurant ABC' } })
+
+      // Click on the matching option
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Restaurant ABC' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'Restaurant ABC' }))
+
       fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'Dinner note' } })
 
       fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
@@ -814,7 +825,17 @@ describe('TransactionForm', () => {
 
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
       fireEvent.change(screen.getByRole('combobox', { name: /category/i }), { target: { value: '10' } })
-      fireEvent.change(screen.getByPlaceholderText('New counterparty name'), { target: { value: 'New CP' } })
+
+      // Use LiveSearch to enter a new counterparty name
+      const counterpartyInput = screen.getByRole('combobox', { name: /counterparty/i })
+      fireEvent.focus(counterpartyInput)
+      fireEvent.change(counterpartyInput, { target: { value: 'New CP' } })
+
+      // Click on the "Create new" option
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Create "New CP"/ })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: /Create "New CP"/ }))
 
       fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
 

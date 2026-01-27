@@ -1,6 +1,8 @@
 export { Button } from './Button'
 export { Input } from './Input'
 export { Select } from './Select'
+export { LiveSearch } from './LiveSearch'
+export type { LiveSearchOption } from './LiveSearch'
 export { Modal } from './Modal'
 export { TabBar } from './TabBar'
 export { Spinner } from './Spinner'
