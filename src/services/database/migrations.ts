@@ -1,6 +1,6 @@
 import { execSQL, queryOne } from './connection'
 
-const CURRENT_VERSION = 2
+const CURRENT_VERSION = 3
 
 const migrations: Record<number, string[]> = {
   1: [
@@ -981,6 +981,19 @@ const migrations: Record<number, string[]> = {
       )
       WHERE id = NEW.account_id;
     END`,
+  ],
+
+  3: [
+    // ============================================
+    // MIGRATION 3: Auth settings table for PIN authentication
+    // ============================================
+
+    // Auth settings table for storing PIN hash, JWT salt, PBKDF2 salt
+    `CREATE TABLE IF NOT EXISTS auth_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER DEFAULT (strftime('%s', datetime('now')))
+    )`,
   ],
 }
 

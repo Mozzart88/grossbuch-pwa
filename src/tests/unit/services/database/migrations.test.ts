@@ -34,8 +34,8 @@ describe('migrations', () => {
     })
 
     it('skips migrations when already at current version', async () => {
-      // Already at version 2 (current)
-      mockQueryOne.mockResolvedValue({ value: '2' })
+      // Already at version 3 (current)
+      mockQueryOne.mockResolvedValue({ value: '3' })
 
       await runMigrations()
 
@@ -236,12 +236,12 @@ describe('migrations', () => {
     })
 
     it('parses db_version correctly', async () => {
-      // Already at version 2
-      mockQueryOne.mockResolvedValue({ value: '2' })
+      // Already at version 3
+      mockQueryOne.mockResolvedValue({ value: '3' })
 
       await runMigrations()
 
-      // No migrations should run since we're at version 2
+      // No migrations should run since we're at version 3
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
@@ -255,14 +255,14 @@ describe('migrations', () => {
       expect(mockExecSQL.mock.calls.length).toBeGreaterThanOrEqual(50)
     })
 
-    it('updates db_version to 2 after migration', async () => {
-      mockQueryOne.mockResolvedValue({ value: '1' })
+    it('updates db_version to 3 after migration', async () => {
+      mockQueryOne.mockResolvedValue({ value: '2' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining("UPDATE settings SET value = ?"),
-        ['2']
+        ['3']
       )
     })
 
@@ -651,6 +651,30 @@ describe('migrations', () => {
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_trx_add_counterparty')
+      )
+    })
+
+    // ----- MIGRATION V3 TESTS (Auth Settings) -----
+
+    it('creates auth_settings table in migration v3', async () => {
+      mockQueryOne.mockResolvedValue({ value: '2' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS auth_settings')
+      )
+    })
+
+    it('runs migration v3 when at version 2', async () => {
+      mockQueryOne.mockResolvedValue({ value: '2' })
+
+      await runMigrations()
+
+      // Should run migration v3 statements
+      expect(mockExecSQL).toHaveBeenCalled()
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('auth_settings')
       )
     })
   })

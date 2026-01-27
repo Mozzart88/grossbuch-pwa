@@ -191,7 +191,7 @@ export const tagRepository = {
     return querySQL<Tag>(`
       SELECT 
         child_id as id,
-        child_name as name
+        child as name
       FROM tags_hierarchy
       WHERE parent_id = ?
       ORDER BY name ASC

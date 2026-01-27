@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { DatabaseProvider, useDatabase } from './store/DatabaseContext'
+import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
 import { ToastProvider, Spinner } from './components/ui'
 import { AppLayout } from './components/layout/AppLayout'
@@ -18,7 +19,43 @@ import {
   TagsPage,
   BudgetsPage,
   SummariesPage,
+  PinSetupPage,
+  PinLoginPage,
+  ChangePinPage,
+  MigrationPage,
 } from './pages'
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { status } = useAuth()
+
+  // Checking auth status
+  if (status === 'checking') {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
+        <Spinner size="lg" />
+        <p className="text-gray-500 dark:text-gray-400">Loading...</p>
+      </div>
+    )
+  }
+
+  // First time setup
+  if (status === 'first_time_setup') {
+    return <PinSetupPage />
+  }
+
+  // Needs migration (unencrypted database detected)
+  if (status === 'needs_migration') {
+    return <MigrationPage />
+  }
+
+  // Needs authentication or auth failed
+  if (status === 'needs_auth' || status === 'auth_failed') {
+    return <PinLoginPage />
+  }
+
+  // Authenticated - show app
+  return <>{children}</>
+}
 
 function AppContent() {
   const { isReady, error } = useDatabase()
@@ -66,6 +103,7 @@ function AppContent() {
         <Route path="/settings/download" element={<DownloadPage />} />
         <Route path="/settings/tags" element={<TagsPage />} />
         <Route path="/settings/budgets" element={<BudgetsPage />} />
+        <Route path="/settings/security" element={<ChangePinPage />} />
       </Routes>
     </AppLayout>
   )
@@ -77,7 +115,11 @@ export default function App() {
       <ThemeProvider>
         <ToastProvider>
           <DatabaseProvider>
-            <AppContent />
+            <AuthProvider>
+              <AuthGate>
+                <AppContent />
+              </AuthGate>
+            </AuthProvider>
           </DatabaseProvider>
         </ToastProvider>
       </ThemeProvider>
