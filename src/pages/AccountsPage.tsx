@@ -200,11 +200,11 @@ export function AccountsPage() {
                   <div>
                     <p className="font-medium text-gray-900 dark:text-gray-100">
                       {wallet.name}
-                      {wallet.is_default && (
+                      {wallet.is_default ? (
                         <span className="ml-2 text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
                           Default
                         </span>
-                      )}
+                      ) : ''}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {wallet.accounts?.length || 0} account(s)
@@ -284,11 +284,10 @@ export function AccountsPage() {
                   key={color}
                   type="button"
                   onClick={() => setWalletColor(color)}
-                  className={`w-8 h-8 rounded-full border-2 transition-all ${
-                    walletColor === color
+                  className={`w-8 h-8 rounded-full border-2 transition-all ${walletColor === color
                       ? 'border-gray-900 dark:border-white scale-110'
                       : 'border-transparent hover:scale-105'
-                  }`}
+                    }`}
                   style={{ backgroundColor: color }}
                 />
               ))}
