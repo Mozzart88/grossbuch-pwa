@@ -37,8 +37,9 @@ export const walletRepository = {
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_default
       FROM wallet w
       WHERE NOT EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?)
+        AND NOT EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?)
       ORDER BY is_default DESC, name ASC
-    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.ARCHIVED])
+    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.ARCHIVED, SYSTEM_TAGS.SYSTEM])
 
     for (const wallet of wallets) {
       wallet.accounts = await querySQL<Account>(`
@@ -49,8 +50,9 @@ export const walletRepository = {
         FROM account a
         JOIN currency c ON a.currency_id = c.id
         WHERE a.wallet_id = ?
+          AND NOT EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?)
         ORDER BY is_default DESC, c.code ASC
-      `, [SYSTEM_TAGS.DEFAULT, wallet.id])
+      `, [SYSTEM_TAGS.DEFAULT, wallet.id, SYSTEM_TAGS.SYSTEM])
     }
 
     return wallets
@@ -217,5 +219,87 @@ export const walletRepository = {
 
     if (!account) throw new Error('Failed to create account')
     return account
+  },
+
+  // Find existing account in the same wallet with the target currency
+  async findAccountByCurrency(walletId: number, currencyId: number): Promise<Account | null> {
+    return queryOne<Account>(`
+      SELECT
+        a.*,
+        c.code as currency,
+        c.symbol,
+        c.decimal_places,
+        EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
+      FROM account a
+      JOIN currency c ON a.currency_id = c.id
+      WHERE a.wallet_id = ? AND a.currency_id = ?
+    `, [SYSTEM_TAGS.DEFAULT, walletId, currencyId])
+  },
+
+  // Create a virtual account marked with SYSTEM tag
+  async createVirtualAccount(currencyId: number): Promise<Account> {
+    // Find or create "Virtual" wallet with SYSTEM tag
+    let virtualWallet = await queryOne<Wallet>(`
+      SELECT w.*
+      FROM wallet w
+      JOIN wallet_to_tags wt ON wt.wallet_id = w.id
+      WHERE w.name = 'Virtual' AND wt.tag_id = ?
+    `, [SYSTEM_TAGS.SYSTEM])
+
+    if (!virtualWallet) {
+      await execSQL('INSERT INTO wallet (name, color) VALUES (?, ?)', ['Virtual', '#808080'])
+      const walletId = await getLastInsertId()
+      await execSQL('INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [walletId, SYSTEM_TAGS.SYSTEM])
+      virtualWallet = await this.findById(walletId)
+      if (!virtualWallet) throw new Error('Failed to create virtual wallet')
+    }
+
+    // Check if virtual account for this currency already exists
+    const existingVirtual = await queryOne<Account>(
+      'SELECT * FROM account WHERE wallet_id = ? AND currency_id = ?',
+      [virtualWallet.id, currencyId]
+    )
+    if (existingVirtual) {
+      return existingVirtual
+    }
+
+    // Create the account
+    await execSQL(
+      'INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)',
+      [virtualWallet.id, currencyId]
+    )
+    const accountId = await getLastInsertId()
+
+    // Mark account with SYSTEM tag
+    await execSQL(
+      'INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+      [accountId, SYSTEM_TAGS.SYSTEM]
+    )
+
+    const account = await queryOne<Account>(`
+      SELECT
+        a.*,
+        c.code as currency,
+        c.symbol,
+        c.decimal_places
+      FROM account a
+      JOIN currency c ON a.currency_id = c.id
+      WHERE a.id = ?
+    `, [accountId])
+
+    if (!account) throw new Error('Failed to create virtual account')
+    return account
+  },
+
+  // Find or create: prefers existing account, falls back to virtual
+  async findOrCreateAccountForCurrency(walletId: number, currencyId: number): Promise<Account> {
+    // First check for existing account in the same wallet
+    const sameWalletAccount = await this.findAccountByCurrency(walletId, currencyId)
+    if (sameWalletAccount) {
+      return sameWalletAccount
+    }
+
+    // Create virtual account as last resort
+    return this.createVirtualAccount(currencyId)
   },
 }

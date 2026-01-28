@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { SettingsPage } from '../../../pages/SettingsPage'
 
@@ -12,9 +12,37 @@ vi.mock('../../../store/ThemeContext', () => ({
   }),
 }))
 
+// Mock repositories
+vi.mock('../../../services/repositories', () => ({
+  currencyRepository: {
+    findAll: vi.fn(),
+    setDefault: vi.fn(),
+  },
+  settingsRepository: {
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    getAll: vi.fn(),
+  },
+}))
+
+import { currencyRepository, settingsRepository } from '../../../services/repositories'
+
+const mockCurrencyRepository = vi.mocked(currencyRepository)
+const mockSettingsRepository = vi.mocked(settingsRepository)
+
 describe('SettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockCurrencyRepository.findAll.mockResolvedValue([
+      { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true },
+      { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2 },
+    ])
+    mockCurrencyRepository.setDefault.mockResolvedValue(undefined)
+    mockSettingsRepository.get.mockResolvedValue(null)
+    mockSettingsRepository.set.mockResolvedValue(undefined)
+    mockSettingsRepository.delete.mockResolvedValue(undefined)
+    mockSettingsRepository.getAll.mockResolvedValue({})
   })
 
   const renderPage = () => {
@@ -249,6 +277,140 @@ describe('SettingsPage', () => {
       // System is the mocked current theme
       const systemButton = screen.getByRole('button', { name: 'System' })
       expect(systemButton.className).toContain('bg-primary-100')
+    })
+  })
+
+  describe('Defaults section', () => {
+    it('renders Defaults section', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Defaults')).toBeInTheDocument()
+      })
+    })
+
+    it('renders Display Currency selector', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Display Currency')).toBeInTheDocument()
+      })
+    })
+
+    it('renders Payment Currency selector', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Currency')).toBeInTheDocument()
+      })
+    })
+
+    it('changes display currency when selected', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Display Currency')).toBeInTheDocument()
+      })
+
+      const displayCurrencySelect = screen.getByRole('combobox', { name: /display currency/i })
+      fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
+
+      await waitFor(() => {
+        expect(mockCurrencyRepository.setDefault).toHaveBeenCalledWith(2)
+      })
+    })
+
+    it('changes payment currency when selected', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Currency')).toBeInTheDocument()
+      })
+
+      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
+
+      await waitFor(() => {
+        expect(mockSettingsRepository.set).toHaveBeenCalledWith('default_payment_currency_id', 2)
+      })
+    })
+
+    it('deletes payment currency when "Same as account" selected', async () => {
+      mockSettingsRepository.getAll.mockResolvedValueOnce({ default_payment_currency_id: 2 })
+
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Currency')).toBeInTheDocument()
+      })
+
+      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.change(paymentCurrencySelect, { target: { value: '' } })
+
+      await waitFor(() => {
+        expect(mockSettingsRepository.delete).toHaveBeenCalledWith('default_payment_currency_id')
+      })
+    })
+
+    it('shows helper text for payment currency', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText(/Payment currency pre-selects/)).toBeInTheDocument()
+      })
+    })
+
+    it('handles error when loading settings', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockCurrencyRepository.findAll.mockRejectedValueOnce(new Error('Load failed'))
+
+      renderPage()
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to load settings:', expect.any(Error))
+      })
+
+      consoleSpy.mockRestore()
+    })
+
+    it('handles error when setting display currency', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockCurrencyRepository.setDefault.mockRejectedValueOnce(new Error('Set failed'))
+
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Display Currency')).toBeInTheDocument()
+      })
+
+      const displayCurrencySelect = screen.getByRole('combobox', { name: /display currency/i })
+      fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to set default currency:', expect.any(Error))
+      })
+
+      consoleSpy.mockRestore()
+    })
+
+    it('handles error when setting payment currency', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockSettingsRepository.set.mockRejectedValueOnce(new Error('Set failed'))
+
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('Payment Currency')).toBeInTheDocument()
+      })
+
+      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to set payment currency:', expect.any(Error))
+      })
+
+      consoleSpy.mockRestore()
     })
   })
 })
