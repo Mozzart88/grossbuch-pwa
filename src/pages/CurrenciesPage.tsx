@@ -3,6 +3,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency, CurrencyInput } from '../types'
+import { Badge } from '../components/ui/Badge'
 
 export function CurrenciesPage() {
   const { showToast } = useToast()
@@ -147,14 +148,14 @@ export function CurrenciesPage() {
                   <p className="font-medium text-gray-900 dark:text-gray-100">
                     {currency.code}
                     {currency.is_default ? (
-                      <span className="ml-2 text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
+                      <Badge>
                         Default
-                      </span>
+                      </Badge>
                     ) : ''}
                     {currency.is_crypto ? (
-                      <span className="ml-2 text-xs bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 px-1.5 py-0.5 rounded">
+                      <Badge variant='secondary' >
                         Crypto
-                      </span>
+                      </Badge>
                     ) : ''}
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{currency.name}</p>

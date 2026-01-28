@@ -3,6 +3,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository } from '../services/repositories'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
+import { Badge } from '../components/ui/Badge'
 
 export function AccountsPage() {
   const { showToast } = useToast()
@@ -201,9 +202,9 @@ export function AccountsPage() {
                     <p className="font-medium text-gray-900 dark:text-gray-100">
                       {wallet.name}
                       {wallet.is_default ? (
-                        <span className="ml-2 text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
+                        <Badge>
                           Default
-                        </span>
+                        </Badge>
                       ) : ''}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -285,8 +286,8 @@ export function AccountsPage() {
                   type="button"
                   onClick={() => setWalletColor(color)}
                   className={`w-8 h-8 rounded-full border-2 transition-all ${walletColor === color
-                      ? 'border-gray-900 dark:border-white scale-110'
-                      : 'border-transparent hover:scale-105'
+                    ? 'border-gray-900 dark:border-white scale-110'
+                    : 'border-transparent hover:scale-105'
                     }`}
                   style={{ backgroundColor: color }}
                 />
