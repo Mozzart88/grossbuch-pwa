@@ -25,6 +25,7 @@ vi.mock('../../../services/repositories', () => ({
   },
   walletRepository: {
     findActive: vi.fn(),
+    findOrCreateAccountForCurrency: vi.fn(),
   },
   tagRepository: {
     findExpenseTags: vi.fn(),
@@ -38,6 +39,12 @@ vi.mock('../../../services/repositories', () => ({
     findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
+  },
+  settingsRepository: {
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    getAll: vi.fn(),
   },
 }))
 
@@ -58,13 +65,14 @@ vi.mock('../../../utils/dateUtils', () => ({
   getCurrentDateTime: vi.fn(() => '2025-01-10 12:00:00'),
 }))
 
-import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository } from '../../../services/repositories'
+import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository, settingsRepository } from '../../../services/repositories'
 
 const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockWalletRepository = vi.mocked(walletRepository)
 const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
+const mockSettingsRepository = vi.mocked(settingsRepository)
 
 describe('AddTransactionPage', () => {
   beforeEach(() => {
@@ -137,6 +145,7 @@ describe('AddTransactionPage', () => {
       is_fiat: true,
     })
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockSettingsRepository.get.mockResolvedValue(null)
   })
 
   const renderPage = () => {

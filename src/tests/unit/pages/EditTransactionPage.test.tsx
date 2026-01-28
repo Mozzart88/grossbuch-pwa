@@ -42,6 +42,13 @@ vi.mock('../../../services/repositories', () => ({
   walletRepository: {
     findActive: vi.fn(),
     findAll: vi.fn(),
+    findOrCreateAccountForCurrency: vi.fn(),
+  },
+  settingsRepository: {
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    getAll: vi.fn(),
   },
 }))
 
@@ -69,7 +76,7 @@ vi.mock('../../../utils/dateUtils', () => ({
 // Mock confirm
 vi.spyOn(window, 'confirm').mockImplementation(() => true)
 
-import { transactionRepository, accountRepository, tagRepository, counterpartyRepository, currencyRepository, walletRepository } from '../../../services/repositories'
+import { transactionRepository, accountRepository, tagRepository, counterpartyRepository, currencyRepository, walletRepository, settingsRepository } from '../../../services/repositories'
 
 const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
@@ -77,6 +84,7 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockWalletRepository = vi.mocked(walletRepository)
+const mockSettingsRepository = vi.mocked(settingsRepository)
 
 // Create a sample hex ID and its Uint8Array equivalent
 const sampleHexId = '0102030405060708090a0b0c0d0e0f10'
@@ -200,6 +208,7 @@ describe('EditTransactionPage', () => {
         ],
       },
     ])
+    mockSettingsRepository.get.mockResolvedValue(null)
   })
 
   const renderPage = (id = sampleHexId) => {

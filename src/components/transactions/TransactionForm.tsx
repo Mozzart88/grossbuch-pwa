@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput } from '../../types'
+import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
-import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository } from '../../services/repositories'
+import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository, settingsRepository } from '../../services/repositories'
 import { Button, Input, Select, LiveSearch } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 
@@ -38,9 +38,11 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const [datetime, setDateTime] = useState(Date.now())
 
   const [accounts, setAccounts] = useState<AccountOption[]>([])
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [paymentCurrencyId, setPaymentCurrencyId] = useState<number | null>(null)
+  const [paymentAmount, setPaymentAmount] = useState('')
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
-  const [feeTags, setFeeTags] = useState<Tag[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -51,10 +53,22 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   }, [])
 
   useEffect(() => {
-    if (initialData && accounts.length > 0) {
+    if (initialData && accounts.length > 0 && currencies.length > 0) {
       populateFromInitialData()
     }
-  }, [initialData, accounts])
+  }, [initialData, accounts, currencies])
+
+  // Detect if this is a multi-currency expense pattern (exchange + expense)
+  const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
+    const exchangeLines = lines.filter(l => l.tag_id === SYSTEM_TAGS.EXCHANGE)
+    const expenseLines = lines.filter(l =>
+      l.sign === '-' &&
+      l.tag_id !== SYSTEM_TAGS.EXCHANGE &&
+      l.tag_id !== SYSTEM_TAGS.TRANSFER &&
+      l.tag_id !== SYSTEM_TAGS.FEE
+    )
+    return exchangeLines.length === 2 && expenseLines.length === 1
+  }
 
   const populateFromInitialData = () => {
     if (!initialData || !initialData.lines || initialData.lines.length === 0) return
@@ -63,7 +77,41 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
     const lines = initialData.lines as TransactionLine[]
     const firstLine = lines[0]
 
-    // Detect mode
+    // Check for multi-currency expense first
+    if (isMultiCurrencyExpense(lines)) {
+      setMode('expense')
+
+      const exchangeOut = lines.find(l => l.tag_id === SYSTEM_TAGS.EXCHANGE && l.sign === '-')!
+      const expenseLine = lines.find(l =>
+        l.tag_id !== SYSTEM_TAGS.EXCHANGE &&
+        l.tag_id !== SYSTEM_TAGS.TRANSFER &&
+        l.sign === '-'
+      )!
+
+      // Source account (where money came from)
+      setAccountId(exchangeOut.account_id.toString())
+      const sourceAcc = accounts.find(a => a.id === exchangeOut.account_id)
+      const sourceDp = sourceAcc?.decimalPlaces ?? 2
+      setPaymentAmount((exchangeOut.amount / Math.pow(10, sourceDp)).toString())
+
+      // Payment currency (expense currency)
+      const targetCurrency = currencies.find(c => c.code === expenseLine.currency)
+      if (targetCurrency) {
+        setPaymentCurrencyId(targetCurrency.id)
+      }
+      const targetDp = targetCurrency?.decimal_places ?? 2
+      setAmount((expenseLine.amount / Math.pow(10, targetDp)).toString())
+
+      setTagId(expenseLine.tag_id.toString())
+      setNote(expenseLine.note || '')
+
+      if (initialData.counterparty_id) {
+        setCounterpartyId(initialData.counterparty_id.toString())
+      }
+      return
+    }
+
+    // Detect mode for other transaction types
     let detectedMode: TransactionMode = 'expense'
     if (lines.some((l: TransactionLine) => l.tag_id === SYSTEM_TAGS.TRANSFER)) {
       detectedMode = 'transfer'
@@ -83,6 +131,11 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       const acc = accounts.find(a => a.id === firstLine.account_id)
       const dp = acc?.decimalPlaces ?? 2
       setAmount((firstLine.amount / Math.pow(10, dp)).toString())
+
+      // For regular expenses, set payment currency to match account
+      if (detectedMode === 'expense' && acc) {
+        setPaymentCurrencyId(acc.currency_id)
+      }
 
       if (initialData.counterparty_id) {
         setCounterpartyId(initialData.counterparty_id.toString())
@@ -118,22 +171,24 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const loadData = async () => {
     try {
-      const [wallets, incomeTags, expenseTags, allFeeTags, cps, currencies] = await Promise.all([
+      const [wallets, incomeTags, expenseTags, cps, currencyList, defaultPaymentCurrencyId] = await Promise.all([
         walletRepository.findActive(),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
-        tagRepository.findExpenseTags(), // Fee tags are expense-type
         counterpartyRepository.findAll(),
         currencyRepository.findAll(),
+        settingsRepository.get('default_payment_currency_id'),
       ])
 
       setDateTime(Date.now())
+      setCurrencies(currencyList)
+
       // Build account options with wallet/currency info
       const accountOptions: AccountOption[] = []
       for (const wallet of wallets) {
         if (wallet.accounts) {
           for (const acc of wallet.accounts) {
-            const currency = currencies.find(c => c.id === acc.currency_id)
+            const currency = currencyList.find(c => c.id === acc.currency_id)
             accountOptions.push({
               ...acc,
               walletName: wallet.name,
@@ -148,8 +203,12 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       setAccounts(accountOptions)
       setIncomeTags(incomeTags)
       setExpenseTags(expenseTags)
-      setFeeTags(allFeeTags)
       setCounterparties(cps)
+
+      // Set default payment currency if configured and not editing
+      if (!initialData && defaultPaymentCurrencyId) {
+        setPaymentCurrencyId(defaultPaymentCurrencyId)
+      }
 
       // Set default account only if not editing
       if (!initialData && accountOptions.length > 0) {
@@ -170,6 +229,11 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const selectedToAccount = accounts.find(a => a.id.toString() === toAccountId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
   const toDecimalPlaces = selectedToAccount?.decimalPlaces ?? 2
+
+  // Payment currency (for multi-currency expenses)
+  const paymentCurrency = currencies.find(c => c.id === paymentCurrencyId)
+  const paymentCurrencyDecimalPlaces = paymentCurrency?.decimal_places ?? 2
+  const paymentCurrencyDiffers = mode === 'expense' && paymentCurrencyId && paymentCurrencyId !== selectedAccount?.currency_id
 
   // Calculate step and placeholder based on decimal places
   const getStep = (decimals: number) => (1 / Math.pow(10, decimals)).toFixed(decimals)
@@ -220,6 +284,10 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         newErrors.toAccountId = 'Exchange requires different currencies'
       }
     }
+    // Multi-currency expense validation
+    if (paymentCurrencyDiffers && (!paymentAmount || parseFloat(paymentAmount) <= 0)) {
+      newErrors.paymentAmount = 'Amount in account currency is required'
+    }
     if (fee && parseFloat(fee) < 0) {
       newErrors.fee = 'Fee cannot be negative'
     }
@@ -249,18 +317,69 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         timestamp: Math.floor(datetime / 1000),
         lines: []
       }
-      if (mode === 'income' || mode === 'expense') {
-        const sign = mode === 'income' ? '+' : '-' as const
-        payload.lines.push(
-          {
+      if (mode === 'income') {
+        payload.lines.push({
+          account_id: parseInt(accountId),
+          tag_id: parseInt(tagId),
+          sign: '+' as const,
+          amount: intAmount,
+          rate: accountRate,
+          note: note || undefined,
+        })
+      } else if (mode === 'expense') {
+        // Check if this is a multi-currency expense
+        if (paymentCurrencyDiffers && paymentCurrencyId) {
+          // Find or create account for payment currency
+          const targetAccount = await walletRepository.findOrCreateAccountForCurrency(
+            selectedAccount!.wallet_id,
+            paymentCurrencyId
+          )
+
+          // Get rates
+          const sourceRate = accountRate
+          const targetRate = (await currencyRepository.getExchangeRate(paymentCurrencyId))?.rate ?? 100
+
+          // Source amount (what we pay from account)
+          const sourceIntAmount = toIntegerAmount(paymentAmount, decimalPlaces)
+          // Target amount (what we spend in payment currency)
+          const targetIntAmount = toIntegerAmount(amount, paymentCurrencyDecimalPlaces)
+
+          // 1. Exchange OUT from source account
+          payload.lines.push({
+            account_id: parseInt(accountId),
+            tag_id: SYSTEM_TAGS.EXCHANGE,
+            sign: '-' as const,
+            amount: sourceIntAmount,
+            rate: sourceRate,
+          })
+          // 2. Exchange IN to target account
+          payload.lines.push({
+            account_id: targetAccount.id,
+            tag_id: SYSTEM_TAGS.EXCHANGE,
+            sign: '+' as const,
+            amount: targetIntAmount,
+            rate: targetRate,
+          })
+          // 3. Expense from target account
+          payload.lines.push({
+            account_id: targetAccount.id,
+            tag_id: parseInt(tagId),
+            sign: '-' as const,
+            amount: targetIntAmount,
+            rate: targetRate,
+            note: note || undefined,
+          })
+        } else {
+          // Normal single-currency expense
+          payload.lines.push({
             account_id: parseInt(accountId),
             tag_id: parseInt(tagId),
-            sign,
+            sign: '-' as const,
             amount: intAmount,
             rate: accountRate,
             note: note || undefined,
-          },
-        )
+          })
+        }
       } else if (mode === 'transfer') {
         payload.lines.push(
           {
@@ -407,20 +526,59 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       {/* Amount */}
       <div className="space-y-1">
         <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Amount {selectedAccount && `(${selectedAccount.currencySymbol})`}
+          Amount {mode === 'expense' && paymentCurrency ? `(${paymentCurrency.symbol})` : selectedAccount && `(${selectedAccount.currencySymbol})`}
         </label>
-        <input
-          id="amount"
-          type="number"
-          step={getStep(decimalPlaces)}
-          min="0"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder={getPlaceholder(decimalPlaces)}
-          className={`w-full px-3 py-3 text-2xl font-semibold rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
-        />
+        <div className="flex gap-0">
+          <input
+            id="amount"
+            type="number"
+            step={getStep(mode === 'expense' && paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder={getPlaceholder(mode === 'expense' && paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
+            className={`flex-1 px-3 py-3 text-xl font-semibold rounded-l-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
+          />
+          {mode === 'expense' && (
+            <select
+              aria-label="payment-currency"
+              value={paymentCurrencyId || selectedAccount?.currency_id || ''}
+              onChange={(e) => setPaymentCurrencyId(e.target.value ? parseInt(e.target.value) : null)}
+              className="flex-none w-max-24 px-2 py-2 rounded-r-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              {currencies.map(c => (
+                <option key={c.id} value={c.id}>{c.code}</option>
+              ))}
+            </select>
+          )}
+        </div>
         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
       </div>
+
+      {/* Payment Amount (when expense currency differs from account) */}
+      {paymentCurrencyDiffers && (
+        <div className="space-y-1">
+          <label htmlFor="paymentAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Amount from account ({selectedAccount?.currencySymbol})
+          </label>
+          <input
+            id="paymentAmount"
+            type="number"
+            step={getStep(decimalPlaces)}
+            min="0"
+            value={paymentAmount}
+            onChange={(e) => setPaymentAmount(e.target.value)}
+            placeholder={getPlaceholder(decimalPlaces)}
+            className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.paymentAmount ? 'border-red-500' : ''}`}
+          />
+          {errors.paymentAmount && <p className="text-sm text-red-600">{errors.paymentAmount}</p>}
+          {amount && paymentAmount && parseFloat(amount) > 0 && parseFloat(paymentAmount) > 0 && (
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Rate: 1 {selectedAccount?.currencyCode} = {(parseFloat(amount) / parseFloat(paymentAmount)).toFixed(4)} {paymentCurrency?.code}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Account */}
       <Select
@@ -501,23 +659,29 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
               step={getStep(decimalPlaces)}
               min="0"
               value={fee}
-              onChange={(e) => setFee(e.target.value)}
+              onChange={(e) => {
+                if (e.target.value === '' || e.target.value === '0')
+                  setFeeTagId('')
+                else
+                  setFeeTagId('13')
+                setFee(e.target.value)
+              }}
               placeholder="0.00"
               className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
             />
             {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
           </div>
-          {fee && parseFloat(fee) > 0 && (
-            <Select
-              label="Fee Category"
-              value={feeTagId}
-              onChange={(e) => setFeeTagId(e.target.value)}
-              options={feeTags.map((t) => ({
-                value: t.id,
-                label: t.name,
-              }))}
-            />
-          )}
+          {/* {fee && parseFloat(fee) > 0 && ( */}
+          {/*   <Select */}
+          {/*     label="Fee Category" */}
+          {/*     value={feeTagId} */}
+          {/*     onChange={(e) => setFeeTagId(e.target.value)} */}
+          {/*     options={feeTags.map((t) => ({ */}
+          {/*       value: t.id, */}
+          {/*       label: t.name, */}
+          {/*     }))} */}
+          {/*   /> */}
+          {/* )} */}
         </div>
       )}
 

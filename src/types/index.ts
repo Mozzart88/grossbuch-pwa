@@ -280,6 +280,7 @@ export interface TagGraph {
 // Settings
 export interface Settings {
   default_currency_id: number
+  default_payment_currency_id?: number
   theme: 'light' | 'dark' | 'system'
 }
 

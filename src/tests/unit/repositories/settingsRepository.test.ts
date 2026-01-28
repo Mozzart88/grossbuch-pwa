@@ -116,19 +116,22 @@ describe('settingsRepository', () => {
     it('returns all settings', async () => {
       mockQueryOne
         .mockResolvedValueOnce({ value: '1' }) // default_currency_id
+        .mockResolvedValueOnce({ value: '2' }) // default_payment_currency_id
         .mockResolvedValueOnce({ value: 'dark' }) // theme
 
       const result = await settingsRepository.getAll()
 
       expect(result).toEqual({
         default_currency_id: 1,
+        default_payment_currency_id: 2,
         theme: 'dark',
       })
     })
 
     it('returns partial settings when some are missing', async () => {
       mockQueryOne
-        .mockResolvedValueOnce({ value: '1' })
+        .mockResolvedValueOnce({ value: '1' }) // default_currency_id
+        .mockResolvedValueOnce(null) // default_payment_currency_id not set
         .mockResolvedValueOnce(null) // theme not set
 
       const result = await settingsRepository.getAll()
@@ -154,6 +157,10 @@ describe('settingsRepository', () => {
       expect(mockQueryOne).toHaveBeenCalledWith(
         expect.anything(),
         ['default_currency_id']
+      )
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.anything(),
+        ['default_payment_currency_id']
       )
       expect(mockQueryOne).toHaveBeenCalledWith(
         expect.anything(),

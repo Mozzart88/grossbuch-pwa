@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Card } from '../components/ui'
+import { Card, Select } from '../components/ui'
 import { useTheme } from '../store/ThemeContext'
+import { currencyRepository, settingsRepository } from '../services/repositories'
+import type { Currency } from '../types'
 
 const settingsLinks = [
   { to: '/settings/accounts', label: 'Accounts', icon: '🏦', description: 'Manage your wallets and accounts' },
@@ -17,6 +20,63 @@ const settingsLinks = [
 
 export function SettingsPage() {
   const { theme, setTheme } = useTheme()
+  const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [displayCurrencyId, setDisplayCurrencyId] = useState<string>('')
+  const [paymentCurrencyId, setPaymentCurrencyId] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  const loadSettings = async () => {
+    try {
+      const [currencyList, settings] = await Promise.all([
+        currencyRepository.findAll(),
+        settingsRepository.getAll(),
+      ])
+      setCurrencies(currencyList)
+
+      // Find default display currency
+      const defaultCurrency = currencyList.find(c => c.is_default)
+      if (defaultCurrency) {
+        setDisplayCurrencyId(defaultCurrency.id.toString())
+      }
+
+      // Load payment currency setting
+      if (settings.default_payment_currency_id) {
+        setPaymentCurrencyId(settings.default_payment_currency_id.toString())
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDisplayCurrencyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newId = e.target.value
+    setDisplayCurrencyId(newId)
+    try {
+      await currencyRepository.setDefault(parseInt(newId))
+    } catch (error) {
+      console.error('Failed to set default currency:', error)
+    }
+  }
+
+  const handlePaymentCurrencyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newId = e.target.value
+    setPaymentCurrencyId(newId)
+    try {
+      if (newId) {
+        await settingsRepository.set('default_payment_currency_id', parseInt(newId))
+      } else {
+        await settingsRepository.delete('default_payment_currency_id')
+      }
+    } catch (error) {
+      console.error('Failed to set payment currency:', error)
+    }
+  }
 
   return (
     <div>
@@ -39,6 +99,39 @@ export function SettingsPage() {
                 {t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
+          </div>
+        </Card>
+
+        {/* Defaults section */}
+        <Card className="p-4">
+          <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Defaults</h3>
+          <div className="space-y-4">
+            <Select
+              label="Display Currency"
+              value={displayCurrencyId}
+              onChange={handleDisplayCurrencyChange}
+              options={currencies.map(c => ({
+                value: c.id,
+                label: `${c.code} - ${c.name}`,
+              }))}
+              disabled={loading}
+            />
+            <Select
+              label="Payment Currency"
+              value={paymentCurrencyId}
+              onChange={handlePaymentCurrencyChange}
+              options={[
+                { value: '', label: 'Same as account' },
+                ...currencies.map(c => ({
+                  value: c.id,
+                  label: `${c.code} - ${c.name}`,
+                })),
+              ]}
+              disabled={loading}
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Payment currency pre-selects the expense currency when creating transactions.
+            </p>
           </div>
         </Card>
 

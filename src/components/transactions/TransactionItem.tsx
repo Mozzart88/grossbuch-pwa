@@ -15,7 +15,23 @@ function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
   })
 }
 
+// Detect multi-currency expense pattern: 2 exchange lines + 1 expense line
+const isMultiCurrencyExpense = (trx: TransactionLog[]): boolean => {
+  const exchangeLines = trx.filter(l => l.tags.includes('exchange'))
+  const expenseLines = trx.filter(l =>
+    l.amount < 0 &&
+    !l.tags.includes('exchange') &&
+    !l.tags.includes('transfer') &&
+    !l.tags.includes('fee')
+  )
+  return exchangeLines.length === 2 && expenseLines.length === 1
+}
+
 const getTransactionType = (trx: TransactionLog[]): transactionT => {
+  // Check for multi-currency expense first (exchange + expense pattern)
+  if (isMultiCurrencyExpense(trx)) {
+    return 'expense'
+  }
   if (isTypeOf(trx, 'exchange')) {
     return 'exchange'
   }
@@ -29,13 +45,35 @@ const getDecimalPlaces = (p: number): number => {
   return Math.pow(10, p)
 }
 
+// Get the expense line for multi-currency expense transactions
+const getExpenseLine = (trx: TransactionLog[]): TransactionLog | undefined => {
+  return trx.find(l =>
+    l.amount < 0 &&
+    !l.tags.includes('exchange') &&
+    !l.tags.includes('transfer') &&
+    !l.tags.includes('fee')
+  )
+}
+
 export function TransactionItem({ transaction, onClick }: TransactionItemProps) {
   const getAmountDisplay = () => {
+    const transactionType = getTransactionType(transaction)
+
+    // For multi-currency expense, show the expense amount in the expense currency
+    if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
+      const expenseLine = getExpenseLine(transaction)!
+      const amount = Math.abs(expenseLine.amount) / getDecimalPlaces(expenseLine.decimal_places)
+      return {
+        text: formatCurrency(amount, expenseLine.symbol),
+        color: 'text-gray-600 dark:text-gray-400',
+      }
+    }
+
     const symbol = transaction[0].symbol
     const decimalPlaces = transaction[0].decimal_places
 
     const amount = transaction.reduce((acc, l) => acc + l.amount, 0) / getDecimalPlaces(decimalPlaces)
-    switch (getTransactionType(transaction)) {
+    switch (transactionType) {
       case 'income':
         return {
           text: `${formatCurrency(amount, symbol)}`,
@@ -63,6 +101,18 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
   const getDescription = () => {
     const transactionType = getTransactionType(transaction)
+
+    // For multi-currency expense, show counterparty or source wallet info
+    if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
+      const counterparty = transaction.find(l => l.counterparty)?.counterparty
+      if (counterparty) {
+        return counterparty
+      }
+      // Show source wallet (where money came from) with source currency
+      const exchangeOut = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
+      return `${exchangeOut.wallet}:${exchangeOut.symbol}`
+    }
+
     const from = transaction.find(l => l.amount < 0 && l.tags === transactionType)!
     const to = transaction.find(l => l.amount >= 0 && l.tags === transactionType)!
 
@@ -91,12 +141,23 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     }
   }
 
+  const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+
   const getTitle = () => {
     if (['transfer', 'exchange'].includes(transactionType)) {
-      return transactionType[0].toUpperCase() + transactionType.slice(1)
+      return capitalize(transactionType)
     }
-    if (transaction[0].tags.length > 0) {
-      return transaction[0].tags[0]?.toUpperCase() + transaction[0].tags?.slice(1)
+    // For multi-currency expense, use the expense line's tags
+    if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
+      const expenseLine = getExpenseLine(transaction)!
+      if (expenseLine.tags && expenseLine.tags.length > 0) {
+        const tag = expenseLine.tags.split(',')[0]
+        return capitalize(tag)
+      }
+    }
+    if (transaction[0].tags && transaction[0].tags.length > 0) {
+      const tag = transaction[0].tags.split(',')[0]
+      return capitalize(tag)
     }
     return 'Uncategorized'
   }
@@ -110,7 +171,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
     >
       {/* Icon */}
-      <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-lg">
+      <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-lg">
         {getIcon()}
       </div>
 
@@ -125,7 +186,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       </div>
 
       {/* Amount and time */}
-      <div className="flex-shrink-0 text-right">
+      <div className="shrink-0 text-right">
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
         <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
       </div>

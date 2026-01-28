@@ -132,6 +132,40 @@ describe('TransactionItem', () => {
     expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
   })
 
+  it('renders complex transaction in different currencies', () => {
+    const exchangeTransaction: TransactionLog[] = [
+      {
+        ...baseTransaction,
+        tags: 'exchange',
+        amount: -5000,
+      },
+      {
+        ...baseTransaction,
+        tags: 'exchange',
+        wallet: 'Bank',
+        currency: 'ARS',
+        symbol: 'AR$',
+        amount: 50,
+      },
+      {
+        ...baseTransaction,
+        tags: 'Food',
+        wallet: 'Bank',
+        currency: 'ARS',
+        symbol: 'AR$',
+        amount: -50,
+      },
+    ]
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={exchangeTransaction} onClick={onClick} />)
+
+    expect(screen.getByText('Food')).toBeInTheDocument()
+    expect(screen.getByText('📉')).toBeInTheDocument()
+    // Shows source wallet (where money came from) with source currency
+    expect(screen.getByText('Cash:$')).toBeInTheDocument()
+    expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+  })
+
   it('calls onClick when clicked', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)

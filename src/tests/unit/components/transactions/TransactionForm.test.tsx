@@ -8,6 +8,7 @@ import type { Wallet, Tag, Counterparty, Currency, Account } from '../../../../t
 vi.mock('../../../../services/repositories', () => ({
   walletRepository: {
     findActive: vi.fn(),
+    findOrCreateAccountForCurrency: vi.fn(),
   },
   tagRepository: {
     findIncomeTags: vi.fn(),
@@ -30,6 +31,12 @@ vi.mock('../../../../services/repositories', () => ({
     create: vi.fn(),
     update: vi.fn(),
   },
+  settingsRepository: {
+    get: vi.fn(),
+    set: vi.fn(),
+    delete: vi.fn(),
+    getAll: vi.fn(),
+  },
 }))
 
 import {
@@ -38,6 +45,7 @@ import {
   counterpartyRepository,
   currencyRepository,
   transactionRepository,
+  settingsRepository,
 } from '../../../../services/repositories'
 
 const mockWalletRepository = vi.mocked(walletRepository)
@@ -45,6 +53,7 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
+const mockSettingsRepository = vi.mocked(settingsRepository)
 
 const mockAccount: Account = {
   id: 1,
@@ -156,6 +165,7 @@ describe('TransactionForm', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockWalletRepository.findActive.mockResolvedValue(mockWallets)
+    mockWalletRepository.findOrCreateAccountForCurrency.mockResolvedValue(mockAccountEUR)
     mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
@@ -168,6 +178,7 @@ describe('TransactionForm', () => {
     mockTransactionRepository.createExchange.mockResolvedValue({} as any)
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
+    mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency
   })
 
   const renderForm = () => {
@@ -858,9 +869,7 @@ describe('TransactionForm', () => {
       fireEvent.change(toAccountSelect, { target: { value: '3' } })
       fireEvent.change(screen.getByLabelText(/Fee \(optional\)/i), { target: { value: '1' } })
 
-      const feeCategory = await screen.findByLabelText(/Fee Category/i)
-      fireEvent.change(feeCategory, { target: { value: '11' } })
-
+      // Fee category is now hardcoded to 13 when fee is entered
       const submitBtn = screen.getByRole('button', { name: 'Add' })
       fireEvent.submit(submitBtn.closest('form')!)
 
@@ -868,7 +877,7 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ tag_id: 11, amount: 100 }),
+              expect.objectContaining({ tag_id: 13, amount: 100 }),
             ]),
           })
         )
@@ -984,6 +993,187 @@ describe('TransactionForm', () => {
             ]),
           })
         )
+    })
+  })
+
+  describe('Multi-currency expense', () => {
+    it('shows currency selector for expense mode', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Currency selector should be visible for expense mode
+      const currencySelectors = screen.getAllByRole('combobox')
+      const currencyOptions = currencySelectors.find(select =>
+        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'USD')
+      )
+      expect(currencyOptions).toBeDefined()
+    })
+
+    it('shows payment amount field when currencies differ', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Select EUR as payment currency (different from account's USD)
+      const currencySelectors = screen.getAllByRole('combobox')
+      const currencySelect = currencySelectors.find(select =>
+        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
+      )
+      if (currencySelect) {
+        fireEvent.change(currencySelect, { target: { value: '2' } }) // EUR
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
+      })
+    })
+
+    it('validates payment amount when currencies differ', async () => {
+      const { container } = renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Select EUR as payment currency
+      const currencySelectors = screen.getAllByRole('combobox')
+      const currencySelect = currencySelectors.find(select =>
+        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
+      )
+      if (currencySelect) {
+        fireEvent.change(currencySelect, { target: { value: '2' } }) // EUR
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
+      })
+
+      // Fill amount and category but not payment amount
+      const amountInput = container.querySelector('#amount') as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '50' } })
+
+      const categorySelect = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.change(categorySelect, { target: { value: '10' } })
+
+      const submitButton = screen.getByRole('button', { name: 'Add' })
+      fireEvent.click(submitButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('Amount in account currency is required')).toBeInTheDocument()
+      })
+    })
+
+    it('submits multi-currency expense with 3 lines', async () => {
+      mockWalletRepository.findOrCreateAccountForCurrency.mockResolvedValue({
+        id: 5,
+        wallet_id: 1,
+        currency_id: 2,
+        balance: 0,
+        updated_at: Date.now(),
+        currency: 'EUR',
+      })
+
+      const { container } = renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Select EUR as payment currency
+      const currencySelectors = screen.getAllByRole('combobox')
+      const currencySelect = currencySelectors.find(select =>
+        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
+      )
+      if (currencySelect) {
+        fireEvent.change(currencySelect, { target: { value: '2' } }) // EUR
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
+      })
+
+      // Fill expense amount (in EUR)
+      const amountInput = container.querySelector('#amount') as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '50' } })
+
+      // Fill payment amount (in USD from account)
+      const paymentAmountInput = container.querySelector('#paymentAmount') as HTMLInputElement
+      fireEvent.change(paymentAmountInput, { target: { value: '55' } })
+
+      // Select category
+      const categorySelect = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.change(categorySelect, { target: { value: '10' } })
+
+      const submitButton = screen.getByRole('button', { name: 'Add' })
+      fireEvent.click(submitButton)
+
+      await waitFor(() => {
+        expect(mockWalletRepository.findOrCreateAccountForCurrency).toHaveBeenCalledWith(1, 2)
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              // Exchange OUT from source account
+              expect.objectContaining({
+                account_id: 1,
+                tag_id: expect.any(Number), // SYSTEM_TAGS.EXCHANGE
+                sign: '-',
+                amount: 5500, // 55.00 USD
+              }),
+              // Exchange IN to target account
+              expect.objectContaining({
+                account_id: 5,
+                tag_id: expect.any(Number), // SYSTEM_TAGS.EXCHANGE
+                sign: '+',
+                amount: 5000, // 50.00 EUR
+              }),
+              // Expense from target account
+              expect.objectContaining({
+                account_id: 5,
+                tag_id: 10,
+                sign: '-',
+                amount: 5000, // 50.00 EUR
+              }),
+            ]),
+          })
+        )
+      })
+    })
+
+    it('shows exchange rate when currencies differ', async () => {
+      const { container } = renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Select EUR as payment currency
+      const currencySelectors = screen.getAllByRole('combobox')
+      const currencySelect = currencySelectors.find(select =>
+        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
+      )
+      if (currencySelect) {
+        fireEvent.change(currencySelect, { target: { value: '2' } })
+      }
+
+      await waitFor(() => {
+        expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
+      })
+
+      // Fill amounts to show rate
+      const amountInput = container.querySelector('#amount') as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '100' } })
+
+      const paymentAmountInput = container.querySelector('#paymentAmount') as HTMLInputElement
+      fireEvent.change(paymentAmountInput, { target: { value: '110' } })
+
+      await waitFor(() => {
+        expect(screen.getByText(/Rate:/)).toBeInTheDocument()
+      })
     })
   })
 })
