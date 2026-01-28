@@ -3,6 +3,7 @@ import { DatabaseProvider, useDatabase } from './store/DatabaseContext'
 import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
 import { ToastProvider, Spinner } from './components/ui'
+import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { AppLayout } from './components/layout/AppLayout'
 import {
   TransactionsPage,
@@ -59,6 +60,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const { isReady, error } = useDatabase()
+
+  // Background sync exchange rates when app opens
+  useExchangeRateSync({ enabled: isReady })
 
   if (error) {
     return (
