@@ -1,25 +1,31 @@
 import { currencyRepository } from '../repositories/currencyRepository'
 import { getLatestRates } from './exchangeRateApi'
 
-export async function syncRates(): Promise<void> {
+export interface SyncRatesResult {
+  success: boolean
+  syncedCount: number
+  skippedReason?: 'offline' | 'no_currencies' | 'no_default' | 'default_not_in_api'
+}
+
+export async function syncRates(): Promise<SyncRatesResult> {
   // Skip if offline
   if (!navigator.onLine) {
     console.warn('[ExchangeRateSync] Offline, skipping sync')
-    return
+    return { success: false, syncedCount: 0, skippedReason: 'offline' }
   }
 
   // Get all user currencies
   const currencies = await currencyRepository.findAll()
   if (currencies.length === 0) {
     console.warn('[ExchangeRateSync] No currencies found')
-    return
+    return { success: false, syncedCount: 0, skippedReason: 'no_currencies' }
   }
 
   // Find default currency
   const defaultCurrency = currencies.find((c) => c.is_default)
   if (!defaultCurrency) {
     console.warn('[ExchangeRateSync] No default currency set')
-    return
+    return { success: false, syncedCount: 0, skippedReason: 'no_default' }
   }
 
   // Get currency codes to fetch
@@ -37,10 +43,11 @@ export async function syncRates(): Promise<void> {
     console.warn(
       `[ExchangeRateSync] Default currency ${defaultCurrency.code} not found in API response`
     )
-    return
+    return { success: false, syncedCount: 0, skippedReason: 'default_not_in_api' }
   }
 
   // Save rates for each currency
+  let syncedCount = 0
   for (const currency of currencies) {
     // Skip default currency (rate is always 1)
     if (currency.is_default) {
@@ -67,9 +74,9 @@ export async function syncRates(): Promise<void> {
 
     // Save to database
     await currencyRepository.setExchangeRate(currency.id, storedRate)
+    syncedCount++
   }
 
-  console.log(
-    `[ExchangeRateSync] Synced rates for ${currencies.length - 1} currencies`
-  )
+  console.log(`[ExchangeRateSync] Synced rates for ${syncedCount} currencies`)
+  return { success: true, syncedCount }
 }

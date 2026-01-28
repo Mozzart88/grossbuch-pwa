@@ -58,31 +58,46 @@ describe('exchangeRateSync', () => {
   })
 
   describe('syncRates', () => {
-    it('skips sync when offline', async () => {
+    it('returns offline result when offline', async () => {
       Object.defineProperty(global.navigator, 'onLine', { value: false })
 
-      await syncRates()
+      const result = await syncRates()
 
+      expect(result).toEqual({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'offline',
+      })
       expect(mockFindAll).not.toHaveBeenCalled()
       expect(mockGetLatestRates).not.toHaveBeenCalled()
     })
 
-    it('returns early when no currencies found', async () => {
+    it('returns no_currencies result when no currencies found', async () => {
       mockFindAll.mockResolvedValue([])
 
-      await syncRates()
+      const result = await syncRates()
 
+      expect(result).toEqual({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'no_currencies',
+      })
       expect(mockGetLatestRates).not.toHaveBeenCalled()
     })
 
-    it('returns early when no default currency set', async () => {
+    it('returns no_default result when no default currency set', async () => {
       mockFindAll.mockResolvedValue([
         createCurrency({ id: 1, code: 'USD', is_default: false }),
         createCurrency({ id: 2, code: 'EUR', is_default: false }),
       ])
 
-      await syncRates()
+      const result = await syncRates()
 
+      expect(result).toEqual({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'no_default',
+      })
       expect(mockGetLatestRates).not.toHaveBeenCalled()
     })
 
@@ -126,11 +141,12 @@ describe('exchangeRateSync', () => {
         rates: [createApiRate('USD', 1.0), createApiRate('EUR', 0.92)],
       })
 
-      await syncRates()
+      const result = await syncRates()
 
       // EUR rate = 0.92 / 1.0 = 0.92
       // storedRate = round(0.92 * 100) = 92
       expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 92)
+      expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
     it('handles different decimal places', async () => {
@@ -153,11 +169,12 @@ describe('exchangeRateSync', () => {
         rates: [createApiRate('USD', 1.0), createApiRate('BTC', 0.00001234)],
       })
 
-      await syncRates()
+      const result = await syncRates()
 
       // BTC rate = 0.00001234 / 1.0 = 0.00001234
       // storedRate = round(0.00001234 * 10^8) = 1234
       expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 1234)
+      expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
     it('skips default currency when saving rates', async () => {
@@ -170,11 +187,12 @@ describe('exchangeRateSync', () => {
         rates: [createApiRate('USD', 1.0), createApiRate('EUR', 0.92)],
       })
 
-      await syncRates()
+      const result = await syncRates()
 
       // Should only save EUR, not USD (default)
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(1)
       expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number))
+      expect(result.syncedCount).toBe(1)
     })
 
     it('skips currency not found in API response', async () => {
@@ -188,11 +206,12 @@ describe('exchangeRateSync', () => {
         rates: [createApiRate('USD', 1.0), createApiRate('EUR', 0.92)], // No XYZ
       })
 
-      await syncRates()
+      const result = await syncRates()
 
       // Should only save EUR, not XYZ
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(1)
       expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number))
+      expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
     it('handles non-USD base currency correctly', async () => {
@@ -227,16 +246,17 @@ describe('exchangeRateSync', () => {
         ],
       })
 
-      await syncRates()
+      const result = await syncRates()
 
       // USD rate relative to EUR = 1.0 / 0.92 = 1.087 -> 109
       // GBP rate relative to EUR = 0.79 / 0.92 = 0.858 -> 86
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(2)
       expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 109) // USD
       expect(mockSetExchangeRate).toHaveBeenCalledWith(3, 86) // GBP
+      expect(result).toEqual({ success: true, syncedCount: 2 })
     })
 
-    it('returns early when default currency not in API response', async () => {
+    it('returns default_not_in_api when default currency not in API response', async () => {
       const currencies = [
         createCurrency({ id: 1, code: 'XYZ', is_default: true }), // Not in API
         createCurrency({ id: 2, code: 'EUR', is_default: false }),
@@ -246,8 +266,13 @@ describe('exchangeRateSync', () => {
         rates: [createApiRate('USD', 1.0), createApiRate('EUR', 0.92)], // No XYZ
       })
 
-      await syncRates()
+      const result = await syncRates()
 
+      expect(result).toEqual({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'default_not_in_api',
+      })
       expect(mockSetExchangeRate).not.toHaveBeenCalled()
     })
   })
