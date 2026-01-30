@@ -53,8 +53,9 @@ const mockCurrencies: Currency[] = [
 ]
 
 const mockExchangeRates: ExchangeRate[] = [
-  { currency_id: 2, rate: 92, updated_at: 1704067200 },
-  { currency_id: 3, rate: 9000, updated_at: 1704067200 },
+  { currency_id: 1, rate: 100, updated_at: 1704067200 }, // USD (default)
+  { currency_id: 2, rate: 92, updated_at: 1704067200 },  // EUR
+  { currency_id: 3, rate: 9000, updated_at: 1704067200 }, // RUB
 ]
 
 describe('ExchangeRatesPage', () => {
@@ -112,14 +113,20 @@ describe('ExchangeRatesPage', () => {
     })
   })
 
-  it('shows "Not set" for currencies without rates', async () => {
-    mockCurrencyRepository.getAllExchangeRates.mockResolvedValue([])
+  it('only shows currencies with exchange rates', async () => {
+    // Only EUR has a rate
+    mockCurrencyRepository.getAllExchangeRates.mockResolvedValue([
+      { currency_id: 2, rate: 92, updated_at: 1704067200 },
+    ])
 
     render(<ExchangeRatesPage />)
 
     await waitFor(() => {
-      const notSetElements = screen.getAllByText('Not set')
-      expect(notSetElements.length).toBe(2) // EUR and RUB
+      // EUR should appear (has rate)
+      expect(screen.getByText('EUR')).toBeInTheDocument()
+      // USD and RUB should not appear (no rates)
+      expect(screen.queryByText('USD')).not.toBeInTheDocument()
+      expect(screen.queryByText('RUB')).not.toBeInTheDocument()
     })
   })
 
@@ -238,10 +245,7 @@ describe('ExchangeRatesPage', () => {
     consoleSpy.mockRestore()
   })
 
-  it('shows default rate in modal for currency without rate', async () => {
-    // EUR has no rate set
-    mockCurrencyRepository.getAllExchangeRates.mockResolvedValue([])
-
+  it('shows existing rate in modal when editing', async () => {
     render(<ExchangeRatesPage />)
 
     await waitFor(() => {
@@ -255,9 +259,9 @@ describe('ExchangeRatesPage', () => {
     }
 
     await waitFor(() => {
-      // Should show default rate 1.00 in input
+      // Should show existing rate (92/100 = 0.92) in input
       const rateInput = screen.getByRole('spinbutton')
-      expect(rateInput).toHaveValue(1)
+      expect(rateInput).toHaveValue(0.92)
     })
   })
 

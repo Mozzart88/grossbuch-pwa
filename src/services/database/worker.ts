@@ -1,12 +1,22 @@
 import sqlite3InitModule from '../../sqlite-wasm'
 import wasmUrl from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3.wasm?url'
 import proxyUri from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3-opfs-async-proxy.js?url'
+import type { OpfsDatabase, Sqlite3Static } from '../../sqlite-wasm'
+
+declare type SqlValue =
+  | string
+  | number
+  | null
+  | bigint
+  | Uint8Array
+  | Int8Array
+  | ArrayBuffer;
 
 interface WorkerMessage {
   id: number
   type: 'init' | 'init_encrypted' | 'exec' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe'
   sql?: string
-  bind?: unknown[]
+  bind?: SqlValue[]
   key?: string      // Hex-encoded encryption key
   newKey?: string   // Hex-encoded new key for rekey operation
 }
@@ -19,13 +29,13 @@ interface WorkerResponse {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let db: any = null
+let db: OpfsDatabase | null = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let sqlite3Module: any = null
+let sqlite3Module: Sqlite3Static | null = null
 
 const DB_FILENAME = '/expense-tracker.sqlite3'
 
-async function getSqlite3() {
+async function getSqlite3(): Promise<Sqlite3Static> {
   if (sqlite3Module) return sqlite3Module
 
   sqlite3Module = await sqlite3InitModule({
@@ -47,14 +57,22 @@ async function initDatabase(key?: string) {
 
   const sqlite3 = await getSqlite3()
 
-  db = new sqlite3.oo1.OpfsDb(DB_FILENAME, 'cwt')
+  let sqlite3OpenFlags = 'cw'
+  if (import.meta.env.DEV) {
+    sqlite3OpenFlags += 't'
+  }
+  db = new sqlite3.oo1.OpfsDb(DB_FILENAME, sqlite3OpenFlags)
+
 
   // If encryption key provided, set it
   if (key) {
-    db.exec(`PRAGMA key = "x'${key}'"`)
+    // db.exec(`PRAGMA key = "x'${key}'"`)
     // Verify decryption by querying sqlite_master
     try {
-      db.exec('SELECT count(*) FROM sqlite_master')
+      db.exec([
+        `PRAGMA key = "x'${key}'";`,
+        'SELECT count(*) FROM sqlite_master;'
+      ].join(' '))
     } catch {
       db.close()
       db = null
@@ -142,7 +160,11 @@ async function migrateToEncrypted(encryptionKey: string): Promise<void> {
   }
 
   // 1. Open unencrypted source database
-  const sourceDb = new sqlite3.oo1.OpfsDb(DB_FILENAME, 'rwt')
+  let sqlite3OpenFlags: string = 'rw'
+  if (import.meta.env.DEV) {
+    sqlite3OpenFlags += 't'
+  }
+  const sourceDb = new sqlite3.oo1.OpfsDb(DB_FILENAME, sqlite3OpenFlags)
 
   try {
     // 2. Create and attach encrypted database
@@ -193,12 +215,13 @@ async function createFile(fileName: string) {
   return await root.getFileHandle(fileName, { create: true })
 }
 
-function execSQL(sql: string, bind?: unknown[]): void {
+function execSQL(sql: string, bind?: SqlValue[]): void {
   if (!db) throw new Error('Database not initialized')
+
   db.exec({ sql, bind })
 }
 
-function querySQL<T>(sql: string, bind?: unknown[]): T[] {
+function querySQL<T>(sql: string, bind?: SqlValue[]): T[] {
   if (!db) throw new Error('Database not initialized')
   const results: T[] = []
 

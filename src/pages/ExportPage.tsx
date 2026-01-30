@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Button, Input, Card, useToast } from '../components/ui'
+import { Button, DateTimeUI, Card, useToast } from '../components/ui'
 import { exportTransactionsToCSV, downloadCSV } from '../services/export/csvExport'
 
 export function ExportPage() {
@@ -42,14 +42,14 @@ export function ExportPage() {
             </p>
           </div>
 
-          <Input
+          <DateTimeUI
             label="Start Date (optional)"
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
           />
 
-          <Input
+          <DateTimeUI
             label="End Date (optional)"
             type="date"
             value={endDate}

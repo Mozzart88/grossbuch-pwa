@@ -3,6 +3,7 @@ import { DatabaseProvider, useDatabase } from './store/DatabaseContext'
 import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
 import { ToastProvider, Spinner } from './components/ui'
+import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { AppLayout } from './components/layout/AppLayout'
 import {
   TransactionsPage,
@@ -60,6 +61,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 function AppContent() {
   const { isReady, error } = useDatabase()
 
+  // Background sync exchange rates when app opens
+  useExchangeRateSync({ enabled: isReady })
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -95,7 +99,6 @@ function AppContent() {
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/accounts" element={<AccountsPage />} />
-        {/* <Route path="/settings/categories" element={<CategoriesPage />} /> */}
         <Route path="/settings/counterparties" element={<CounterpartiesPage />} />
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
         <Route path="/settings/exchange-rates" element={<ExchangeRatesPage />} />

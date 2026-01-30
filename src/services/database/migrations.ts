@@ -1,6 +1,34 @@
 import { execSQL, queryOne } from './connection'
+import { CURRENCIES } from './currencyData'
 
-const CURRENT_VERSION = 3
+const CURRENT_VERSION = 4
+
+// Generate currency INSERT statements for migration v4
+function generateCurrencyInsertSQL(): string {
+  const values = CURRENCIES.map(
+    (c) =>
+      `('${c.code}', '${c.name.replace(/'/g, "''")}', '${c.symbol.replace(/'/g, "''")}', ${c.decimal_places})`
+  ).join(',\n  ')
+  return `INSERT OR IGNORE INTO currency (code, name, symbol, decimal_places) VALUES\n  ${values};`
+}
+
+// Generate fiat currency tag assignments
+function generateFiatTagSQL(): string {
+  const fiatCodes = CURRENCIES.filter((c) => !c.is_crypto)
+    .map((c) => `'${c.code}'`)
+    .join(', ')
+  return `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id)
+SELECT id, 4 FROM currency WHERE code IN (${fiatCodes});`
+}
+
+// Generate crypto currency tag assignments
+function generateCryptoTagSQL(): string {
+  const cryptoCodes = CURRENCIES.filter((c) => c.is_crypto)
+    .map((c) => `'${c.code}'`)
+    .join(', ')
+  return `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id)
+SELECT id, 5 FROM currency WHERE code IN (${cryptoCodes});`
+}
 
 const migrations: Record<number, string[]> = {
   1: [
@@ -14,7 +42,7 @@ const migrations: Record<number, string[]> = {
       is_preset INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
-    )`,
+    );`,
 
     // Accounts table
     `CREATE TABLE IF NOT EXISTS accounts (
@@ -29,9 +57,9 @@ const migrations: Record<number, string[]> = {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (currency_id) REFERENCES currencies(id)
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_accounts_currency ON accounts(currency_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts(is_active)`,
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_accounts_currency ON accounts(currency_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_accounts_active ON accounts(is_active);`,
 
     // Categories table
     `CREATE TABLE IF NOT EXISTS categories (
@@ -46,9 +74,9 @@ const migrations: Record<number, string[]> = {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (parent_id) REFERENCES categories(id)
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_categories_type ON categories(type)`,
-    `CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id)`,
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_categories_type ON categories(type);`,
+    `CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);`,
 
     // Counterparties table
     `CREATE TABLE IF NOT EXISTS counterparties (
@@ -57,7 +85,7 @@ const migrations: Record<number, string[]> = {
       notes TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
-    )`,
+    );`,
 
     // Counterparty-Categories junction table
     `CREATE TABLE IF NOT EXISTS counterparty_categories (
@@ -66,9 +94,9 @@ const migrations: Record<number, string[]> = {
       PRIMARY KEY (counterparty_id, category_id),
       FOREIGN KEY (counterparty_id) REFERENCES counterparties(id) ON DELETE CASCADE,
       FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_cc_counterparty ON counterparty_categories(counterparty_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_cc_category ON counterparty_categories(category_id)`,
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cc_counterparty ON counterparty_categories(counterparty_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_cc_category ON counterparty_categories(category_id);`,
 
     // Transactions table
     `CREATE TABLE IF NOT EXISTS transactions (
@@ -93,26 +121,26 @@ const migrations: Record<number, string[]> = {
       FOREIGN KEY (counterparty_id) REFERENCES counterparties(id),
       FOREIGN KEY (to_account_id) REFERENCES accounts(id),
       FOREIGN KEY (to_currency_id) REFERENCES currencies(id)
-    )`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_time)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_to_account ON transactions(to_account_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_counterparty ON transactions(counterparty_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_transactions_month ON transactions(substr(date_time, 1, 7))`,
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date_time);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_to_account ON transactions(to_account_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_counterparty ON transactions(counterparty_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_transactions_month ON transactions(substr(date_time, 1, 7));`,
 
     // Settings table
     `CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
-    )`,
+    );`,
 
     // Default settings
-    `INSERT OR IGNORE INTO settings (key, value) VALUES ('db_version', '1')`,
-    `INSERT OR IGNORE INTO settings (key, value) VALUES ('default_currency_id', '1')`,
-    `INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'system')`,
+    `INSERT OR IGNORE INTO settings (key, value) VALUES ('db_version', '1');`,
+    `INSERT OR IGNORE INTO settings (key, value) VALUES ('default_currency_id', '1');`,
+    `INSERT OR IGNORE INTO settings (key, value) VALUES ('theme', 'system');`,
   ],
 
   2: [
@@ -127,25 +155,25 @@ const migrations: Record<number, string[]> = {
     `CREATE TABLE IF NOT EXISTS icon (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       value TEXT NOT NULL UNIQUE
-    ) STRICT`,
+    ) STRICT;`,
 
     // Tag table (replaces categories) - no timestamps
     `CREATE TABLE IF NOT EXISTS tag (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE
-    ) STRICT`,
+    ) STRICT;`,
 
     // Tag hierarchy
     `CREATE TABLE IF NOT EXISTS tag_to_tag (
       child_id INTEGER REFERENCES tag(id),
       parent_id INTEGER REFERENCES tag(id)
-    ) STRICT`,
+    ) STRICT;`,
 
     // Tag icon relationship
     `CREATE TABLE IF NOT EXISTS tag_icon (
       tag_id INTEGER REFERENCES tag(id),
       icon_id INTEGER REFERENCES icon(id)
-    ) STRICT`,
+    ) STRICT;`,
 
     // Prevent deletion of system tags
     `CREATE TRIGGER IF NOT EXISTS trg_delete_system_tag
@@ -154,7 +182,7 @@ const migrations: Record<number, string[]> = {
     WHEN OLD.id = 1 OR EXISTS (SELECT 1 FROM tag_to_tag WHERE OLD.id = child_id AND parent_id = 1)
     BEGIN
       SELECT RAISE(IGNORE);
-    END`,
+    END;`,
 
     // Currency table (new version) - no timestamps
     `CREATE TABLE IF NOT EXISTS currency (
@@ -163,19 +191,19 @@ const migrations: Record<number, string[]> = {
       name TEXT NOT NULL,
       symbol TEXT NOT NULL,
       decimal_places INTEGER DEFAULT 2
-    )`,
+    );`,
 
     `CREATE TABLE IF NOT EXISTS currency_to_tags (
       currency_id INTEGER REFERENCES currency(id) ON DELETE CASCADE,
       tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE
-    )`,
+    );`,
 
     // Exchange rate table
     `CREATE TABLE IF NOT EXISTS exchange_rate (
       currency_id INTEGER REFERENCES currency(id) ON DELETE CASCADE,
       rate INTEGER NOT NULL,
       updated_at INTEGER DEFAULT (strftime('%s', datetime('now')))
-    ) STRICT`,
+    ) STRICT;`,
 
     // Default currency trigger
     `CREATE TRIGGER IF NOT EXISTS trg_default_currency
@@ -184,21 +212,21 @@ const migrations: Record<number, string[]> = {
     BEGIN
       DELETE FROM currency_to_tags
       WHERE tag_id = 2 AND currency_id != NEW.currency_id;
-    END`,
+    END;`,
 
     // Wallet table - no icon or timestamps, just name and color
     `CREATE TABLE IF NOT EXISTS wallet (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
       color TEXT
-    )`,
+    );`,
 
     `CREATE TABLE IF NOT EXISTS wallet_to_tags (
       wallet_id INTEGER NOT NULL,
       tag_id INTEGER NOT NULL,
       FOREIGN KEY (wallet_id) REFERENCES wallet(id) ON DELETE CASCADE,
       FOREIGN KEY (tag_id) REFERENCES tag(id) ON DELETE CASCADE
-    )`,
+    );`,
 
     // Default wallet triggers
     `CREATE TRIGGER IF NOT EXISTS trg_default_wallet
@@ -207,7 +235,7 @@ const migrations: Record<number, string[]> = {
     BEGIN
       DELETE FROM wallet_to_tags
       WHERE tag_id = 2 AND wallet_id != NEW.wallet_id;
-    END`,
+    END;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_default_wallet_on_delete
     BEFORE DELETE ON wallet
@@ -215,7 +243,7 @@ const migrations: Record<number, string[]> = {
       AND (SELECT count(id) FROM wallet WHERE id != old.id) > 0
     BEGIN
       INSERT INTO wallet_to_tags VALUES ((SELECT id FROM wallet WHERE id != OLD.id LIMIT 1), 2);
-    END`,
+    END;`,
 
     // Account table (wallet + currency) - single balance field, no created_at
     `CREATE TABLE IF NOT EXISTS account (
@@ -226,12 +254,12 @@ const migrations: Record<number, string[]> = {
       updated_at INTEGER DEFAULT (strftime('%s', datetime('now'))),
       FOREIGN KEY (wallet_id) REFERENCES wallet(id) ON DELETE CASCADE,
       FOREIGN KEY (currency_id) REFERENCES currency(id) ON DELETE CASCADE
-    )`,
+    );`,
 
     `CREATE TABLE IF NOT EXISTS account_to_tags (
       account_id INTEGER REFERENCES account(id) ON DELETE CASCADE,
       tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE
-    )`,
+    );`,
 
     // Account triggers
     `CREATE TRIGGER IF NOT EXISTS trg_add_first_account
@@ -239,7 +267,7 @@ const migrations: Record<number, string[]> = {
     WHEN 1 = (SELECT count(id) FROM account WHERE wallet_id = NEW.wallet_id)
     BEGIN
       INSERT INTO account_to_tags VALUES (NEW.id, 2);
-    END`,
+    END;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_set_default_account
     BEFORE INSERT ON account_to_tags
@@ -258,7 +286,7 @@ const migrations: Record<number, string[]> = {
         SELECT id FROM account
         WHERE wallet_id = (SELECT wallet_id FROM account WHERE id = NEW.account_id)
       );
-    END`,
+    END;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_del_default_account
     AFTER DELETE ON account
@@ -273,42 +301,42 @@ const migrations: Record<number, string[]> = {
       account_id = (SELECT id FROM account WHERE wallet_id = OLD.wallet_id LIMIT 1)
       WHERE account_id = OLD.id;
       DELETE FROM account_to_tags WHERE account_id = OLD.id;
-    END`,
+    END;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_del_last_in_wallet_account
     BEFORE DELETE ON account
     WHEN 1 = (SELECT count(id) FROM account WHERE wallet_id = OLD.wallet_id)
     BEGIN
       DELETE FROM wallet WHERE id = OLD.wallet_id;
-    END`,
+    END;`,
 
     // Counterparty table (new version) - no note field or timestamps
     `CREATE TABLE IF NOT EXISTS counterparty (
       id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE
-    )`,
+    );`,
 
     // Counterparty note in separate table
     `CREATE TABLE IF NOT EXISTS counterparty_note (
       counterparty_id INTEGER REFERENCES counterparty(id) ON DELETE CASCADE,
       note TEXT NOT NULL
-    )`,
+    );`,
 
     `CREATE TABLE IF NOT EXISTS counterparty_to_tags (
       counterparty_id INTEGER REFERENCES counterparty(id) ON DELETE CASCADE,
       tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE
-    )`,
+    );`,
 
     // Transaction header - 8-byte blob id, single timestamp
     `CREATE TABLE IF NOT EXISTS trx (
       id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(8)),
       timestamp INTEGER DEFAULT (strftime('%s', datetime('now')))
-    )`,
+    );`,
 
     `CREATE TABLE IF NOT EXISTS trx_to_counterparty (
       trx_id BLOB NOT NULL REFERENCES trx(id) ON DELETE CASCADE,
       counterparty_id INTEGER NOT NULL REFERENCES counterparty(id) ON DELETE CASCADE
-    )`,
+    );`,
 
     // Transaction line items - amount and rate instead of real_amount/actual_amount
     `CREATE TABLE IF NOT EXISTS trx_base (
@@ -319,12 +347,12 @@ const migrations: Record<number, string[]> = {
       sign TEXT NOT NULL DEFAULT '-',
       amount INTEGER CHECK(amount >= 0) NOT NULL DEFAULT 0,
       rate INTEGER CHECK(rate >= 0) NOT NULL DEFAULT 0
-    )`,
+    );`,
 
     `CREATE TABLE IF NOT EXISTS trx_note (
       trx_base_id BLOB NOT NULL REFERENCES trx_base(id) ON DELETE CASCADE,
       note TEXT NOT NULL
-    )`,
+    );`,
 
     // Budget table - amount is INTEGER
     `CREATE TABLE IF NOT EXISTS budget (
@@ -333,7 +361,7 @@ const migrations: Record<number, string[]> = {
       end INTEGER NOT NULL DEFAULT (strftime('%s', date('now', 'start of month', '+1 month'))),
       tag_id INTEGER NOT NULL REFERENCES tag(id),
       amount INTEGER NOT NULL
-    )`,
+    );`,
 
     // --- BALANCE UPDATE TRIGGERS ---
 
@@ -349,7 +377,7 @@ const migrations: Record<number, string[]> = {
         END
       )
       WHERE id = NEW.account_id;
-    END`,
+    END;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_del_trx_base
     AFTER DELETE ON trx_base
@@ -363,7 +391,7 @@ const migrations: Record<number, string[]> = {
         END
       )
       WHERE id = OLD.account_id;
-    END`,
+    END;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_update_trx_base
     AFTER UPDATE OF sign, amount ON trx_base
@@ -388,7 +416,7 @@ const migrations: Record<number, string[]> = {
         END
       )
       WHERE id = NEW.account_id;
-    END`,
+    END;`,
 
     // --- SEED SYSTEM TAGS (moved up before data migration) ---
 
@@ -414,18 +442,18 @@ const migrations: Record<number, string[]> = {
       ('fine'),
       ('households'),
       ('auto'),
-      ('archived')`,
+      ('archived');`,
 
     // System tags hierarchy (1-10, 22 are children of system)
     `INSERT INTO tag_to_tag (child_id, parent_id) VALUES
       (1, 1), (2, 1), (3, 1), (4, 1), (5, 1),
       (6, 1), (7, 1), (8, 1), (9, 1), (10, 1),
-      (22, 1)`,
+      (22, 1);`,
 
     // Default category tags (11-21 are children of default)
     `INSERT INTO tag_to_tag (child_id, parent_id) VALUES
       (11, 2), (12, 2), (13, 2), (14, 2), (15, 2),
-      (16, 2), (17, 2), (18, 2), (19, 2), (20, 2), (21, 2)`,
+      (16, 2), (17, 2), (18, 2), (19, 2), (20, 2), (21, 2);`,
 
     // --- DATA MIGRATION ---
 
@@ -433,35 +461,35 @@ const migrations: Record<number, string[]> = {
     `INSERT INTO icon (value)
     SELECT DISTINCT icon
     FROM categories
-    WHERE icon IS NOT NULL`,
+    WHERE icon IS NOT NULL;`,
 
     // Migrate currencies (no timestamps)
     `INSERT INTO currency (id, code, name, symbol, decimal_places)
     SELECT
       id, code, name, symbol, decimal_places
-    FROM currencies`,
+    FROM currencies;`,
 
     // Tag currencies as fiat (tag 4) - assuming all existing are fiat
     `INSERT INTO currency_to_tags (currency_id, tag_id)
-    SELECT id, 4 FROM currency`,
+    SELECT id, 4 FROM currency;`,
 
     // Set USD as default
     `INSERT INTO currency_to_tags (currency_id, tag_id)
-    SELECT id, 2 FROM currency WHERE code = 'USD' ORDER BY id LIMIT 1`,
+    SELECT id, 2 FROM currency WHERE code = 'USD' ORDER BY id LIMIT 1;`,
 
     // Migrate categories to tags (income categories -> child of tag 9)
     `INSERT INTO tag (name)
     SELECT
       name as n
     FROM categories
-    WHERE lower(n) NOT IN (SELECT name FROM tag)`,
+    WHERE lower(n) NOT IN (SELECT name FROM tag);`,
 
     `INSERT INTO tag_to_tag (child_id, parent_id)
     SELECT t.id, 9
     FROM tag t
     JOIN categories c ON c.name = t.name
     WHERE c.type IN ('income', 'both')
-    AND t.id > 22`,
+    AND t.id > 22;`,
 
     // Migrate categories to tags (expense categories -> child of tag 10)
     `INSERT INTO tag_to_tag (child_id, parent_id)
@@ -469,7 +497,7 @@ const migrations: Record<number, string[]> = {
     FROM tag t
     JOIN categories c ON c.name = t.name
     WHERE c.type IN ('expense')
-    AND t.id > 22`,
+    AND t.id > 22;`,
 
     // Link tags to icons via tag_icon
     `INSERT INTO tag_icon (tag_id, icon_id)
@@ -477,53 +505,53 @@ const migrations: Record<number, string[]> = {
     FROM tag t
     JOIN categories c ON lower(c.name) = t.name OR c.name = t.name
     JOIN icon i ON i.value = c.icon
-    WHERE c.icon IS NOT NULL`,
+    WHERE c.icon IS NOT NULL;`,
 
     // Migrate accounts -> wallets (no icon or timestamps)
     `INSERT INTO wallet (name)
     SELECT
       name
     FROM accounts
-    GROUP BY name`,
+    GROUP BY name;`,
 
     // Tag first wallet as default
     `INSERT INTO wallet_to_tags (wallet_id, tag_id)
-    SELECT id, 2 FROM wallet ORDER BY id LIMIT 1`,
+    SELECT id, 2 FROM wallet ORDER BY id LIMIT 1;`,
 
     // Tag inactive wallets as archived
     `INSERT INTO wallet_to_tags (wallet_id, tag_id)
-    SELECT id, 22 FROM accounts WHERE is_active = 0`,
+    SELECT id, 22 FROM accounts WHERE is_active = 0;`,
 
     // Create account for each wallet (wallet + currency)
     // Disable balance triggers temporarily for migration
-    `DROP TRIGGER IF EXISTS trg_add_trx_base`,
+    `DROP TRIGGER IF EXISTS trg_add_trx_base;`,
 
     `INSERT INTO account (wallet_id, currency_id)
     SELECT
       w.id as wallet_id,
       currency_id
     FROM accounts
-    JOIN wallet w ON w.name = accounts.name`,
+    JOIN wallet w ON w.name = accounts.name;`,
 
     // Migrate counterparties (no timestamps)
     `INSERT INTO counterparty (id, name)
     SELECT
       id, name
-    FROM counterparties`,
+    FROM counterparties;`,
 
     // Migrate counterparty notes to separate table
     `INSERT INTO counterparty_note (counterparty_id, note)
     SELECT
       id, notes
     FROM counterparties
-    WHERE notes IS NOT NULL AND notes != ''`,
+    WHERE notes IS NOT NULL AND notes != '';`,
 
     // Migrate counterparty-category relationships to tags
     `INSERT INTO counterparty_to_tags (counterparty_id, tag_id)
     SELECT cc.counterparty_id, t.id
     FROM counterparty_categories cc
     JOIN categories c ON cc.category_id = c.id
-    JOIN tag t ON t.name = c.name`,
+    JOIN tag t ON t.name = c.name;`,
 
     // --- TRANSACTION MIGRATION ---
     // Use temporary mapping table to track old transaction IDs to new trx IDs
@@ -533,19 +561,19 @@ const migrations: Record<number, string[]> = {
       old_id INTEGER PRIMARY KEY,
       new_id BLOB NOT NULL,
       source TEXT NOT NULL
-    )`,
+    );`,
 
     // --- INITIAL BALANCE TRANSACTIONS ---
 
     // Create mapping for initial balances (use negative IDs to avoid collision with transaction IDs)
     `INSERT INTO trx_map (old_id, new_id, source)
-    SELECT -id, randomblob(8), 'initial' FROM accounts`,
+    SELECT -id, randomblob(8), 'initial' FROM accounts;`,
 
     // Insert trx records using mapping
     `INSERT INTO trx (id, timestamp)
     SELECT m.new_id, strftime('%s', old_acc.created_at)
     FROM accounts old_acc
-    JOIN trx_map m ON m.old_id = -old_acc.id AND m.source = 'initial'`,
+    JOIN trx_map m ON m.old_id = -old_acc.id AND m.source = 'initial';`,
 
     // Create trx_base for initial balances using mapping
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
@@ -559,20 +587,20 @@ const migrations: Record<number, string[]> = {
     JOIN trx_map m ON m.old_id = -old_acc.id AND m.source = 'initial'
     JOIN account a ON a.id = old_acc.id
     JOIN currency cur ON a.currency_id = cur.id
-    WHERE old_acc.initial_balance != 0`,
+    WHERE old_acc.initial_balance != 0;`,
 
     // --- INCOME/EXPENSE TRANSACTIONS ---
 
     // Create mapping for income/expense (excluding fees which have category_id = 19)
     `INSERT INTO trx_map (old_id, new_id, source)
     SELECT id, randomblob(8), type FROM transactions
-    WHERE type IN ('income', 'expense') AND category_id != 19`,
+    WHERE type IN ('income', 'expense') AND category_id != 19;`,
 
     // Insert trx records using mapping
     `INSERT INTO trx (id, timestamp)
     SELECT m.new_id, strftime('%s', t.date_time)
     FROM transactions t
-    JOIN trx_map m ON m.old_id = t.id AND m.source = t.type`,
+    JOIN trx_map m ON m.old_id = t.id AND m.source = t.type;`,
 
     // Create trx_base for income/expense using mapping
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
@@ -587,7 +615,7 @@ const migrations: Record<number, string[]> = {
     JOIN account a ON a.id = old_trx.account_id
     JOIN currency cur ON a.currency_id = cur.id
     LEFT JOIN categories c ON old_trx.category_id = c.id
-    LEFT JOIN tag ON tag.name = c.name`,
+    LEFT JOIN tag ON tag.name = c.name;`,
 
     // Link transactions to counterparties using mapping
     `INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
@@ -595,19 +623,19 @@ const migrations: Record<number, string[]> = {
     FROM transactions old_trx
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = old_trx.type
     WHERE old_trx.counterparty_id IS NOT NULL
-    AND old_trx.type IN ('income', 'expense') AND old_trx.category_id != 19`,
+    AND old_trx.type IN ('income', 'expense') AND old_trx.category_id != 19;`,
 
     // --- TRANSFER TRANSACTIONS ---
 
     // Create mapping for transfers
     `INSERT INTO trx_map (old_id, new_id, source)
-    SELECT id, randomblob(8), 'transfer' FROM transactions WHERE type = 'transfer'`,
+    SELECT id, randomblob(8), 'transfer' FROM transactions WHERE type = 'transfer';`,
 
     // Insert trx records using mapping
     `INSERT INTO trx (id, timestamp)
     SELECT m.new_id, strftime('%s', t.date_time)
     FROM transactions t
-    JOIN trx_map m ON m.old_id = t.id AND m.source = 'transfer'`,
+    JOIN trx_map m ON m.old_id = t.id AND m.source = 'transfer';`,
 
     // Transfer: Source account (debit) using mapping
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
@@ -620,7 +648,7 @@ const migrations: Record<number, string[]> = {
     FROM transactions old_trx
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = 'transfer'
     JOIN account a ON a.id = old_trx.account_id
-    JOIN currency cur ON a.currency_id = cur.id`,
+    JOIN currency cur ON a.currency_id = cur.id;`,
 
     // Transfer: Destination account (credit) using mapping
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
@@ -633,18 +661,18 @@ const migrations: Record<number, string[]> = {
     FROM transactions old_trx
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = 'transfer'
     JOIN account a ON a.id = old_trx.to_account_id
-    JOIN currency cur ON a.currency_id = cur.id`,
+    JOIN currency cur ON a.currency_id = cur.id;`,
 
     // --- FEE TRANSACTIONS (category_id = 19) ---
     // Fees are migrated as separate expense transactions with fee tag
 
     `INSERT INTO trx_map (old_id, new_id, source)
-    SELECT id, randomblob(8), 'fee' FROM transactions WHERE category_id = 19`,
+    SELECT id, randomblob(8), 'fee' FROM transactions WHERE category_id = 19;`,
 
     `INSERT INTO trx (id, timestamp)
     SELECT m.new_id, strftime('%s', t.date_time)
     FROM transactions t
-    JOIN trx_map m ON m.old_id = t.id AND m.source = 'fee'`,
+    JOIN trx_map m ON m.old_id = t.id AND m.source = 'fee';`,
 
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
     SELECT
@@ -656,19 +684,19 @@ const migrations: Record<number, string[]> = {
     FROM transactions old_trx
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = 'fee'
     JOIN account a ON a.id = old_trx.account_id
-    JOIN currency cur ON a.currency_id = cur.id`,
+    JOIN currency cur ON a.currency_id = cur.id;`,
 
     // --- EXCHANGE TRANSACTIONS ---
 
     // Create mapping for exchanges
     `INSERT INTO trx_map (old_id, new_id, source)
-    SELECT id, randomblob(8), 'exchange' FROM transactions WHERE type = 'exchange'`,
+    SELECT id, randomblob(8), 'exchange' FROM transactions WHERE type = 'exchange';`,
 
     // Insert trx records using mapping
     `INSERT INTO trx (id, timestamp)
     SELECT m.new_id, strftime('%s', t.date_time)
     FROM transactions t
-    JOIN trx_map m ON m.old_id = t.id AND m.source = 'exchange'`,
+    JOIN trx_map m ON m.old_id = t.id AND m.source = 'exchange';`,
 
     // Exchange: Source account (debit) using mapping
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
@@ -681,7 +709,7 @@ const migrations: Record<number, string[]> = {
     FROM transactions old_trx
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = 'exchange'
     JOIN account a ON a.id = old_trx.account_id
-    JOIN currency cur ON a.currency_id = cur.id`,
+    JOIN currency cur ON a.currency_id = cur.id;`,
 
     // Exchange: Destination account (credit) using mapping
     `INSERT INTO trx_base (trx_id, account_id, tag_id, sign, amount)
@@ -694,7 +722,7 @@ const migrations: Record<number, string[]> = {
     FROM transactions old_trx
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = 'exchange'
     JOIN account a ON a.id = old_trx.to_account_id
-    JOIN currency cur ON a.currency_id = cur.id`,
+    JOIN currency cur ON a.currency_id = cur.id;`,
 
     // Migrate exchange rates from transactions (latest rate per currency pair)
     `INSERT INTO exchange_rate (currency_id, rate, updated_at)
@@ -713,7 +741,7 @@ const migrations: Record<number, string[]> = {
       AND t2.exchange_rate IS NOT NULL
       ORDER BY t2.date_time DESC
       LIMIT 1
-    )`,
+    );`,
 
     // Migrate notes using mapping table
     `INSERT INTO trx_note (trx_base_id, note)
@@ -722,33 +750,33 @@ const migrations: Record<number, string[]> = {
     JOIN trx_map m ON m.old_id = old_trx.id AND m.source = old_trx.type
     JOIN trx_base tb ON tb.trx_id = m.new_id
     WHERE old_trx.notes IS NOT NULL AND old_trx.notes != ''
-    AND old_trx.type IN ('income', 'expense')`,
+    AND old_trx.type IN ('income', 'expense');`,
 
     // Drop temporary mapping table
-    `DROP TABLE trx_map`,
+    `DROP TABLE trx_map;`,
 
     // --- DROP OLD TABLES AND VIEWS (ensure clean state) ---
 
-    `DROP TABLE IF EXISTS counterparty_categories`,
-    `DROP TABLE IF EXISTS transactions`,
-    `DROP TABLE IF EXISTS counterparties`,
-    `DROP TABLE IF EXISTS categories`,
-    `DROP TABLE IF EXISTS accounts`,
-    `DROP TABLE IF EXISTS currencies`,
+    `DROP TABLE IF EXISTS counterparty_categories;`,
+    `DROP TABLE IF EXISTS transactions;`,
+    `DROP TABLE IF EXISTS counterparties;`,
+    `DROP TABLE IF EXISTS categories;`,
+    `DROP TABLE IF EXISTS accounts;`,
+    `DROP TABLE IF EXISTS currencies;`,
 
     // Drop views in case of partial migration re-run
-    `DROP VIEW IF EXISTS accounts`,
-    `DROP VIEW IF EXISTS transaction_view`,
-    `DROP VIEW IF EXISTS transactions`,
-    `DROP VIEW IF EXISTS exchanges`,
-    `DROP VIEW IF EXISTS transfers`,
-    `DROP VIEW IF EXISTS tags_graph`,
-    `DROP VIEW IF EXISTS tags_hierarchy`,
-    `DROP VIEW IF EXISTS budget_subtags`,
-    `DROP VIEW IF EXISTS summary`,
-    `DROP VIEW IF EXISTS counterparties_summary`,
-    `DROP VIEW IF EXISTS tags_summary`,
-    `DROP VIEW IF EXISTS trx_log`,
+    `DROP VIEW IF EXISTS accounts;`,
+    `DROP VIEW IF EXISTS transaction_view;`,
+    `DROP VIEW IF EXISTS transactions;`,
+    `DROP VIEW IF EXISTS exchanges;`,
+    `DROP VIEW IF EXISTS transfers;`,
+    `DROP VIEW IF EXISTS tags_graph;`,
+    `DROP VIEW IF EXISTS tags_hierarchy;`,
+    `DROP VIEW IF EXISTS budget_subtags;`,
+    `DROP VIEW IF EXISTS summary;`,
+    `DROP VIEW IF EXISTS counterparties_summary;`,
+    `DROP VIEW IF EXISTS tags_summary;`,
+    `DROP VIEW IF EXISTS trx_log;`,
 
     // --- VIEWS (created after old tables dropped) ---
 
@@ -766,7 +794,7 @@ const migrations: Record<number, string[]> = {
     LEFT JOIN account_to_tags a2t ON a2t.account_id = a.id
     LEFT JOIN tag t ON a2t.tag_id = t.id
     GROUP BY a.id
-    ORDER BY wallet_id`,
+    ORDER BY wallet_id;`,
 
     `CREATE VIEW IF NOT EXISTS transaction_view AS
     SELECT
@@ -775,7 +803,7 @@ const migrations: Record<number, string[]> = {
       c.name as counterparty
     FROM trx t
     LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
-    LEFT JOIN counterparty c ON t2c.counterparty_id = c.id`,
+    LEFT JOIN counterparty c ON t2c.counterparty_id = c.id;`,
 
     `CREATE TRIGGER IF NOT EXISTS trg_trx_add_counterparty
     INSTEAD OF UPDATE OF counterparty ON transaction_view
@@ -790,7 +818,7 @@ const migrations: Record<number, string[]> = {
         NEW.id,
         (SELECT id FROM counterparty WHERE name = NEW.counterparty)
       );
-    END`,
+    END;`,
 
     `CREATE VIEW IF NOT EXISTS transactions AS
     SELECT
@@ -811,7 +839,7 @@ const migrations: Record<number, string[]> = {
     LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
     WHERE tb.tag_id NOT IN (3, 6, 7)
     GROUP BY t.id
-    ORDER BY t.timestamp`,
+    ORDER BY t.timestamp;`,
 
     `CREATE VIEW IF NOT EXISTS exchanges AS
     SELECT
@@ -828,7 +856,7 @@ const migrations: Record<number, string[]> = {
     JOIN tag ON tb.tag_id = tag.id
     LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
     LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
-    WHERE tb.tag_id IN (7, 13)`,
+    WHERE tb.tag_id IN (7, 13);`,
 
     `CREATE VIEW IF NOT EXISTS transfers AS
     SELECT
@@ -845,7 +873,7 @@ const migrations: Record<number, string[]> = {
     JOIN tag ON tb.tag_id = tag.id
     LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
     LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
-    WHERE tb.tag_id IN (6, 13)`,
+    WHERE tb.tag_id IN (6, 13);`,
 
     // Note: trg_add_transaction trigger removed - application uses repositories
     // that insert directly into trx and trx_base tables
@@ -859,7 +887,7 @@ const migrations: Record<number, string[]> = {
     FROM parent, child
     JOIN tag_to_tag ON tag_to_tag.parent_id = parent.id AND tag_to_tag.child_id = child.id
     WHERE parent.id NOT IN (1, 2)
-    GROUP BY parent`,
+    GROUP BY parent;`,
 
     `CREATE VIEW IF NOT EXISTS tags_hierarchy AS
     SELECT
@@ -869,14 +897,14 @@ const migrations: Record<number, string[]> = {
       c.name as child
     FROM tag_to_tag t2t
     JOIN tag p ON p.id = t2t.parent_id
-    JOIN tag c ON c.id = t2t.child_id`,
+    JOIN tag c ON c.id = t2t.child_id;`,
 
     `CREATE VIEW IF NOT EXISTS budget_subtags AS
     SELECT
       budget.id as budget_id,
       th.child_id as child_id
     FROM budget
-    LEFT JOIN tags_hierarchy th ON th.parent_id = budget.tag_id OR budget.tag_id = th.child_id`,
+    LEFT JOIN tags_hierarchy th ON th.parent_id = budget.tag_id OR budget.tag_id = th.child_id;`,
 
     // Summary view uses amount * rate for default currency calculation
     `CREATE VIEW IF NOT EXISTS summary AS
@@ -889,7 +917,7 @@ const migrations: Record<number, string[]> = {
     JOIN trx ON trx.timestamp >= budget.start AND trx.timestamp < budget.end
     JOIN trx_base tb ON tb.trx_id = trx.id
       AND (tb.tag_id = budget.tag_id OR tb.tag_id IN (SELECT child_id FROM budget_subtags WHERE budget_id = budget.id))
-    GROUP BY budget.tag_id, budget.end - budget.start`,
+    GROUP BY budget.tag_id, budget.end - budget.start;`,
 
     // Counterparties summary uses amount * rate
     `CREATE VIEW IF NOT EXISTS counterparties_summary AS
@@ -900,7 +928,7 @@ const migrations: Record<number, string[]> = {
     JOIN trx_to_counterparty t2c ON t2c.counterparty_id = c.id
     LEFT JOIN trx_base tb ON t2c.trx_id = tb.trx_id
     GROUP BY c.id
-    ORDER BY amount`,
+    ORDER BY amount;`,
 
     // Tags summary uses amount * rate
     `CREATE VIEW IF NOT EXISTS tags_summary AS
@@ -910,7 +938,7 @@ const migrations: Record<number, string[]> = {
     FROM trx_base tb
     JOIN tag ON tb.tag_id = tag.id
     GROUP BY tb.tag_id
-    ORDER BY amount`,
+    ORDER BY amount;`,
 
     `CREATE VIEW IF NOT EXISTS trx_log AS
     SELECT
@@ -930,7 +958,7 @@ const migrations: Record<number, string[]> = {
     JOIN tag ON tb.tag_id = tag.id
     LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
     LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
-    ORDER BY t.timestamp`,
+    ORDER BY t.timestamp;`,
 
     // --- UPDATE INITIAL TRANSACTION DATES ---
     // Set initial balance transaction timestamps to match the first real transaction date for each account
@@ -955,7 +983,7 @@ const migrations: Record<number, string[]> = {
         SELECT account_id FROM trx_base WHERE trx_id = trx.id AND tag_id = 3
       )
       AND tb2.tag_id != 3
-    ) IS NOT NULL`,
+    ) IS NOT NULL;`,
 
     // --- RECALCULATE BALANCES ---
 
@@ -965,7 +993,7 @@ const migrations: Record<number, string[]> = {
         SELECT COALESCE(SUM(
           CASE WHEN sign = '+' THEN amount ELSE -amount END
         ), 0) FROM trx_base WHERE account_id = account.id
-      )`,
+      );`,
 
     // Re-enable balance trigger
     `CREATE TRIGGER trg_add_trx_base
@@ -980,7 +1008,7 @@ const migrations: Record<number, string[]> = {
         END
       )
       WHERE id = NEW.account_id;
-    END`,
+    END;`,
   ],
 
   3: [
@@ -993,7 +1021,57 @@ const migrations: Record<number, string[]> = {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at INTEGER DEFAULT (strftime('%s', datetime('now')))
-    )`,
+    );`,
+  ],
+
+  4: [
+    // ============================================
+    // MIGRATION 4: Seed all currencies from currencyData.ts
+    // This ensures both new and existing users get all currencies
+    // ============================================
+    // Add UNIQUE constraint to currency_to_tags on currency_id + tag_id
+    `create temp table tmp (c_id integer, t_id integer);`,
+    `insert into tmp select * from currency_to_tags;`,
+    `drop table currency_to_tags;`,
+    `CREATE TABLE IF NOT EXISTS currency_to_tags (
+      currency_id INTEGER REFERENCES currency(id) ON DELETE CASCADE,
+      tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE,
+      UNIQUE(currency_id, tag_id)
+    );`,
+    `insert or ignore into currency_to_tags select * from tmp;`,
+    `DROP TABLE tmp;`,
+
+    // Insert all currencies (INSERT OR IGNORE to not overwrite existing)
+    generateCurrencyInsertSQL(),
+
+    // Tag fiat currencies (tag_id = 4)
+    generateFiatTagSQL(),
+
+    // Tag crypto currencies (tag_id = 5)
+    generateCryptoTagSQL(),
+
+    // Set USD as default if no default exists
+    `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id)
+SELECT id, 2 FROM currency WHERE code = 'USD'
+AND NOT EXISTS (SELECT 1 FROM currency_to_tags WHERE tag_id = 2);`,
+    `CREATE VIEW IF NOT EXISTS currencies AS
+SELECT
+  c.id,
+  c.code,
+  c.name,
+  c.symbol,
+  c.decimal_places,
+iif(t2c.tag_id = 2,1,0) AS is_default,
+iif(t2c2.tag_id = 4,1,0) AS is_fiat,
+iif(t2c2.tag_id = 5,1,0) AS is_crypto
+FROM
+  currency c
+LEFT JOIN 
+  currency_to_tags t2c ON t2c.currency_id = c.id AND t2c.tag_id = 2
+LEFT JOIN
+  currency_to_tags t2c2 ON t2c2.currency_id = c.id AND ( t2c2.tag_id = 5 OR t2c2.tag_id = 4 )
+ORDER BY id
+;`,
   ],
 }
 
@@ -1015,9 +1093,10 @@ export async function runMigrations(): Promise<void> {
   for (let version = currentVersion + 1; version <= CURRENT_VERSION; version++) {
     const statements = migrations[version]
     if (statements) {
-      for (const sql of statements) {
-        await execSQL(sql)
-      }
+      await execSQL(statements.join(' '))
+      // for (const sql of statements) {
+      //   await execSQL(sql)
+      // }
       // Update version
       if (version > 1) {
         await execSQL(`UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'db_version'`, [

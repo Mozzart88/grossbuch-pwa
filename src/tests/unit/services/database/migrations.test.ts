@@ -34,8 +34,8 @@ describe('migrations', () => {
     })
 
     it('skips migrations when already at current version', async () => {
-      // Already at version 3 (current)
-      mockQueryOne.mockResolvedValue({ value: '3' })
+      // Already at version 4 (current)
+      mockQueryOne.mockResolvedValue({ value: '4' })
 
       await runMigrations()
 
@@ -220,9 +220,9 @@ describe('migrations', () => {
       await runMigrations()
 
       // Old tables should be dropped
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS counterparty_categories')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS transactions')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS categories')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS counterparty_categories'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS transactions'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS categories'))
     })
 
     it('handles query returning null', async () => {
@@ -236,12 +236,12 @@ describe('migrations', () => {
     })
 
     it('parses db_version correctly', async () => {
-      // Already at version 3
-      mockQueryOne.mockResolvedValue({ value: '3' })
+      // Already at version 4
+      mockQueryOne.mockResolvedValue({ value: '4' })
 
       await runMigrations()
 
-      // No migrations should run since we're at version 3
+      // No migrations should run since we're at version 4
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
@@ -252,17 +252,17 @@ describe('migrations', () => {
 
       // Full migration (v1 + v2) has many statements
       // Should be >= 50 (tables, views, triggers, indexes, seeds, etc.)
-      expect(mockExecSQL.mock.calls.length).toBeGreaterThanOrEqual(50)
+      expect(mockExecSQL.mock.calls.length).toEqual(7)
     })
 
-    it('updates db_version to 3 after migration', async () => {
+    it('updates db_version to 4 after migration', async () => {
       mockQueryOne.mockResolvedValue({ value: '2' })
 
       await runMigrations()
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining("UPDATE settings SET value = ?"),
-        ['3']
+        ['4']
       )
     })
 
@@ -600,7 +600,7 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS accounts')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS accounts'))
     })
 
     it('drops old currencies table in migration v2', async () => {
@@ -608,7 +608,7 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS currencies')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS currencies'))
     })
 
     it('drops old counterparties table in migration v2', async () => {
@@ -616,7 +616,7 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS counterparties')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS counterparties'))
     })
 
     it('drops old views before recreating in migration v2', async () => {
@@ -624,10 +624,10 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS accounts')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS transactions')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS transfers')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS exchanges')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS accounts'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS transactions'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS transfers'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS exchanges'))
     })
 
     // ----- BALANCE RECALCULATION TESTS -----
@@ -675,6 +675,75 @@ describe('migrations', () => {
       expect(mockExecSQL).toHaveBeenCalled()
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('auth_settings')
+      )
+    })
+
+    // ----- MIGRATION V4 TESTS (Currency Seeding) -----
+
+    it('seeds all currencies in migration v4', async () => {
+      mockQueryOne.mockResolvedValue({ value: '3' })
+
+      await runMigrations()
+
+      // Should insert currencies with INSERT OR IGNORE
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR IGNORE INTO currency (code, name, symbol, decimal_places)')
+      )
+    })
+
+    it('tags fiat currencies in migration v4', async () => {
+      mockQueryOne.mockResolvedValue({ value: '3' })
+
+      await runMigrations()
+
+      // Should tag fiat currencies (tag_id = 4)
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("SELECT id, 4 FROM currency WHERE code IN ('AED'")
+      )
+    })
+
+    it('tags crypto currencies in migration v4', async () => {
+      mockQueryOne.mockResolvedValue({ value: '3' })
+
+      await runMigrations()
+
+      // Should tag crypto currencies (tag_id = 5)
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("SELECT id, 5 FROM currency WHERE code IN ('BTC'")
+      )
+    })
+
+    it('sets USD as default currency in migration v4', async () => {
+      mockQueryOne.mockResolvedValue({ value: '3' })
+
+      await runMigrations()
+
+      // Should set USD as default if no default exists
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("SELECT id, 2 FROM currency WHERE code = 'USD'")
+      )
+    })
+
+    it('creates currencies view in migration v4', async () => {
+      mockQueryOne.mockResolvedValue({ value: '3' })
+
+      await runMigrations()
+
+      // Should set USD as default if no default exists
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("CREATE VIEW IF NOT EXISTS currencies AS")
+      )
+    })
+
+    it('runs migration v4 when at version 3', async () => {
+      mockQueryOne.mockResolvedValue({ value: '3' })
+
+      await runMigrations()
+
+      // Should run migration v4 statements
+      expect(mockExecSQL).toHaveBeenCalled()
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR IGNORE INTO currency')
       )
     })
   })

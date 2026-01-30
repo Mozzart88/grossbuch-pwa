@@ -6,47 +6,49 @@ export const currencyRepository = {
   async findAll(): Promise<Currency[]> {
     const currencies = await querySQL<Currency>(`
       SELECT
-        c.*,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_default,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_fiat,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_crypto
-      FROM currency c
+        *
+      FROM currencies
       ORDER BY is_default DESC, name ASC
-    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO])
+    `)
+    return currencies
+  },
+
+  // Find currencies that are linked to at least one account (active or virtual)
+  async findUsedInAccounts(): Promise<Currency[]> {
+    const currencies = await querySQL<Currency>(`
+      SELECT DISTINCT
+        c.*
+      FROM currencies c
+      INNER JOIN account a ON a.currency_id = c.id
+      ORDER BY is_default DESC, name ASC
+    `)
     return currencies
   },
 
   async findById(id: number): Promise<Currency | null> {
     return queryOne<Currency>(`
       SELECT
-        c.*,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_default,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_fiat,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_crypto
-      FROM currency c
-      WHERE c.id = ?
-    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO, id])
+        *
+      FROM currencies 
+      WHERE id = ?
+    `, [id])
   },
 
   async findByCode(code: string): Promise<Currency | null> {
     return queryOne<Currency>(`
       SELECT
-        c.*,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_default,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_fiat,
-        EXISTS(SELECT 1 FROM currency_to_tags WHERE currency_id = c.id AND tag_id = ?) as is_crypto
-      FROM currency c
-      WHERE c.code = ?
-    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO, code])
+        *
+      FROM currencies 
+      WHERE code = ?
+    `, [code])
   },
 
   async findDefault(): Promise<Currency | null> {
     return queryOne<Currency>(`
-      SELECT c.*, 1 as is_default
-      FROM currency c
-      JOIN currency_to_tags ct ON ct.currency_id = c.id
-      WHERE ct.tag_id = ?
-    `, [SYSTEM_TAGS.DEFAULT])
+      SELECT *
+      FROM currencies 
+      WHERE is_default = 1
+    `)
   },
 
   async create(input: CurrencyInput): Promise<Currency> {

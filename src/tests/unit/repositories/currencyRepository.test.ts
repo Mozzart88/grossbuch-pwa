@@ -42,8 +42,7 @@ describe('currencyRepository', () => {
       const result = await currencyRepository.findAll()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('FROM currency c'),
-        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO]
+        expect.stringContaining('FROM currencies'),
       )
       expect(result).toEqual(currencies)
     })
@@ -57,6 +56,40 @@ describe('currencyRepository', () => {
     })
   })
 
+  describe('findUsedInAccounts', () => {
+    it('returns currencies linked to accounts with tag info', async () => {
+      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR', is_default: false }]
+      mockQuerySQL.mockResolvedValue(currencies)
+
+      const result = await currencyRepository.findUsedInAccounts()
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('INNER JOIN account')
+      )
+      expect(result).toEqual(currencies)
+    })
+
+    it('returns empty array when no currencies linked to accounts', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      const result = await currencyRepository.findUsedInAccounts()
+
+      expect(result).toEqual([])
+    })
+
+    it('returns distinct currencies even if multiple accounts use same currency', async () => {
+      const currencies = [sampleCurrency]
+      mockQuerySQL.mockResolvedValue(currencies)
+
+      const result = await currencyRepository.findUsedInAccounts()
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT DISTINCT')
+      )
+      expect(result).toHaveLength(1)
+    })
+  })
+
   describe('findById', () => {
     it('returns currency with tag info when found', async () => {
       mockQueryOne.mockResolvedValue(sampleCurrency)
@@ -64,8 +97,8 @@ describe('currencyRepository', () => {
       const result = await currencyRepository.findById(1)
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE c.id = ?'),
-        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO, 1]
+        expect.stringContaining('WHERE id = ?'),
+        [1]
       )
       expect(result).toEqual(sampleCurrency)
     })
@@ -86,8 +119,8 @@ describe('currencyRepository', () => {
       const result = await currencyRepository.findByCode('USD')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE c.code = ?'),
-        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.FIAT, SYSTEM_TAGS.CRYPTO, 'USD']
+        expect.stringContaining('WHERE code = ?'),
+        ['USD']
       )
       expect(result).toEqual(sampleCurrency)
     })
@@ -108,8 +141,7 @@ describe('currencyRepository', () => {
       const result = await currencyRepository.findDefault()
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE ct.tag_id = ?'),
-        [SYSTEM_TAGS.DEFAULT]
+        expect.stringContaining('WHERE is_default = 1')
       )
       expect(result).toEqual(sampleCurrency)
     })

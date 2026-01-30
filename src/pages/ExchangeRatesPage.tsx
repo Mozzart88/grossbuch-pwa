@@ -3,6 +3,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
+import { Badge } from '../components/ui/Badge'
 
 interface CurrencyWithRate extends Currency {
   currentRate: number | null
@@ -32,12 +33,12 @@ export function ExchangeRatesPage() {
       ])
 
       // Merge currencies with their rates
-      const currenciesWithRates: CurrencyWithRate[] = curs.map((currency) => {
-        const rateData = rates.find((r) => r.currency_id === currency.id)
+      const currenciesWithRates: CurrencyWithRate[] = rates.map((rate) => {
+        const currency = curs.find((c) => rate.currency_id === c.id)
         return {
-          ...currency,
-          currentRate: rateData?.rate ?? null,
-          lastUpdated: rateData?.updated_at ?? null,
+          ...currency!,
+          currentRate: rate.rate,
+          lastUpdated: rate.updated_at,
         }
       })
 
@@ -150,11 +151,12 @@ export function ExchangeRatesPage() {
                 <div>
                   <p className="font-medium text-gray-900 dark:text-gray-100">
                     {currency.code}
-                    {currency.is_default && (
-                      <span className="ml-2 text-xs bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300 px-1.5 py-0.5 rounded">
-                        Default
-                      </span>
-                    )}
+                    {currency.is_default ? (
+                      <Badge>Default</Badge>
+                    ) : ''}
+                    {currency.is_crypto ? (
+                      <Badge variant='secondary'>Crypto</Badge>
+                    ) : ''}
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">{currency.name}</p>
                 </div>

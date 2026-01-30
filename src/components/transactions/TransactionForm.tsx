@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository, settingsRepository } from '../../services/repositories'
-import { Button, Input, Select, LiveSearch } from '../ui'
+import { Button, Input, Select, LiveSearch, DateTimeUI } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
@@ -528,7 +528,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
           Amount {mode === 'expense' && paymentCurrency ? `(${paymentCurrency.symbol})` : selectedAccount && `(${selectedAccount.currencySymbol})`}
         </label>
-        <div className="flex gap-0">
+        <div className="flex flex-row gap-0">
           <input
             id="amount"
             type="number"
@@ -537,14 +537,14 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder={getPlaceholder(mode === 'expense' && paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
-            className={`flex-1 px-3 py-3 text-xl font-semibold rounded-l-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
+            className={`flex-1 min-w-0 px-3 py-3 text-xl font-semibold ${mode === 'expense' ? 'rounded-l-lg' : 'rounded-lg'} border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
           />
           {mode === 'expense' && (
             <select
               aria-label="payment-currency"
               value={paymentCurrencyId || selectedAccount?.currency_id || ''}
               onChange={(e) => setPaymentCurrencyId(e.target.value ? parseInt(e.target.value) : null)}
-              className="flex-none w-max-24 px-2 py-2 rounded-r-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="flex-none max-w-20 px-2 py-2 rounded-r-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               {currencies.map(c => (
                 <option key={c.id} value={c.id}>{c.code}</option>
@@ -738,7 +738,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         </>
       )}
 
-      <Input
+      <DateTimeUI
         type='datetime-local'
         onChange={e => {
           setDateTime(new Date(e.target.value).getTime())
