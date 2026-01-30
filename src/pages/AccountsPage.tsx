@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Button, Card, Modal, Input, Select, Spinner, useToast } from '../components/ui'
+import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
+import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository } from '../services/repositories'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
 import { Badge } from '../components/ui/Badge'
@@ -152,6 +153,17 @@ export function AccountsPage() {
     }
   }
 
+  const handleSetDefault = async (wallet: Wallet) => {
+    try {
+      await walletRepository.setDefault(wallet.id)
+      showToast('Default wallet updated', 'success')
+      loadData()
+    } catch (error) {
+      console.error('Failed to set default wallet:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to set default', 'error')
+    }
+  }
+
   const formatBalance = (balance: number, currency: Currency | undefined) => {
     if (!currency) return balance.toString()
     const decimals = currency.decimal_places
@@ -212,26 +224,14 @@ export function AccountsPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openCurrencyModal(wallet)}
-                    className="text-xs text-primary-600 dark:text-primary-400"
-                  >
-                    + Currency
-                  </button>
-                  <button
-                    onClick={() => openWalletModal(wallet)}
-                    className="text-xs text-primary-600 dark:text-primary-400"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDeleteWallet(wallet)}
-                    className="text-xs text-red-600 dark:text-red-400"
-                  >
-                    Delete
-                  </button>
-                </div>
+                <DropdownMenu
+                  items={[
+                    { label: '+ Currency', onClick: () => openCurrencyModal(wallet) },
+                    ...(!wallet.is_default ? [{ label: 'Set Default', onClick: () => handleSetDefault(wallet) }] : []),
+                    { label: 'Edit', onClick: () => openWalletModal(wallet) },
+                    { label: 'Delete', onClick: () => handleDeleteWallet(wallet), variant: 'danger' as const },
+                  ] as DropdownMenuItem[]}
+                />
               </div>
 
               {/* Accounts list */}

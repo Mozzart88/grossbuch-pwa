@@ -12,6 +12,7 @@ vi.mock('../../../services/repositories', () => ({
     update: vi.fn(),
     delete: vi.fn(),
     addAccount: vi.fn(),
+    setDefault: vi.fn(),
   },
   currencyRepository: {
     findAll: vi.fn(),
@@ -112,6 +113,20 @@ describe('AccountsPage', () => {
     )
   }
 
+  // Helper to open dropdown menu and click an action
+  const openDropdownAndClick = async (dropdownIndex: number, actionText: string) => {
+    const dropdownTriggers = screen.getAllByRole('button', { expanded: false })
+    // Filter to only dropdown triggers (those with aria-haspopup="menu")
+    const menuTriggers = dropdownTriggers.filter(btn => btn.getAttribute('aria-haspopup') === 'menu')
+    fireEvent.click(menuTriggers[dropdownIndex])
+
+    await waitFor(() => {
+      expect(screen.getByRole('menu')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText(actionText))
+  }
+
   it('displays loading spinner initially', () => {
     // Delay resolution to see loading state
     mockWalletRepository.findAll.mockImplementation(
@@ -171,14 +186,14 @@ describe('AccountsPage', () => {
     })
   })
 
-  it('opens edit modal when Edit is clicked', async () => {
+  it('opens edit modal when Edit is clicked from dropdown', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getAllByText('Edit').length > 0)
+      expect(screen.getByText('Cash')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getAllByText('Edit')[0])
+    await openDropdownAndClick(0, 'Edit')
 
     await waitFor(() => {
       expect(screen.getByText('Edit Wallet')).toBeInTheDocument()
@@ -350,10 +365,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('Edit').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('Edit')[0])
+      await openDropdownAndClick(0, 'Edit')
 
       await waitFor(() => {
         expect(screen.getByText('Edit Wallet')).toBeInTheDocument()
@@ -388,10 +403,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('Delete').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('Delete')[0])
+      await openDropdownAndClick(0, 'Delete')
 
       await waitFor(() => {
         expect(mockWalletRepository.delete).toHaveBeenCalledWith(1)
@@ -406,10 +421,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('Delete').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('Delete')[0])
+      await openDropdownAndClick(0, 'Delete')
 
       expect(mockWalletRepository.delete).not.toHaveBeenCalled()
     })
@@ -421,10 +436,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('Delete').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('Delete')[0])
+      await openDropdownAndClick(0, 'Delete')
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('Delete failed', 'error')
@@ -449,10 +464,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('+ Currency').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('+ Currency')[0])
+      await openDropdownAndClick(0, '+ Currency')
 
       await waitFor(() => {
         expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
@@ -463,10 +478,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('+ Currency').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('+ Currency')[0])
+      await openDropdownAndClick(0, '+ Currency')
 
       await waitFor(() => {
         expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
@@ -533,10 +548,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('Edit').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('Edit')[0])
+      await openDropdownAndClick(0, 'Edit')
 
       await waitFor(() => {
         const nameInput = screen.getByLabelText('Name') as HTMLInputElement
@@ -554,6 +569,79 @@ describe('AccountsPage', () => {
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to load data:', expect.any(Error))
+      })
+
+      consoleSpy.mockRestore()
+    })
+  })
+
+  describe('Set default wallet', () => {
+    beforeEach(() => {
+      mockWalletRepository.setDefault.mockResolvedValue(undefined)
+    })
+
+    it('shows Set Default option only for non-default wallets in dropdown', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      // Open first wallet dropdown (Cash - default wallet)
+      const menuTriggers = screen.getAllByRole('button', { expanded: false }).filter(
+        btn => btn.getAttribute('aria-haspopup') === 'menu'
+      )
+      fireEvent.click(menuTriggers[0])
+
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeInTheDocument()
+      })
+
+      // Should NOT show Set Default for default wallet
+      expect(screen.queryByText('Set Default')).not.toBeInTheDocument()
+
+      // Close dropdown
+      fireEvent.click(menuTriggers[0])
+
+      // Open second wallet dropdown (Bank - non-default wallet)
+      fireEvent.click(menuTriggers[1])
+
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeInTheDocument()
+      })
+
+      // Should show Set Default for non-default wallet
+      expect(screen.getByText('Set Default')).toBeInTheDocument()
+    })
+
+    it('sets wallet as default when clicked', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Bank')).toBeInTheDocument()
+      })
+
+      // Bank is the second wallet (index 1)
+      await openDropdownAndClick(1, 'Set Default')
+
+      await waitFor(() => {
+        expect(mockWalletRepository.setDefault).toHaveBeenCalledWith(2)
+      })
+      expect(mockShowToast).toHaveBeenCalledWith('Default wallet updated', 'success')
+    })
+
+    it('shows error toast when setDefault fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockWalletRepository.setDefault.mockRejectedValueOnce(new Error('DB error'))
+
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Bank')).toBeInTheDocument()
+      })
+
+      // Bank is the second wallet (index 1)
+      await openDropdownAndClick(1, 'Set Default')
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
       })
 
       consoleSpy.mockRestore()
