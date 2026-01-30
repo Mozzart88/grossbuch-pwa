@@ -152,6 +152,17 @@ export function AccountsPage() {
     }
   }
 
+  const handleSetDefault = async (wallet: Wallet) => {
+    try {
+      await walletRepository.setDefault(wallet.id)
+      showToast('Default wallet updated', 'success')
+      loadData()
+    } catch (error) {
+      console.error('Failed to set default wallet:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to set default', 'error')
+    }
+  }
+
   const formatBalance = (balance: number, currency: Currency | undefined) => {
     if (!currency) return balance.toString()
     const decimals = currency.decimal_places
@@ -219,6 +230,14 @@ export function AccountsPage() {
                   >
                     + Currency
                   </button>
+                  {!wallet.is_default && (
+                    <button
+                      onClick={() => handleSetDefault(wallet)}
+                      className="text-xs text-primary-600 dark:text-primary-400"
+                    >
+                      Set Default
+                    </button>
+                  )}
                   <button
                     onClick={() => openWalletModal(wallet)}
                     className="text-xs text-primary-600 dark:text-primary-400"

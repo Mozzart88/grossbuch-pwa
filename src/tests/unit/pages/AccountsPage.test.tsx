@@ -12,6 +12,7 @@ vi.mock('../../../services/repositories', () => ({
     update: vi.fn(),
     delete: vi.fn(),
     addAccount: vi.fn(),
+    setDefault: vi.fn(),
   },
   currencyRepository: {
     findAll: vi.fn(),
@@ -554,6 +555,55 @@ describe('AccountsPage', () => {
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to load data:', expect.any(Error))
+      })
+
+      consoleSpy.mockRestore()
+    })
+  })
+
+  describe('Set default wallet', () => {
+    beforeEach(() => {
+      mockWalletRepository.setDefault.mockResolvedValue(undefined)
+    })
+
+    it('shows Set Default button only for non-default wallets', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      const setDefaultButtons = screen.getAllByText('Set Default')
+      // Should only show for non-default wallet (Bank), not for default (Cash)
+      expect(setDefaultButtons).toHaveLength(1)
+    })
+
+    it('sets wallet as default when clicked', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Bank')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Set Default'))
+
+      await waitFor(() => {
+        expect(mockWalletRepository.setDefault).toHaveBeenCalledWith(2)
+      })
+      expect(mockShowToast).toHaveBeenCalledWith('Default wallet updated', 'success')
+    })
+
+    it('shows error toast when setDefault fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockWalletRepository.setDefault.mockRejectedValueOnce(new Error('DB error'))
+
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Bank')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Set Default'))
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
       })
 
       consoleSpy.mockRestore()
