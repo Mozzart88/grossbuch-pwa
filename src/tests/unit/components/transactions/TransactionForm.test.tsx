@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { TransactionForm } from '../../../../components/transactions/TransactionForm'
 import type { Wallet, Tag, Counterparty, Currency, Account } from '../../../../types'
 
@@ -457,7 +457,71 @@ describe('TransactionForm', () => {
       })
     })
 
-    it('shows error when transferring to the same account', async () => {
+    it('shows error when destination amount is empty for exchange', async () => {
+      renderForm()
+
+      const transferButton = await screen.findByRole('button', { name: 'Exchange' })
+      fireEvent.click(transferButton)
+
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      fireEvent.change(toAccountSelect, { target: { value: '2' } }) // Same as source
+
+      const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
+      fireEvent.submit(form)
+
+      await waitFor(() => {
+        expect(screen.getByText('Destination amount is required')).toBeInTheDocument()
+      })
+
+    })
+
+    it('destination account shouldnt include source account for transfers', async () => {
+      renderForm()
+
+      const transferButton = await screen.findByRole('button', { name: 'Transfer' })
+      fireEvent.click(transferButton)
+
+      const amountInput = await screen.findByLabelText(/^Amount/i)
+      fireEvent.change(amountInput, { target: { value: '50' } })
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
+      expect(options.length).toEqual(2)
+      expect(options.some(o => o.value === '1')).not.toBeTruthy()
+    })
+
+    it('destination account shouldnt include accounts in different currencies for transfers', async () => {
+      renderForm()
+
+      const transferButton = await screen.findByRole('button', { name: 'Transfer' })
+      fireEvent.click(transferButton)
+
+      const amountInput = await screen.findByLabelText(/^Amount/i)
+      fireEvent.change(amountInput, { target: { value: '50' } })
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
+      expect(options.length).toEqual(2)
+      expect(options.some(o => o.value === '2')).not.toBeTruthy()
+    })
+
+    it('destination account shouldnt inclue accounts in same currencies for exchanges', async () => {
+      renderForm()
+
+      const transferButton = await screen.findByRole('button', { name: 'Exchange' })
+      fireEvent.click(transferButton)
+
+      const amountInput = await screen.findByLabelText(/^Amount/i)
+      fireEvent.change(amountInput, { target: { value: '50' } })
+
+      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
+      expect(options.length).toEqual(2)
+      expect(options.some(o => o.value === '3')).not.toBeTruthy()
+    })
+
+    it('shows error when transferring to the same account', { skip: true }, async () => {
       renderForm()
 
       const transferButton = await screen.findByRole('button', { name: 'Transfer' })
@@ -477,7 +541,7 @@ describe('TransactionForm', () => {
       })
     })
 
-    it('shows error when exchange has same currencies', async () => {
+    it('shows error when exchange has same currencies', { skip: true }, async () => {
       renderForm()
 
       const exchangeButton = await screen.findByRole('button', { name: 'Exchange' })

@@ -276,15 +276,9 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
     if ((mode === 'transfer' || mode === 'exchange') && !toAccountId) {
       newErrors.toAccountId = 'Destination account is required'
     }
-    if (mode === 'transfer' && accountId === toAccountId) {
-      newErrors.toAccountId = 'Cannot transfer to the same account'
-    }
     if (mode === 'exchange') {
       if (!toAmount || parseFloat(toAmount) <= 0) {
         newErrors.toAmount = 'Destination amount is required'
-      }
-      if (selectedAccount?.currency_id === selectedToAccount?.currency_id) {
-        newErrors.toAccountId = 'Exchange requires different currencies'
       }
     }
     // Multi-currency expense validation
@@ -671,7 +665,8 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           value={toAccountId}
           onChange={(e) => setToAccountId(e.target.value)}
           options={accounts
-            .filter((a) => mode === 'transfer' ? a.currency_id === selectedAccount?.currency_id : true)
+            .filter(a => a.id !== selectedAccount?.id)
+            .filter((a) => mode === 'transfer' ? a.currency_id === selectedAccount?.currency_id : a.currency_id !== selectedAccount?.currency_id)
             .map((a) => ({
               value: a.id,
               label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
@@ -820,11 +815,10 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
                   key={t}
                   type="button"
                   onClick={() => setNewTagType(t)}
-                  className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
-                    newTagType === t
-                      ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
-                  }`}
+                  className={`px-4 py-2 text-sm rounded-lg border transition-colors ${newTagType === t
+                    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                    }`}
                 >
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>
