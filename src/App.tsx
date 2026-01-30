@@ -99,7 +99,6 @@ function AppContent() {
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/accounts" element={<AccountsPage />} />
-        {/* <Route path="/settings/categories" element={<CategoriesPage />} /> */}
         <Route path="/settings/counterparties" element={<CounterpartiesPage />} />
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
         <Route path="/settings/exchange-rates" element={<ExchangeRatesPage />} />

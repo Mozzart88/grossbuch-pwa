@@ -33,12 +33,12 @@ export function ExchangeRatesPage() {
       ])
 
       // Merge currencies with their rates
-      const currenciesWithRates: CurrencyWithRate[] = curs.map((currency) => {
-        const rateData = rates.find((r) => r.currency_id === currency.id)
+      const currenciesWithRates: CurrencyWithRate[] = rates.map((rate) => {
+        const currency = curs.find((c) => rate.currency_id === c.id)
         return {
-          ...currency,
-          currentRate: rateData?.rate ?? null,
-          lastUpdated: rateData?.updated_at ?? null,
+          ...currency!,
+          currentRate: rate.rate,
+          lastUpdated: rate.updated_at,
         }
       })
 

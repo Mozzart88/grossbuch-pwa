@@ -1,6 +1,34 @@
 import { execSQL, queryOne } from './connection'
+import { CURRENCIES } from './currencyData'
 
-const CURRENT_VERSION = 3
+const CURRENT_VERSION = 4
+
+// Generate currency INSERT statements for migration v4
+function generateCurrencyInsertSQL(): string {
+  const values = CURRENCIES.map(
+    (c) =>
+      `('${c.code}', '${c.name.replace(/'/g, "''")}', '${c.symbol.replace(/'/g, "''")}', ${c.decimal_places})`
+  ).join(',\n  ')
+  return `INSERT OR IGNORE INTO currency (code, name, symbol, decimal_places) VALUES\n  ${values}`
+}
+
+// Generate fiat currency tag assignments
+function generateFiatTagSQL(): string {
+  const fiatCodes = CURRENCIES.filter((c) => !c.is_crypto)
+    .map((c) => `'${c.code}'`)
+    .join(', ')
+  return `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id)
+SELECT id, 4 FROM currency WHERE code IN (${fiatCodes})`
+}
+
+// Generate crypto currency tag assignments
+function generateCryptoTagSQL(): string {
+  const cryptoCodes = CURRENCIES.filter((c) => c.is_crypto)
+    .map((c) => `'${c.code}'`)
+    .join(', ')
+  return `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id)
+SELECT id, 5 FROM currency WHERE code IN (${cryptoCodes})`
+}
 
 const migrations: Record<number, string[]> = {
   1: [
@@ -994,6 +1022,45 @@ const migrations: Record<number, string[]> = {
       value TEXT NOT NULL,
       updated_at INTEGER DEFAULT (strftime('%s', datetime('now')))
     )`,
+  ],
+
+  4: [
+    // ============================================
+    // MIGRATION 4: Seed all currencies from currencyData.ts
+    // This ensures both new and existing users get all currencies
+    // ============================================
+
+    // Insert all currencies (INSERT OR IGNORE to not overwrite existing)
+    generateCurrencyInsertSQL(),
+
+    // Tag fiat currencies (tag_id = 4)
+    generateFiatTagSQL(),
+
+    // Tag crypto currencies (tag_id = 5)
+    generateCryptoTagSQL(),
+
+    // Set USD as default if no default exists
+    `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id)
+SELECT id, 2 FROM currency WHERE code = 'USD'
+AND NOT EXISTS (SELECT 1 FROM currency_to_tags WHERE tag_id = 2)`,
+    `CREATE VIEW IF NOT EXISTS currencies AS
+SELECT
+  c.id,
+  c.code,
+  c.name,
+  c.symbol,
+  c.decimal_places,
+iif(t2c.tag_id = 2,1,0) AS is_default,
+iif(t2c2.tag_id = 4,1,0) AS is_fiat,
+iif(t2c2.tag_id = 5,1,0) AS is_crypto
+FROM
+  currency c
+LEFT JOIN 
+  currency_to_tags t2c ON t2c.currency_id = c.id AND t2c.tag_id = 2
+LEFT JOIN
+  currency_to_tags t2c2 ON t2c2.currency_id = c.id AND ( t2c2.tag_id = 5 OR t2c2.tag_id = 4 )
+ORDER BY id
+`,
   ],
 }
 

@@ -198,7 +198,7 @@ export async function setupPin(pin: string): Promise<void> {
   // Initialize encrypted database
   await initEncryptedDatabase(encryptionKey)
 
-  // Run migrations to create tables
+  // Run migrations to create tables (includes currency seeding in v4)
   await runMigrations()
 
   // Save auth settings to database
@@ -231,7 +231,7 @@ export async function login(pin: string): Promise<boolean> {
     // Try to open database with encryption key
     await initEncryptedDatabase(encryptionKey)
 
-    // Run migrations in case there are new ones
+    // Run migrations in case there are new ones (includes currency seeding in v4)
     await runMigrations()
 
     // Get auth settings and verify PIN hash

@@ -4,7 +4,7 @@ import { getLatestRates } from './exchangeRateApi'
 export interface SyncRatesResult {
   success: boolean
   syncedCount: number
-  skippedReason?: 'offline' | 'no_currencies' | 'no_default' | 'default_not_in_api'
+  skippedReason?: 'offline' | 'no_currencies' | 'no_accounts' | 'no_default' | 'default_not_in_api'
 }
 
 export async function syncRates(): Promise<SyncRatesResult> {
@@ -14,11 +14,11 @@ export async function syncRates(): Promise<SyncRatesResult> {
     return { success: false, syncedCount: 0, skippedReason: 'offline' }
   }
 
-  // Get all user currencies
-  const currencies = await currencyRepository.findAll()
+  // Get only currencies that are linked to accounts (active or virtual)
+  const currencies = await currencyRepository.findUsedInAccounts()
   if (currencies.length === 0) {
-    console.warn('[ExchangeRateSync] No currencies found')
-    return { success: false, syncedCount: 0, skippedReason: 'no_currencies' }
+    console.warn('[ExchangeRateSync] No currencies linked to accounts')
+    return { success: false, syncedCount: 0, skippedReason: 'no_accounts' }
   }
 
   // Find default currency
