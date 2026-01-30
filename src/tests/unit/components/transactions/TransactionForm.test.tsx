@@ -258,20 +258,21 @@ describe('TransactionForm', () => {
       expect(categorySelect).toBeInTheDocument()
     })
 
-    it('shows only expense tags', async () => {
+    it('shows only expense tags in LiveSearch dropdown', async () => {
       renderForm()
 
       await waitFor(() => {
         expect(screen.getByText('Category')).toBeInTheDocument()
       })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      expect(categorySelect).toBeInTheDocument()
-      const options = categorySelect.getElementsByTagName('option')
-      Array.from(options).forEach(el => {
-        const tagText = el.textContent || ''
-        if (tagText === 'Select category') return
-        expect(mockExpenseTags.find(t => t.name === tagText)).toBeDefined()
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+
+      // All expense tags should be shown in dropdown
+      await waitFor(() => {
+        mockExpenseTags.forEach(tag => {
+          expect(screen.getByRole('option', { name: tag.name })).toBeInTheDocument()
+        })
       })
     })
 
@@ -541,8 +542,14 @@ describe('TransactionForm', () => {
       const amountInput = screen.getByPlaceholderText('0.00')
       fireEvent.change(amountInput, { target: { value: '50' } })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '10' } }) // food
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -577,8 +584,14 @@ describe('TransactionForm', () => {
       const amountInput = screen.getByPlaceholderText('0.00')
       fireEvent.change(amountInput, { target: { value: '1000' } })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '20' } }) // salary
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'salary' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'salary' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'salary' }))
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -687,8 +700,14 @@ describe('TransactionForm', () => {
       const amountInput = screen.getByPlaceholderText('0.00')
       fireEvent.change(amountInput, { target: { value: '50' } })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '10' } })
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -711,8 +730,14 @@ describe('TransactionForm', () => {
       const amountInput = screen.getByPlaceholderText('0.00')
       fireEvent.change(amountInput, { target: { value: '50' } })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '10' } })
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -801,7 +826,15 @@ describe('TransactionForm', () => {
       await screen.findByLabelText(/^Amount/i)
 
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
-      fireEvent.change(screen.getByRole('combobox', { name: /category/i }), { target: { value: '10' } })
+
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       // Use LiveSearch to select existing counterparty
       const counterpartyInput = screen.getByRole('combobox', { name: /counterparty/i })
@@ -835,7 +868,15 @@ describe('TransactionForm', () => {
       await screen.findByLabelText(/^Amount/i)
 
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
-      fireEvent.change(screen.getByRole('combobox', { name: /category/i }), { target: { value: '10' } })
+
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       // Use LiveSearch to enter a new counterparty name
       const counterpartyInput = screen.getByRole('combobox', { name: /counterparty/i })
@@ -1057,8 +1098,14 @@ describe('TransactionForm', () => {
       const amountInput = container.querySelector('#amount') as HTMLInputElement
       fireEvent.change(amountInput, { target: { value: '50' } })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '10' } })
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -1105,9 +1152,14 @@ describe('TransactionForm', () => {
       const paymentAmountInput = container.querySelector('#paymentAmount') as HTMLInputElement
       fireEvent.change(paymentAmountInput, { target: { value: '55' } })
 
-      // Select category
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
-      fireEvent.change(categorySelect, { target: { value: '10' } })
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)

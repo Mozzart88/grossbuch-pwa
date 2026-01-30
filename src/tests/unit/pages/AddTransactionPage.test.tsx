@@ -83,11 +83,8 @@ describe('AddTransactionPage', () => {
       {
         id: 1,
         name: 'Cash',
-        icon: '💵',
         color: '#4CAF50',
         is_default: true,
-        created_at: 1704067200,
-        updated_at: 1704067200,
         accounts: [
           {
             id: 1,
@@ -95,12 +92,10 @@ describe('AddTransactionPage', () => {
             currency_id: 1,
             wallet: 'Cash',
             currency: 'USD',
-            real_balance: 15000,
-            actual_balance: 15000,
             tags: undefined,
-            created_at: 1704067200,
             updated_at: 1704067200,
             is_default: true,
+            balance: 0
           },
         ],
       },
@@ -109,16 +104,12 @@ describe('AddTransactionPage', () => {
       {
         id: 12,
         name: 'food',
-        created_at: 1704067200,
-        updated_at: 1704067200,
       },
     ])
     mockTagRepository.findIncomeTags.mockResolvedValue([
       {
         id: 11,
         name: 'sale',
-        created_at: 1704067200,
-        updated_at: 1704067200,
       },
     ])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
@@ -129,8 +120,6 @@ describe('AddTransactionPage', () => {
         name: 'US Dollar',
         symbol: '$',
         decimal_places: 2,
-        created_at: 1704067200,
-        updated_at: 1704067200,
         is_default: true,
         is_fiat: true,
       },
@@ -189,8 +178,14 @@ describe('AddTransactionPage', () => {
     const amountInput = screen.getByPlaceholderText('0.00')
     fireEvent.change(amountInput, { target: { value: '50' } })
 
-    const categorySelect = screen.getByRole('combobox', { name: /category/i })
-    fireEvent.change(categorySelect, { target: { value: '12' } }) // food tag
+    // Select category using LiveSearch
+    const categoryInput = screen.getByRole('combobox', { name: /category/i })
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'food' } })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
     const submitButton = screen.getByRole('button', { name: 'Add' })
     fireEvent.click(submitButton)

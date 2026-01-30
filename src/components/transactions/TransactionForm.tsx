@@ -595,10 +595,10 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
       {/* Category/Tag (for income/expense) */}
       {(mode === 'income' || mode === 'expense') && (
-        <Select
+        <LiveSearch
           label="Category"
           value={tagId}
-          onChange={(e) => setTagId(e.target.value)}
+          onChange={(v) => setTagId(`${v}`)}
           options={filteredTags.map((t) => ({
             value: t.id,
             label: t.name,
