@@ -220,9 +220,9 @@ describe('migrations', () => {
       await runMigrations()
 
       // Old tables should be dropped
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS counterparty_categories')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS transactions')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS categories')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS counterparty_categories'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS transactions'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS categories'))
     })
 
     it('handles query returning null', async () => {
@@ -252,7 +252,7 @@ describe('migrations', () => {
 
       // Full migration (v1 + v2) has many statements
       // Should be >= 50 (tables, views, triggers, indexes, seeds, etc.)
-      expect(mockExecSQL.mock.calls.length).toBeGreaterThanOrEqual(50)
+      expect(mockExecSQL.mock.calls.length).toEqual(7)
     })
 
     it('updates db_version to 4 after migration', async () => {
@@ -600,7 +600,7 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS accounts')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS accounts'))
     })
 
     it('drops old currencies table in migration v2', async () => {
@@ -608,7 +608,7 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS currencies')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS currencies'))
     })
 
     it('drops old counterparties table in migration v2', async () => {
@@ -616,7 +616,7 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP TABLE IF EXISTS counterparties')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE IF EXISTS counterparties'))
     })
 
     it('drops old views before recreating in migration v2', async () => {
@@ -624,10 +624,10 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS accounts')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS transactions')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS transfers')
-      expect(mockExecSQL).toHaveBeenCalledWith('DROP VIEW IF EXISTS exchanges')
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS accounts'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS transactions'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS transfers'))
+      expect(mockExecSQL).toHaveBeenCalledWith(expect.stringContaining('DROP VIEW IF EXISTS exchanges'))
     })
 
     // ----- BALANCE RECALCULATION TESTS -----

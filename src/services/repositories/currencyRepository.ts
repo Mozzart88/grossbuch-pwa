@@ -17,7 +17,7 @@ export const currencyRepository = {
   async findUsedInAccounts(): Promise<Currency[]> {
     const currencies = await querySQL<Currency>(`
       SELECT DISTINCT
-        c.*,
+        c.*
       FROM currencies c
       INNER JOIN account a ON a.currency_id = c.id
       ORDER BY is_default DESC, name ASC
@@ -28,7 +28,7 @@ export const currencyRepository = {
   async findById(id: number): Promise<Currency | null> {
     return queryOne<Currency>(`
       SELECT
-        *,
+        *
       FROM currencies 
       WHERE id = ?
     `, [id])
@@ -37,7 +37,7 @@ export const currencyRepository = {
   async findByCode(code: string): Promise<Currency | null> {
     return queryOne<Currency>(`
       SELECT
-        *,
+        *
       FROM currencies 
       WHERE code = ?
     `, [code])
