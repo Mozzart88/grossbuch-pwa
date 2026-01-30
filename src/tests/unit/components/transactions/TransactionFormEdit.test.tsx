@@ -182,7 +182,8 @@ describe('TransactionForm Editing mode', () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50)
       expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('1')
-      expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('10')
+      // LiveSearch shows the label (category name) not the value (ID)
+      expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('Food')
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
     })
   })
@@ -212,7 +213,8 @@ describe('TransactionForm Editing mode', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Income' }).className).toContain('shadow')
       expect(screen.getByLabelText(/^Amount/i)).toHaveValue(1000)
-      expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('20')
+      // LiveSearch shows the label (category name) not the value (ID)
+      expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('Salary')
     })
   })
 

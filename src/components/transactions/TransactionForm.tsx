@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository, settingsRepository } from '../../services/repositories'
-import { Button, Input, Select, LiveSearch, DateTimeUI } from '../ui'
+import { Button, Input, Select, LiveSearch, DateTimeUI, Modal } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
@@ -28,6 +28,9 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const [tagId, setTagId] = useState('')
   const [counterpartyId, setCounterpartyId] = useState('')
   const [counterpartyName, setCounterpartyName] = useState('')
+  const [newTagName, setNewTagName] = useState('')
+  const [newTagType, setNewTagType] = useState<'expense' | 'income' | 'both'>('expense')
+  const [showTagModal, setShowTagModal] = useState(false)
   const [toAccountId, setToAccountId] = useState('')
   const [toAmount, setToAmount] = useState('')
   const [exchangeRate, setExchangeRate] = useState('')
@@ -267,7 +270,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
     if (!accountId) {
       newErrors.accountId = 'Account is required'
     }
-    if ((mode === 'income' || mode === 'expense') && !tagId) {
+    if ((mode === 'income' || mode === 'expense') && !tagId && !newTagName) {
       newErrors.tagId = 'Category is required'
     }
     if ((mode === 'transfer' || mode === 'exchange') && !toAccountId) {
@@ -302,6 +305,23 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
     setSubmitting(true)
     try {
+      // Create new tag if pending
+      let finalTagId = tagId
+      if (newTagName && !tagId) {
+        const parent_ids: number[] = [SYSTEM_TAGS.DEFAULT]
+        if (newTagType === 'expense' || newTagType === 'both') {
+          parent_ids.push(SYSTEM_TAGS.EXPENSE)
+        }
+        if (newTagType === 'income' || newTagType === 'both') {
+          parent_ids.push(SYSTEM_TAGS.INCOME)
+        }
+        const newTag = await tagRepository.create({
+          name: newTagName.trim(),
+          parent_ids,
+        })
+        finalTagId = newTag.id.toString()
+      }
+
       const intAmount = toIntegerAmount(amount, decimalPlaces)
       const intFee = fee ? toIntegerAmount(fee, decimalPlaces) : undefined
 
@@ -320,7 +340,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       if (mode === 'income') {
         payload.lines.push({
           account_id: parseInt(accountId),
-          tag_id: parseInt(tagId),
+          tag_id: parseInt(finalTagId),
           sign: '+' as const,
           amount: intAmount,
           rate: accountRate,
@@ -363,7 +383,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           // 3. Expense from target account
           payload.lines.push({
             account_id: targetAccount.id,
-            tag_id: parseInt(tagId),
+            tag_id: parseInt(finalTagId),
             sign: '-' as const,
             amount: targetIntAmount,
             rate: targetRate,
@@ -373,7 +393,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           // Normal single-currency expense
           payload.lines.push({
             account_id: parseInt(accountId),
-            tag_id: parseInt(tagId),
+            tag_id: parseInt(finalTagId),
             sign: '-' as const,
             amount: intAmount,
             rate: accountRate,
@@ -595,17 +615,32 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
       {/* Category/Tag (for income/expense) */}
       {(mode === 'income' || mode === 'expense') && (
-        <Select
-          label="Category"
-          value={tagId}
-          onChange={(e) => setTagId(e.target.value)}
-          options={filteredTags.map((t) => ({
-            value: t.id,
-            label: t.name,
-          }))}
-          placeholder="Select category"
-          error={errors.tagId}
-        />
+        <div className="space-y-1">
+          <LiveSearch
+            label="Category"
+            value={tagId}
+            onChange={(v) => {
+              setTagId(`${v}`)
+              setNewTagName('') // Clear pending new tag when existing selected
+            }}
+            options={filteredTags.map((t) => ({
+              value: t.id,
+              label: t.name,
+            }))}
+            placeholder="Select category"
+            error={errors.tagId}
+            onCreateNew={(name) => {
+              setNewTagName(name)
+              setNewTagType(mode === 'income' ? 'income' : 'expense')
+              setShowTagModal(true)
+            }}
+          />
+          {newTagName && (
+            <p className="text-sm text-primary-600 dark:text-primary-400">
+              New category: "{newTagName}" ({newTagType})
+            </p>
+          )}
+        </div>
       )}
 
       {/* Counterparty (for income/expense, optional) */}
@@ -768,6 +803,59 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
           {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
         </Button>
       </div>
+
+      {/* New Tag Type Modal */}
+      <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="New Category">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Create "{newTagName}" as:
+          </p>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Type
+            </label>
+            <div className="flex gap-2">
+              {(['expense', 'income', 'both'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setNewTagType(t)}
+                  className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                    newTagType === t
+                      ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
+                  }`}
+                >
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setShowTagModal(false)
+                setNewTagName('')
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setShowTagModal(false)
+                setTagId('') // Clear tagId since we'll create a new one
+              }}
+              className="flex-1"
+            >
+              OK
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </form>
   )
 }
