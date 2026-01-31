@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-const CURRENT_VERSION = 4
+const CURRENT_VERSION = 5
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1073,6 +1073,33 @@ LEFT JOIN
 ORDER BY id
 ;`,
   ],
+  5: [
+    `insert into tag_to_tag (parent_id, child_id) values
+    (9, 11), (9,13), (9,18);
+`,
+    `insert into tag_to_tag (parent_id, child_id) values
+    (10, 12), (10,13), (10,14), (10,15), (10,16), (10,17), (10,19), (10,20), (10,21)
+;`,
+    `update trx_base set tag_id = 13 where tag_id = 27;
+`,
+    `update counterparty_to_tags set tag_id = 13 where tag_id = 27;
+`,
+    `update tag_icon set tag_id = 13 where tag_id = 27;
+`,
+    `delete from tag_to_tag where child_id IN (16,27);
+`,
+    `delete from tag where id IN (16, 27);`,
+    `update tag set name = 'Fees' where id = 13;`,
+    `update tag set name = 'Sales' where id = 11;`,
+    `update tag set name = 'Food' where id = 12;`,
+    `update tag set name = 'Transport' where id = 14;`,
+    `update tag set name = 'House' where id = 15;`,
+    `update tag set name = 'Utilities' where id = 17;`,
+    `update tag set name = 'Discounts' where id = 18;`,
+    `update tag set name = 'Fines' where id = 19;`,
+    `update tag set name = 'Households' where id = 20;`,
+    `update tag set name = 'Auto' where id = 21;`,
+  ]
 }
 
 export async function runMigrations(): Promise<void> {

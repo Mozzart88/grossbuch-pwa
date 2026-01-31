@@ -701,17 +701,6 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             />
             {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
           </div>
-          {/* {fee && parseFloat(fee) > 0 && ( */}
-          {/*   <Select */}
-          {/*     label="Fee Category" */}
-          {/*     value={feeTagId} */}
-          {/*     onChange={(e) => setFeeTagId(e.target.value)} */}
-          {/*     options={feeTags.map((t) => ({ */}
-          {/*       value: t.id, */}
-          {/*       label: t.name, */}
-          {/*     }))} */}
-          {/*   /> */}
-          {/* )} */}
         </div>
       )}
 
