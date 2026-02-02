@@ -95,8 +95,11 @@ describe('BudgetsPage', () => {
         it('shows Add Budget button in empty state', async () => {
             renderPage()
 
+            const now = new Date()
+            const monthLabel = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
             await waitFor(() => {
-                expect(screen.getByText('No budgets for January 2026')).toBeInTheDocument()
+                expect(screen.getByText(`No budgets for ${monthLabel}`)).toBeInTheDocument()
                 expect(screen.getByRole('button', { name: 'Create Budget' })).toBeInTheDocument()
             })
         })

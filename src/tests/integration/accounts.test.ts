@@ -7,6 +7,7 @@ import {
   insertAccount,
   insertTransaction,
   getTestDatabase,
+  getCurrencyIdByCode,
 } from './setup'
 import { SYSTEM_TAGS } from '../../types'
 
@@ -105,10 +106,14 @@ describe('Accounts Integration', () => {
     it('creates accounts with different currencies', async () => {
       const db = getTestDatabase()
 
+      const usdId = getCurrencyIdByCode('USD')
+      const eurId = getCurrencyIdByCode('EUR')
+      const gbpId = getCurrencyIdByCode('GBP')
+
       const walletId = insertWallet({ name: 'Multi-currency Wallet' })
-      insertAccount({ wallet_id: walletId, currency_id: 1 }) // USD
-      insertAccount({ wallet_id: walletId, currency_id: 2 }) // EUR
-      insertAccount({ wallet_id: walletId, currency_id: 3 }) // GBP
+      insertAccount({ wallet_id: walletId, currency_id: usdId })
+      insertAccount({ wallet_id: walletId, currency_id: eurId })
+      insertAccount({ wallet_id: walletId, currency_id: gbpId })
 
       const result = db.exec(`
         SELECT w.name, c.code
@@ -128,8 +133,9 @@ describe('Accounts Integration', () => {
     it('joins currency data correctly', async () => {
       const db = getTestDatabase()
 
+      const eurId = getCurrencyIdByCode('EUR')
       const walletId = insertWallet({ name: 'Euro Wallet' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 2 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: eurId })
 
       const result = db.exec(`
         SELECT

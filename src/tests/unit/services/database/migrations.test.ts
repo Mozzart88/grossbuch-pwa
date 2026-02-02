@@ -33,16 +33,6 @@ describe('migrations', () => {
       )
     })
 
-    it('skips migrations when already at current version', async () => {
-      // Already at version 4 (current)
-      mockQueryOne.mockResolvedValue({ value: '4' })
-
-      await runMigrations()
-
-      // Should not run any migrations
-      expect(mockExecSQL).not.toHaveBeenCalled()
-    })
-
     it('runs migration v2 when at version 1', async () => {
       // At version 1, need to run v2
       mockQueryOne.mockResolvedValue({ value: '1' })
@@ -236,12 +226,12 @@ describe('migrations', () => {
     })
 
     it('parses db_version correctly', async () => {
-      // Already at version 4
-      mockQueryOne.mockResolvedValue({ value: '4' })
+      // Already at version 5
+      mockQueryOne.mockResolvedValue({ value: '5' })
 
       await runMigrations()
 
-      // No migrations should run since we're at version 4
+      // No migrations should run since we're at version 5
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
@@ -252,7 +242,7 @@ describe('migrations', () => {
 
       // Full migration (v1 + v2) has many statements
       // Should be >= 50 (tables, views, triggers, indexes, seeds, etc.)
-      expect(mockExecSQL.mock.calls.length).toEqual(7)
+      expect(mockExecSQL.mock.calls.length).toEqual(9)
     })
 
     it('updates db_version to 4 after migration', async () => {

@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-const CURRENT_VERSION = 5
+export const CURRENT_VERSION = 5
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -30,7 +30,7 @@ function generateCryptoTagSQL(): string {
 SELECT id, 5 FROM currency WHERE code IN (${cryptoCodes});`
 }
 
-const migrations: Record<number, string[]> = {
+export const migrations: Record<number, string[]> = {
   1: [
     // Currencies table
     `CREATE TABLE IF NOT EXISTS currencies (
@@ -1089,16 +1089,17 @@ ORDER BY id
     `delete from tag_to_tag where child_id IN (16,27);
 `,
     `delete from tag where id IN (16, 27);`,
-    `update tag set name = 'Fees' where id = 13;`,
-    `update tag set name = 'Sales' where id = 11;`,
-    `update tag set name = 'Food' where id = 12;`,
-    `update tag set name = 'Transport' where id = 14;`,
-    `update tag set name = 'House' where id = 15;`,
-    `update tag set name = 'Utilities' where id = 17;`,
-    `update tag set name = 'Discounts' where id = 18;`,
-    `update tag set name = 'Fines' where id = 19;`,
-    `update tag set name = 'Households' where id = 20;`,
-    `update tag set name = 'Auto' where id = 21;`,
+    // Rename tags only if no tag with the new name already exists
+    `update tag set name = 'Fees' where id = 13 and not exists (select 1 from tag where name = 'Fees' and id != 13);`,
+    `update tag set name = 'Sales' where id = 11 and not exists (select 1 from tag where name = 'Sales' and id != 11);`,
+    `update tag set name = 'Food' where id = 12 and not exists (select 1 from tag where name = 'Food' and id != 12);`,
+    `update tag set name = 'Transport' where id = 14 and not exists (select 1 from tag where name = 'Transport' and id != 14);`,
+    `update tag set name = 'House' where id = 15 and not exists (select 1 from tag where name = 'House' and id != 15);`,
+    `update tag set name = 'Utilities' where id = 17 and not exists (select 1 from tag where name = 'Utilities' and id != 17);`,
+    `update tag set name = 'Discounts' where id = 18 and not exists (select 1 from tag where name = 'Discounts' and id != 18);`,
+    `update tag set name = 'Fines' where id = 19 and not exists (select 1 from tag where name = 'Fines' and id != 19);`,
+    `update tag set name = 'Households' where id = 20 and not exists (select 1 from tag where name = 'Households' and id != 20);`,
+    `update tag set name = 'Auto' where id = 21 and not exists (select 1 from tag where name = 'Auto' and id != 21);`,
   ]
 }
 
@@ -1133,3 +1134,6 @@ export async function runMigrations(): Promise<void> {
     }
   }
 }
+
+// console.log(migrations.values().map(v => v.join(' ').join(' ')))
+// console.log(Object.values(migrations).map(v => v.join(' ')).join(' '))
