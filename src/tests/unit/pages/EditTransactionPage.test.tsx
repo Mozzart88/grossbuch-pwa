@@ -150,24 +150,18 @@ describe('EditTransactionPage', () => {
       {
         id: 12,
         name: 'food',
-        created_at: 1704067200,
-        updated_at: 1704067200,
       },
     ])
     mockTagRepository.findExpenseTags.mockResolvedValue([
       {
         id: 12,
         name: 'food',
-        created_at: 1704067200,
-        updated_at: 1704067200,
       },
     ])
     mockTagRepository.findIncomeTags.mockResolvedValue([
       {
         id: 11,
         name: 'sale',
-        created_at: 1704067200,
-        updated_at: 1704067200,
       },
     ])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
@@ -177,8 +171,6 @@ describe('EditTransactionPage', () => {
       name: 'US Dollar',
       symbol: '$',
       decimal_places: 2,
-      created_at: 1704067200,
-      updated_at: 1704067200,
       is_default: true,
       is_fiat: true,
     })
@@ -187,11 +179,8 @@ describe('EditTransactionPage', () => {
       {
         id: 1,
         name: 'Cash',
-        icon: '💵',
         color: '#4CAF50',
         is_default: true,
-        created_at: 1704067200,
-        updated_at: 1704067200,
         accounts: [
           {
             id: 1,
@@ -199,10 +188,8 @@ describe('EditTransactionPage', () => {
             currency_id: 1,
             wallet: 'Cash',
             currency: 'USD',
-            real_balance: 10000,
-            actual_balance: 15000,
+            balance: 10000,
             tags: undefined,
-            created_at: 1704067200,
             updated_at: 1704067200,
           },
         ],
@@ -275,7 +262,7 @@ describe('EditTransactionPage', () => {
       fireEvent.click(goBackButton)
     })
 
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
   it('shows delete button', async () => {
@@ -301,7 +288,7 @@ describe('EditTransactionPage', () => {
     })
 
     expect(mockShowToast).toHaveBeenCalledWith('Transaction deleted', 'success')
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
   it('shows error when delete fails', async () => {
@@ -359,7 +346,7 @@ describe('EditTransactionPage', () => {
     fireEvent.click(updateButton)
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/')
+      expect(mockNavigate).toHaveBeenCalledWith(-1)
     })
   })
 
@@ -386,7 +373,7 @@ describe('EditTransactionPage', () => {
     const cancelButton = screen.getByRole('button', { name: 'Cancel' })
     fireEvent.click(cancelButton)
 
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
   it('shows Deleting... text while deleting', async () => {

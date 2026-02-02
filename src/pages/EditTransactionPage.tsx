@@ -44,7 +44,7 @@ export function EditTransactionPage() {
   }
 
   const handleSubmit = () => {
-    navigate('/')
+    navigate(-1)
   }
 
   const handleDelete = async () => {
@@ -54,7 +54,7 @@ export function EditTransactionPage() {
       const blobId = hexToBlob(id)
       await transactionRepository.delete(blobId)
       showToast('Transaction deleted', 'success')
-      navigate('/')
+      navigate(-1)
     } catch (error) {
       console.error('Failed to delete transaction:', error)
       showToast('Failed to delete transaction', 'error')
@@ -75,7 +75,7 @@ export function EditTransactionPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
         <p className="text-gray-500 dark:text-gray-400">Transaction not found</p>
-        <Button onClick={() => navigate('/')} className="mt-4">
+        <Button onClick={() => navigate(-1)} className="mt-4">
           Go Back
         </Button>
       </div>
@@ -103,7 +103,7 @@ export function EditTransactionPage() {
         <TransactionForm
           initialData={transaction}
           onSubmit={handleSubmit}
-          onCancel={() => navigate('/')}
+          onCancel={() => navigate(-1)}
         />
       </div>
     </div>
