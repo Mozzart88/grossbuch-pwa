@@ -15,6 +15,11 @@ interface LiveSearchProps {
   placeholder?: string
   disabled?: boolean
   className?: string
+  inputClassName?: string
+  dropdownClassName?: string
+  renderOption?: (option: LiveSearchOption) => React.ReactNode
+  /** Function to get display value for input (defaults to label) */
+  getDisplayValue?: (option: LiveSearchOption) => string
 }
 
 export function LiveSearch({
@@ -27,6 +32,10 @@ export function LiveSearch({
   placeholder,
   disabled,
   className = '',
+  inputClassName = '',
+  dropdownClassName = '',
+  renderOption,
+  getDisplayValue,
 }: LiveSearchProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -37,21 +46,31 @@ export function LiveSearch({
 
   const inputId = label?.toLowerCase().replace(/\s+/g, '-')
 
+  // Get the currently selected option
+  const selectedOption = value ? options.find(opt => String(opt.value) === String(value)) : null
+
+  // Get display value for the selected option
+  const selectedDisplayValue = selectedOption
+    ? (getDisplayValue ? getDisplayValue(selectedOption) : selectedOption.label)
+    : ''
+
   // Sync input value with selected option
   // Use string comparison to handle mixed number/string values
   useEffect(() => {
     if (value) {
-      const selectedOption = options.find(opt => String(opt.value) === String(value))
-      if (selectedOption) {
-        setInputValue(selectedOption.label)
+      const opt = options.find(o => String(o.value) === String(value))
+      if (opt) {
+        setInputValue(getDisplayValue ? getDisplayValue(opt) : opt.label)
       }
     } else {
       setInputValue('')
     }
-  }, [value, options])
+  }, [value, options, getDisplayValue])
 
   // Filter options based on input
-  const filteredOptions = inputValue.trim()
+  // If input matches the selected display value, show all options (user just focused)
+  const isShowingSelectedValue = inputValue === selectedDisplayValue && !!selectedOption
+  const filteredOptions = inputValue.trim() && !isShowingSelectedValue
     ? options.filter(opt =>
         opt.label.toLowerCase().includes(inputValue.toLowerCase())
       )
@@ -110,16 +129,16 @@ export function LiveSearch({
 
     if (match) {
       onChange(match.value, match.label)
-      setInputValue(match.label)
+      setInputValue(getDisplayValue ? getDisplayValue(match) : match.label)
     } else if (onCreateNew) {
       // Create new
       onCreateNew(trimmedInput)
     }
-  }, [inputValue, options, onChange, onCreateNew])
+  }, [inputValue, options, onChange, onCreateNew, getDisplayValue])
 
   const handleSelectOption = (option: LiveSearchOption) => {
     onChange(option.value, option.label)
-    setInputValue(option.label)
+    setInputValue(getDisplayValue ? getDisplayValue(option) : option.label)
     setIsOpen(false)
     inputRef.current?.blur()
   }
@@ -165,9 +184,9 @@ export function LiveSearch({
         setIsOpen(false)
         // Restore previous value
         if (value) {
-          const selectedOption = options.find(opt => String(opt.value) === String(value))
-          if (selectedOption) {
-            setInputValue(selectedOption.label)
+          const opt = options.find(o => String(o.value) === String(value))
+          if (opt) {
+            setInputValue(getDisplayValue ? getDisplayValue(opt) : opt.label)
           }
         } else {
           setInputValue('')
@@ -229,6 +248,7 @@ export function LiveSearch({
             disabled:bg-gray-100 disabled:dark:bg-gray-900 disabled:cursor-not-allowed
             ${error ? 'border-red-500 focus:ring-red-500' : ''}
             ${className}
+            ${inputClassName}
           `}
         />
 
@@ -238,13 +258,14 @@ export function LiveSearch({
             ref={listRef}
             id={`${inputId}-listbox`}
             role="listbox"
-            className="
+            className={`
               absolute z-50 mt-1 w-full
               bg-white dark:bg-gray-800
               border border-gray-300 dark:border-gray-600
               rounded-lg shadow-lg
               max-h-60 overflow-y-auto
-            "
+              ${dropdownClassName}
+            `}
           >
             {filteredOptions.map((option, index) => (
               <li
@@ -254,14 +275,14 @@ export function LiveSearch({
                 aria-selected={highlightedIndex === index}
                 onClick={() => handleSelectOption(option)}
                 className={`
-                  px-3 py-2 cursor-pointer
+                  px-3 py-2 cursor-pointer whitespace-nowrap
                   ${highlightedIndex === index
                     ? 'bg-primary-100 dark:bg-primary-900 text-primary-700 dark:text-primary-300'
                     : 'hover:bg-gray-100 dark:hover:bg-gray-700'
                   }
                 `}
               >
-                {option.label}
+                {renderOption ? renderOption(option) : option.label}
               </li>
             ))}
             {showCreateNew && (

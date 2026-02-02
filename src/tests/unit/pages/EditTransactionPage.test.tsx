@@ -38,6 +38,7 @@ vi.mock('../../../services/repositories', () => ({
     findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
+    findUsedInAccounts: vi.fn(),
   },
   walletRepository: {
     findActive: vi.fn(),
@@ -144,6 +145,9 @@ describe('EditTransactionPage', () => {
       } as any,
     ])
     mockCurrencyRepository.findAll.mockResolvedValue([
+      { id: 1, code: 'USD', symbol: '$', decimal_places: 2 } as any,
+    ])
+    mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([
       { id: 1, code: 'USD', symbol: '$', decimal_places: 2 } as any,
     ])
     mockTagRepository.findAll.mockResolvedValue([
