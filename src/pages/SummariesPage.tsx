@@ -3,8 +3,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
-import { PageTabs, Card, Spinner } from '../components/ui'
-import { transactionRepository, currencyRepository, accountRepository } from '../services/repositories'
+import { PageTabs, Card, Spinner, DropdownMenu, Modal, Input, Select, Button, useToast } from '../components/ui'
+import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrency } from '../utils/formatters'
 import type {
@@ -12,7 +12,11 @@ import type {
   MonthlyTagSummary,
   MonthlyCounterpartySummary,
   MonthlyCategoryBreakdown,
+  Budget,
+  BudgetInput,
+  Tag,
 } from '../types'
+import { SYSTEM_TAGS } from '../types'
 
 const TABS = [
   { id: 'income-expense', label: 'Income/Expense' },
@@ -22,6 +26,7 @@ const TABS = [
 
 export function SummariesPage() {
   const navigate = useNavigate()
+  const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tabParam = searchParams.get('tab') || 'income-expense'
@@ -42,6 +47,16 @@ export function SummariesPage() {
   const [tagsSummary, setTagsSummary] = useState<MonthlyTagSummary[]>([])
   const [counterpartiesSummary, setCounterpartiesSummary] = useState<MonthlyCounterpartySummary[]>([])
   const [categoryBreakdown, setCategoryBreakdown] = useState<MonthlyCategoryBreakdown[]>([])
+
+  // Budget state
+  const [budgets, setBudgets] = useState<Budget[]>([])
+  const [expenseTags, setExpenseTags] = useState<Tag[]>([])
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
+  const [selectedTagId, setSelectedTagId] = useState<number | ''>('')
+  const [budgetAmount, setBudgetAmount] = useState('')
+  const [budgetPeriod, setBudgetPeriod] = useState(getCurrentMonth()) // defaults to current month
+  const [submitting, setSubmitting] = useState(false)
 
   // Update URL when month or tab changes
   useEffect(() => {
@@ -66,12 +81,14 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allExpenseTags] = await Promise.all([
         transactionRepository.getMonthSummary(month),
         accountRepository.getTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
         transactionRepository.getMonthlyCounterpartiesSummary(month),
         transactionRepository.getMonthlyCategoryBreakdown(month),
+        budgetRepository.findByMonth(month),
+        tagRepository.findExpenseTags(),
       ])
 
       setSummary({
@@ -100,6 +117,9 @@ export function SummariesPage() {
         ...b,
         amount: b.amount / Math.pow(10, decimals),
       })))
+
+      setBudgets(monthBudgets)
+      setExpenseTags(allExpenseTags.filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
     } catch (error) {
       console.error('Failed to load summaries:', error)
     } finally {
@@ -129,8 +149,117 @@ export function SummariesPage() {
     navigate(uri)
   }, [month, navigate])
 
+  // Budget helpers
+  const getBudgetForTag = useCallback((tagId: number): Budget | undefined => {
+    return budgets.find(b => b.tag_id === tagId)
+  }, [budgets])
+
+  const generateMonthOptions = (): { value: string; label: string }[] => {
+    const options: { value: string; label: string }[] = []
+    const now = new Date()
+    // Generate current month + 12 months ahead
+    for (let i = 0; i <= 12; i++) {
+      const date = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+      const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+      options.push({ value, label })
+    }
+    return options
+  }
+
+  const parseAmount = (value: string): number => {
+    return Math.round(parseFloat(value) * Math.pow(10, decimalPlaces))
+  }
+
+  const openBudgetModal = (tagId: number, suggestedAmount: number, existingBudget?: Budget) => {
+    setSelectedTagId(tagId)
+    if (existingBudget) {
+      setEditingBudget(existingBudget)
+      setBudgetAmount((existingBudget.amount / Math.pow(10, decimalPlaces)).toString())
+      // Convert budget start timestamp to YYYY-MM format
+      const budgetDate = new Date(existingBudget.start * 1000)
+      setBudgetPeriod(`${budgetDate.getFullYear()}-${String(budgetDate.getMonth() + 1).padStart(2, '0')}`)
+    } else {
+      setEditingBudget(null)
+      setBudgetAmount(suggestedAmount.toFixed(decimalPlaces))
+      setBudgetPeriod(getCurrentMonth()) // Always default to current month for new budgets
+    }
+    setModalOpen(true)
+  }
+
+  const closeBudgetModal = () => {
+    setModalOpen(false)
+    setEditingBudget(null)
+    setSelectedTagId('')
+    setBudgetAmount('')
+    setBudgetPeriod(getCurrentMonth())
+  }
+
+  const handleBudgetSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (selectedTagId === '' || !budgetAmount.trim()) return
+
+    setSubmitting(true)
+    try {
+      const [year, mo] = budgetPeriod.split('-').map(Number)
+      const startDate = new Date(year, mo - 1, 1)
+      const endDate = new Date(year, mo, 1)
+
+      const data: BudgetInput = {
+        tag_id: selectedTagId as number,
+        amount: parseAmount(budgetAmount),
+        start: Math.floor(startDate.getTime() / 1000),
+        end: Math.floor(endDate.getTime() / 1000),
+      }
+
+      if (editingBudget) {
+        await budgetRepository.update(editingBudget.id, data)
+        showToast('Budget updated', 'success')
+      } else {
+        await budgetRepository.create(data)
+        showToast('Budget created', 'success')
+      }
+
+      closeBudgetModal()
+      loadData()
+    } catch (error) {
+      console.error('Failed to save budget:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to save', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleBudgetDelete = async (budget: Budget) => {
+    if (!confirm(`Delete budget for "${budget.tag}"? This cannot be undone.`)) return
+
+    try {
+      await budgetRepository.delete(budget.id)
+      showToast('Budget deleted', 'success')
+      loadData()
+    } catch (error) {
+      console.error('Failed to delete budget:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to delete', 'error')
+    }
+  }
+
   const incomeCategories = categoryBreakdown.filter(c => c.type === 'income')
-  const expenseCategories = categoryBreakdown.filter(c => c.type === 'expense')
+
+  // Merge expense categories with budgets - show categories with budgets even if no expenses
+  const expenseCategoriesFromBreakdown = categoryBreakdown.filter(c => c.type === 'expense')
+  const expenseTagIds = new Set(expenseCategoriesFromBreakdown.map(c => c.tag_id))
+
+  // Add budget categories that have no expenses this month
+  const budgetOnlyCategories: MonthlyCategoryBreakdown[] = budgets
+    .filter(b => !expenseTagIds.has(b.tag_id))
+    .map(b => ({
+      tag_id: b.tag_id,
+      tag: b.tag || '',
+      amount: 0,
+      type: 'expense' as const,
+    }))
+
+  const expenseCategories = [...expenseCategoriesFromBreakdown, ...budgetOnlyCategories]
 
   return (
     <div className="flex flex-col h-full">
@@ -144,7 +273,7 @@ export function SummariesPage() {
           <Spinner />
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-4 space-y-3">
+        <div className="flex-1 overflow-visible p-4 space-y-3">
           {activeTab === 'tags' && (
             <>
               {tagsSummary.length === 0 ? (
@@ -225,24 +354,31 @@ export function SummariesPage() {
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
                       onClick={() => handleCategoryClick('expense')}
                     >
-                      Expenses ({formatCurrency(summary.expenses, currencySymbol, decimalPlaces)})
+                      Expenses ({formatCurrency(summary.expenses, currencySymbol, decimalPlaces)}{budgets.length > 0 ? '/' + formatCurrency(budgets.reduce((acc, b) => b.amount + acc, 0.0) / Math.pow(10, decimalPlaces), currencySymbol, decimalPlaces) : ''})
                     </h3>
                     {expenseCategories.length === 0 ? (
                       <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No expenses this month</p>
                     ) : (
                       <div className="space-y-2">
-                        {expenseCategories.map((cat) => (
-                          <CategoryCard
-                            key={`expense-${cat.tag_id}`}
-                            title={cat.tag}
-                            amount={cat.amount}
-                            total={summary.expenses}
-                            currencySymbol={currencySymbol}
-                            decimalPlaces={decimalPlaces}
-                            type="expense"
-                            onClick={() => handleCategoryClick('expense', cat.tag_id)}
-                          />
-                        ))}
+                        {expenseCategories.map((cat) => {
+                          const budget = getBudgetForTag(cat.tag_id)
+                          return (
+                            <CategoryCard
+                              key={`expense-${cat.tag_id}`}
+                              title={cat.tag}
+                              amount={cat.amount}
+                              total={summary.expenses}
+                              currencySymbol={currencySymbol}
+                              decimalPlaces={decimalPlaces}
+                              type="expense"
+                              onClick={() => handleCategoryClick('expense', cat.tag_id)}
+                              budget={budget}
+                              onSetBudget={() => openBudgetModal(cat.tag_id, cat.amount)}
+                              onEditBudget={budget ? () => openBudgetModal(cat.tag_id, cat.amount, budget) : undefined}
+                              onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
+                            />
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -252,6 +388,52 @@ export function SummariesPage() {
           )}
         </div>
       )}
+
+      {/* Budget Modal */}
+      <Modal isOpen={modalOpen} onClose={closeBudgetModal} title={editingBudget ? 'Edit Budget' : 'Set Budget'}>
+        <form onSubmit={handleBudgetSubmit} className="space-y-4">
+          <Select
+            label="Category"
+            value={selectedTagId.toString()}
+            onChange={(e) => setSelectedTagId(e.target.value ? parseInt(e.target.value) : '')}
+            required
+            disabled={!!editingBudget || selectedTagId !== ''}
+            placeholder="Select a category"
+            options={expenseTags.map((tag) => ({
+              value: tag.id,
+              label: tag.name,
+            }))}
+          />
+
+          <Input
+            label={`Budget Amount (${currencySymbol})`}
+            type="number"
+            step="0.01"
+            min="0"
+            value={budgetAmount}
+            onChange={(e) => setBudgetAmount(e.target.value)}
+            placeholder="500.00"
+            required
+          />
+
+          <Select
+            label="Budget Period"
+            value={budgetPeriod}
+            onChange={(e) => setBudgetPeriod(e.target.value)}
+            required
+            options={generateMonthOptions()}
+          />
+
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={closeBudgetModal} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting} className="flex-1">
+              {submitting ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
@@ -315,27 +497,80 @@ interface CategoryCardProps {
   decimalPlaces: number
   type: 'income' | 'expense'
   onClick: () => void
+  budget?: Budget
+  onSetBudget?: () => void
+  onEditBudget?: () => void
+  onDeleteBudget?: () => void
 }
 
-function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type, onClick }: CategoryCardProps) {
-  const percentage = total > 0 ? (amount / total) * 100 : 0
-  const barColor = type === 'income' ? 'bg-green-500' : 'bg-red-500'
+function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type, onClick, budget, onSetBudget, onEditBudget, onDeleteBudget }: CategoryCardProps) {
   const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
+
+  // Calculate progress based on whether we have a budget
+  const hasBudget = budget && budget.amount > 0
+  const budgetAmountDecimal = hasBudget ? budget.amount / Math.pow(10, decimalPlaces) : 0
+  const budgetActualDecimal = hasBudget ? (budget.actual ?? 0) / Math.pow(10, decimalPlaces) : 0
+
+  // Progress calculation
+  let progress: number
+  let barColor: string
+
+  if (hasBudget) {
+    // budgetAmountDecimal is guaranteed > 0 since hasBudget requires budget.amount > 0
+    progress = Math.min(100, (budgetActualDecimal / budgetAmountDecimal) * 100)
+    // Budget colors: green < 80%, yellow 80-100%, red > 100%
+    if (progress >= 100) {
+      barColor = 'bg-red-500'
+    } else if (progress >= 80) {
+      barColor = 'bg-yellow-500'
+    } else {
+      barColor = 'bg-green-500'
+    }
+  } else {
+    // Default percentage of total behavior
+    progress = total > 0 ? (amount / total) * 100 : 0
+    barColor = type === 'income' ? 'bg-green-500' : 'bg-red-500'
+  }
+
+  // Build dropdown menu items for expense cards
+  const dropdownItems = []
+  if (type === 'expense') {
+    if (budget) {
+      if (onEditBudget) {
+        dropdownItems.push({ label: 'Edit budget', onClick: onEditBudget })
+      }
+      if (onDeleteBudget) {
+        dropdownItems.push({ label: 'Delete budget', onClick: onDeleteBudget, variant: 'danger' as const })
+      }
+    } else if (onSetBudget) {
+      dropdownItems.push({ label: 'Set budget', onClick: onSetBudget })
+    }
+  }
 
   return (
     <Card className={`p-3 ${clickableStyles}`} onClick={onClick}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</span>
-        <span className={`text-sm font-semibold ${type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-          {formatCurrency(amount, currencySymbol, decimalPlaces)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-semibold ${type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+            {hasBudget
+              ? `${formatCurrency(budgetActualDecimal, currencySymbol, decimalPlaces)}/${formatCurrency(budgetAmountDecimal, currencySymbol, decimalPlaces)}`
+              : formatCurrency(amount, currencySymbol, decimalPlaces)
+            }
+          </span>
+          {dropdownItems.length > 0 && (
+            <div onClick={(e) => e.stopPropagation()}>
+              <DropdownMenu items={dropdownItems} />
+            </div>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-          <div className={`h-full ${barColor} rounded-full`} style={{ width: `${percentage}%` }} />
+          <div className={`h-full ${barColor} rounded-full transition-all duration-300`} style={{ width: `${progress}%` }} />
         </div>
         <span className="text-xs text-gray-500 dark:text-gray-400 w-10 text-right">
-          {percentage.toFixed(0)}%
+          {progress.toFixed(0)}%
         </span>
       </div>
     </Card>

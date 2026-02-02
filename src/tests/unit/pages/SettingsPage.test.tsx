@@ -156,11 +156,12 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Download DB')).toBeInTheDocument()
       expect(screen.getByText('Download Raw Sqlite DB')).toBeInTheDocument()
     })
-    it('renders Budgets link', () => {
+
+    it('does not render Budgets link (moved to Summaries page)', () => {
       renderPage()
 
-      expect(screen.getByText('Budgets')).toBeInTheDocument()
-      expect(screen.getByText('Manage your budgets')).toBeInTheDocument()
+      expect(screen.queryByText('Budgets')).not.toBeInTheDocument()
+      expect(screen.queryByText('Manage your budgets')).not.toBeInTheDocument()
     })
 
 
@@ -205,12 +206,6 @@ describe('SettingsPage', () => {
       const downloadLink = screen.getByRole('link', { name: /Download DB/i })
       expect(downloadLink).toHaveAttribute('href', '/settings/download')
     })
-    it('links to budgets page', () => {
-      renderPage()
-
-      const downloadLink = screen.getByRole('link', { name: /Budgets/i })
-      expect(downloadLink).toHaveAttribute('href', '/settings/budgets')
-    })
   })
 
   describe('Icons', () => {
@@ -248,11 +243,6 @@ describe('SettingsPage', () => {
       renderPage()
 
       expect(screen.getByText('🗄️')).toBeInTheDocument()
-    })
-    it('renders budgets icon', () => {
-      renderPage()
-
-      expect(screen.getByText('💰')).toBeInTheDocument()
     })
   })
 
