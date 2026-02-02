@@ -22,6 +22,7 @@ vi.mock('../../../../services/repositories', () => ({
     findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
+    findUsedInAccounts: vi.fn(),
   },
   transactionRepository: {
     createIncome: vi.fn(),
@@ -172,6 +173,7 @@ describe('TransactionForm', () => {
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
     mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
     mockTransactionRepository.createExpense.mockResolvedValue({} as any)
     mockTransactionRepository.createIncome.mockResolvedValue({} as any)
     mockTransactionRepository.createTransfer.mockResolvedValue({} as any)
@@ -1109,12 +1111,9 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Account')).toBeInTheDocument()
       })
 
-      // Currency selector should be visible for expense mode
-      const currencySelectors = screen.getAllByRole('combobox')
-      const currencyOptions = currencySelectors.find(select =>
-        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'USD')
-      )
-      expect(currencyOptions).toBeDefined()
+      // Currency selector should be visible for expense mode (now a LiveSearch)
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      expect(currencyInput).toBeInTheDocument()
     })
 
     it('shows payment amount field when currencies differ', async () => {
@@ -1124,14 +1123,19 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Account')).toBeInTheDocument()
       })
 
-      // Select EUR as payment currency (different from account's USD)
-      const currencySelectors = screen.getAllByRole('combobox')
-      const currencySelect = currencySelectors.find(select =>
-        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
-      )
-      if (currencySelect) {
-        fireEvent.change(currencySelect, { target: { value: '2' } }) // EUR
-      }
+      // Select EUR as payment currency using LiveSearch
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear and type EUR to filter
+      fireEvent.change(currencyInput, { target: { value: 'EUR' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('listbox')).toBeInTheDocument()
+      })
+
+      // Click on EUR option - use getAllByRole since there might be multiple listboxes
+      const eurOptions = screen.getAllByRole('option', { name: /EUR/ })
+      fireEvent.click(eurOptions[0])
 
       await waitFor(() => {
         expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
@@ -1145,14 +1149,19 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Account')).toBeInTheDocument()
       })
 
-      // Select EUR as payment currency
-      const currencySelectors = screen.getAllByRole('combobox')
-      const currencySelect = currencySelectors.find(select =>
-        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
-      )
-      if (currencySelect) {
-        fireEvent.change(currencySelect, { target: { value: '2' } }) // EUR
-      }
+      // Select EUR as payment currency using LiveSearch
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear and type EUR to filter
+      fireEvent.change(currencyInput, { target: { value: 'EUR' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('listbox')).toBeInTheDocument()
+      })
+
+      // Click on EUR option - use getAllByRole since there might be multiple listboxes
+      const eurOptions = screen.getAllByRole('option', { name: /EUR/ })
+      fireEvent.click(eurOptions[0])
 
       await waitFor(() => {
         expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
@@ -1195,14 +1204,19 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Account')).toBeInTheDocument()
       })
 
-      // Select EUR as payment currency
-      const currencySelectors = screen.getAllByRole('combobox')
-      const currencySelect = currencySelectors.find(select =>
-        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
-      )
-      if (currencySelect) {
-        fireEvent.change(currencySelect, { target: { value: '2' } }) // EUR
-      }
+      // Select EUR as payment currency using LiveSearch
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear and type EUR to filter
+      fireEvent.change(currencyInput, { target: { value: 'EUR' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('listbox')).toBeInTheDocument()
+      })
+
+      // Click on EUR option - use getAllByRole since there might be multiple listboxes
+      const eurOptions = screen.getAllByRole('option', { name: /EUR/ })
+      fireEvent.click(eurOptions[0])
 
       await waitFor(() => {
         expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
@@ -1267,14 +1281,19 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Account')).toBeInTheDocument()
       })
 
-      // Select EUR as payment currency
-      const currencySelectors = screen.getAllByRole('combobox')
-      const currencySelect = currencySelectors.find(select =>
-        Array.from(select.querySelectorAll('option')).some(opt => opt.textContent === 'EUR')
-      )
-      if (currencySelect) {
-        fireEvent.change(currencySelect, { target: { value: '2' } })
-      }
+      // Select EUR as payment currency using LiveSearch
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear and type EUR to filter
+      fireEvent.change(currencyInput, { target: { value: 'EUR' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('listbox')).toBeInTheDocument()
+      })
+
+      // Click on EUR option - use getAllByRole since there might be multiple listboxes
+      const eurOptions = screen.getAllByRole('option', { name: /EUR/ })
+      fireEvent.click(eurOptions[0])
 
       await waitFor(() => {
         expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
@@ -1289,6 +1308,160 @@ describe('TransactionForm', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Rate:/)).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Currency LiveSearch sorting', () => {
+    it('shows currency LiveSearch in expense mode', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Should have a LiveSearch for currency (combobox) in expense mode
+      const comboboxes = screen.getAllByRole('combobox')
+      expect(comboboxes.length).toBeGreaterThanOrEqual(2) // category and currency
+    })
+
+    it('shows default payment currency first in dropdown', async () => {
+      // Set EUR as default payment currency
+      mockSettingsRepository.get.mockImplementation((key) => {
+        if (key === 'default_payment_currency_id') return Promise.resolve(2) // EUR
+        return Promise.resolve(null)
+      })
+
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Find the currency LiveSearch by placeholder
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear the input to show all options
+      fireEvent.change(currencyInput, { target: { value: '' } })
+
+      await waitFor(() => {
+        const options = screen.getAllByRole('option')
+        // First option should be EUR (default payment currency)
+        expect(options[0]).toHaveTextContent('EUR')
+      })
+    })
+
+    it('shows account currency first when no default payment currency', async () => {
+      // No default payment currency set
+      mockSettingsRepository.get.mockResolvedValue(null)
+
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Find the currency LiveSearch by placeholder
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear the input to show all options
+      fireEvent.change(currencyInput, { target: { value: '' } })
+
+      await waitFor(() => {
+        const options = screen.getAllByRole('option')
+        // First option should be USD (default account's currency)
+        expect(options[0]).toHaveTextContent('USD')
+      })
+    })
+
+    it('shows crypto currencies with Badge', async () => {
+      // Add a crypto currency to mock data
+      const currenciesWithCrypto = [
+        ...mockCurrencies,
+        {
+          id: 4,
+          code: 'ETH',
+          name: 'Ethereum',
+          symbol: 'E',
+          decimal_places: 8,
+          is_crypto: true,
+        },
+      ]
+      mockCurrencyRepository.findAll.mockResolvedValue(currenciesWithCrypto)
+
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Find the currency LiveSearch by placeholder
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear the input to show all options
+      fireEvent.change(currencyInput, { target: { value: '' } })
+
+      await waitFor(() => {
+        // BTC and ETH should have crypto badge
+        expect(screen.getByText('crypto')).toBeInTheDocument()
+      })
+    })
+
+    it('does not duplicate currencies across priority groups', async () => {
+      // USD appears in: default payment currency, account currency, active currencies, fiat
+      mockSettingsRepository.get.mockImplementation((key) => {
+        if (key === 'default_payment_currency_id') return Promise.resolve(1) // USD
+        return Promise.resolve(null)
+      })
+
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Find the currency LiveSearch by placeholder
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear the input to show all options
+      fireEvent.change(currencyInput, { target: { value: '' } })
+
+      await waitFor(() => {
+        // Get only the listbox for currencies (the one visible after currency input focus)
+        const listboxes = screen.getAllByRole('listbox')
+        // Get the last listbox (currency) since it was opened last
+        const currencyListbox = listboxes[listboxes.length - 1]
+        const options = within(currencyListbox).getAllByRole('option')
+        // Count how many times USD appears
+        const usdOptions = options.filter(opt => opt.textContent?.includes('USD'))
+        expect(usdOptions).toHaveLength(1)
+      })
+    })
+
+    it('changes currency when option is selected', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        expect(screen.getByText('Account')).toBeInTheDocument()
+      })
+
+      // Find the currency LiveSearch by placeholder
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      fireEvent.focus(currencyInput)
+      // Clear and type EUR to filter
+      fireEvent.change(currencyInput, { target: { value: 'EUR' } })
+
+      await waitFor(() => {
+        expect(screen.getByRole('listbox')).toBeInTheDocument()
+      })
+
+      // Select EUR - use getAllByRole since there might be multiple listboxes
+      const eurOptions = screen.getAllByRole('option', { name: /EUR/ })
+      fireEvent.click(eurOptions[0])
+
+      // The payment amount field should appear since EUR differs from USD account
+      await waitFor(() => {
+        expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
       })
     })
   })

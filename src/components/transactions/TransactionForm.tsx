@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository, settingsRepository } from '../../services/repositories'
-import { Button, Input, Select, LiveSearch, DateTimeUI, Modal } from '../ui'
+import { Button, Input, Select, LiveSearch, DateTimeUI, Modal, Badge } from '../ui'
+import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
@@ -19,6 +20,11 @@ interface AccountOption extends Account {
   currencyCode: string
   currencySymbol: string
   decimalPlaces: number
+}
+
+// Extended currency option for LiveSearch with crypto flag
+interface CurrencyOption extends LiveSearchOption {
+  isCrypto?: boolean
 }
 
 export function TransactionForm({ initialData, onSubmit, onCancel }: TransactionFormProps) {
@@ -42,6 +48,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [activeCurrencies, setActiveCurrencies] = useState<Currency[]>([])
   const [paymentCurrencyId, setPaymentCurrencyId] = useState<number | null>(null)
   const [paymentAmount, setPaymentAmount] = useState('')
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
@@ -174,17 +181,19 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
 
   const loadData = async () => {
     try {
-      const [wallets, incomeTags, expenseTags, cps, currencyList, defaultPaymentCurrencyId] = await Promise.all([
+      const [wallets, incomeTags, expenseTags, cps, currencyList, defaultPaymentCurrencyId, usedCurrencies] = await Promise.all([
         walletRepository.findActive(),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
         counterpartyRepository.findAll(),
         currencyRepository.findAll(),
         settingsRepository.get('default_payment_currency_id'),
+        currencyRepository.findUsedInAccounts(),
       ])
 
       setDateTime(Date.now())
       setCurrencies(currencyList)
+      setActiveCurrencies(usedCurrencies)
 
       // Build account options with wallet/currency info
       const accountOptions: AccountOption[] = []
@@ -237,6 +246,44 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   const paymentCurrency = currencies.find(c => c.id === paymentCurrencyId)
   const paymentCurrencyDecimalPlaces = paymentCurrency?.decimal_places ?? 2
   const paymentCurrencyDiffers = mode === 'expense' && paymentCurrencyId && paymentCurrencyId !== selectedAccount?.currency_id
+
+  // Sorted currency options for LiveSearch with priority order
+  const sortedCurrencyOptions = useMemo(() => {
+    const usedIds = new Set<number>()
+    const result: CurrencyOption[] = []
+
+    const addCurrency = (currency: Currency) => {
+      if (usedIds.has(currency.id)) return
+      usedIds.add(currency.id)
+      result.push({
+        value: currency.id,
+        label: `${currency.code} - ${currency.name}`,
+        isCrypto: currency.is_crypto,
+      })
+    }
+
+    // Priority 1: Default payment currency
+    const defaultPaymentCurrency = currencies.find(c => c.id === paymentCurrencyId)
+    if (defaultPaymentCurrency) addCurrency(defaultPaymentCurrency)
+
+    // Priority 2: Selected account's currency
+    const accountCurrency = currencies.find(c => c.id === selectedAccount?.currency_id)
+    if (accountCurrency) addCurrency(accountCurrency)
+
+    // Priority 3: Active currencies (currencies with accounts)
+    activeCurrencies.forEach(addCurrency)
+
+    // Priority 4: Other fiat currencies
+    currencies.filter(c => c.is_fiat).forEach(addCurrency)
+
+    // Priority 5: Crypto currencies
+    currencies.filter(c => c.is_crypto).forEach(addCurrency)
+
+    // Priority 6: Any remaining currencies
+    currencies.forEach(addCurrency)
+
+    return result
+  }, [currencies, activeCurrencies, selectedAccount?.currency_id, paymentCurrencyId])
 
   // Calculate step and placeholder based on decimal places
   const getStep = (decimals: number) => (1 / Math.pow(10, decimals)).toFixed(decimals)
@@ -554,16 +601,25 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
             className={`flex-1 min-w-0 px-3 py-3 text-xl font-semibold ${mode === 'expense' ? 'rounded-l-lg' : 'rounded-lg'} border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
           />
           {mode === 'expense' && (
-            <select
-              aria-label="payment-currency"
-              value={paymentCurrencyId || selectedAccount?.currency_id || ''}
-              onChange={(e) => setPaymentCurrencyId(e.target.value ? parseInt(e.target.value) : null)}
-              className="flex-none max-w-20 px-2 py-2 rounded-r-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              {currencies.map(c => (
-                <option key={c.id} value={c.id}>{c.code}</option>
-              ))}
-            </select>
+            <div className="flex-none w-24">
+              <LiveSearch
+                options={sortedCurrencyOptions}
+                value={paymentCurrencyId || selectedAccount?.currency_id || ''}
+                onChange={(value) => setPaymentCurrencyId(value ? Number(value) : null)}
+                placeholder="CUR"
+                getDisplayValue={(opt) => opt.label.split(' - ')[0]}
+                inputClassName="py-3 text-xl font-semibold rounded-l-none rounded-r-lg text-center"
+                dropdownClassName="min-w-max right-0"
+                renderOption={(opt) => (
+                  <span className="flex items-center gap-2">
+                    {opt.label}
+                    {(opt as CurrencyOption).isCrypto ? (
+                      <Badge variant="secondary">crypto</Badge>
+                    ) : ''}
+                  </span>
+                )}
+              />
+            </div>
           )}
         </div>
         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}

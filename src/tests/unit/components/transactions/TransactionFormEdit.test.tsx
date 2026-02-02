@@ -23,6 +23,7 @@ vi.mock('../../../../services/repositories', () => ({
     findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
+    findUsedInAccounts: vi.fn(),
   },
   transactionRepository: {
     createIncome: vi.fn(),
@@ -142,6 +143,7 @@ describe('TransactionForm Editing mode', () => {
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
     mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
     mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency
@@ -464,8 +466,9 @@ describe('TransactionForm Editing mode', () => {
     await waitFor(() => {
       // Amount in payment currency (USD)
       expect(screen.getByRole('spinbutton', { name: /^Amount \(\$\)/i })).toHaveValue(21)
-      // Payment currency should be USD (from virtual account)
-      expect(screen.getByRole('combobox', { name: 'payment-currency' })).toHaveValue('1')
+      // Payment currency should show USD code - LiveSearch shows only code in the input
+      const currencyInput = screen.getByPlaceholderText('CUR')
+      expect(currencyInput).toHaveValue('USD')
       // Source account should be Bank (where money came from)
       expect(screen.getByRole('combobox', { name: /^Account$/i })).toHaveValue('2')
     })
