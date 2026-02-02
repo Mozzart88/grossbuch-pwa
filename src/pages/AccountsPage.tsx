@@ -202,7 +202,8 @@ export function AccountsPage() {
           </div>
         ) : (
           wallets.map((wallet) => (
-            <Card key={wallet.id} className="overflow-hidden">
+            <Card key={wallet.id}
+              className="">
               {/* Wallet header */}
               <div
                 className="p-4 flex items-center justify-between"
@@ -236,7 +237,7 @@ export function AccountsPage() {
 
               {/* Accounts list */}
               {wallet.accounts && wallet.accounts.length > 0 && (
-                <div className="border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="rounded-b-xl overflow-hidden border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
                   {wallet.accounts.map((account) => {
                     const currency = getCurrency(account.currency_id)
                     return (
