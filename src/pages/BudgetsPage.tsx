@@ -216,7 +216,7 @@ export function BudgetsPage() {
             </Button>
           </Card>
         ) : (
-          <div className="mb-4">
+          <div className="mb-4 space-y-4">
             <div
               className="sticky top-0 px-4 py-2 bg-gray-100 dark:bg-gray-900 flex items-center justify-between cursor-pointer"
             >
