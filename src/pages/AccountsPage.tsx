@@ -180,6 +180,17 @@ export function AccountsPage() {
     }
   }
 
+  const handleSetAccountDefault = async (account: Account) => {
+    try {
+      await accountRepository.setDefault(account.id)
+      showToast('Default account updated', 'success')
+      loadData()
+    } catch (error) {
+      console.error('Failed to set default account:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to set default', 'error')
+    }
+  }
+
   const formatBalance = (balance: number, currency: Currency | undefined) => {
     if (!currency) return balance.toString()
     const decimals = currency.decimal_places
@@ -248,26 +259,27 @@ export function AccountsPage() {
 
               {/* Accounts list */}
               {wallet.accounts && wallet.accounts.length > 0 && (
-                <div className="rounded-b-xl overflow-hidden border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
+                <div className="rounded-b-xl border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
                   {wallet.accounts.map((account) => {
                     const currency = getCurrency(account.currency_id)
                     return (
-                      <div key={account.id} className="px-4 py-3 flex items-center justify-between bg-gray-50 dark:bg-gray-800/50">
+                      <div key={account.id} className="px-4 py-3 flex last:rounded-b-xl items-center justify-between bg-gray-50 dark:bg-gray-800/50">
                         <div>
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
+                            {account.is_default ? <Badge>Default</Badge> : ''}
                           </p>
                         </div>
-                        <div className="text-right">
+                        <div className="flex items-center gap-2">
                           <p className={`text-sm font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {formatBalance(account.balance, currency)}
                           </p>
-                          <button
-                            onClick={() => handleDeleteAccount(account, wallet.name)}
-                            className="text-xs text-red-600 dark:text-red-400 mt-1"
-                          >
-                            Remove
-                          </button>
+                          <DropdownMenu
+                            items={[
+                              ...(!account.is_default ? [{ label: 'Set Default', onClick: () => handleSetAccountDefault(account) }] : []),
+                              { label: 'Remove', onClick: () => handleDeleteAccount(account, wallet.name), variant: 'danger' as const },
+                            ] as DropdownMenuItem[]}
+                          />
                         </div>
                       </div>
                     )
