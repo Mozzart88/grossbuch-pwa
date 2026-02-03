@@ -25,11 +25,13 @@ import { accountRepository } from './accountRepository'
 
 export const transactionRepository = {
   // Get transactions for a month using the view
+  // Excludes INITIAL transactions (tag_id=3) as they should not appear in TransactionsList
   async findByMonth(yearMonth: string): Promise<TransactionLog[]> {
     // yearMonth format: "YYYY-MM"
     return querySQL<TransactionLog>(`
       SELECT * FROM trx_log
       WHERE date_time LIKE ?
+        AND tags NOT LIKE '%initial%'
       ORDER BY date_time DESC
     `, [`${yearMonth}%`])
   },

@@ -202,30 +202,58 @@ describe('accountRepository', () => {
 
   describe('delete', () => {
     it('deletes account when no transactions exist', async () => {
-      mockQueryOne.mockResolvedValue({ count: 0 })
+      mockQueryOne.mockResolvedValue({ count: 0 }) // No non-INITIAL transactions
+      mockQuerySQL.mockResolvedValue([]) // No INITIAL transactions to delete
 
       await accountRepository.delete(1)
 
       expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM account WHERE id = ?', [1])
     })
 
-    it('throws error when transactions exist', async () => {
-      mockQueryOne.mockResolvedValue({ count: 5 })
+    it('throws error when non-INITIAL transactions exist', async () => {
+      mockQueryOne.mockResolvedValue({ count: 5 }) // 5 non-INITIAL transactions
 
       await expect(accountRepository.delete(1)).rejects.toThrow(
         'Cannot delete: 5 transactions linked to this account'
       )
     })
 
-    it('checks trx_base table for transactions', async () => {
+    it('checks trx_base table for non-INITIAL transactions', async () => {
       mockQueryOne.mockResolvedValue({ count: 0 })
+      mockQuerySQL.mockResolvedValue([])
 
       await accountRepository.delete(1)
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT COUNT(*) as count FROM trx_base WHERE account_id = ?',
-        [1]
+        'SELECT COUNT(*) as count FROM trx_base WHERE account_id = ? AND tag_id != ?',
+        [1, SYSTEM_TAGS.INITIAL]
       )
+    })
+
+    it('deletes account with only INITIAL transactions', async () => {
+      const mockTrxId = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+      mockQueryOne.mockResolvedValue({ count: 0 }) // No non-INITIAL transactions
+      mockQuerySQL.mockResolvedValue([{ trx_id: mockTrxId }]) // One INITIAL transaction
+
+      await accountRepository.delete(1)
+
+      // Should delete the INITIAL transaction first
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM trx WHERE id = ?', [mockTrxId])
+      // Then delete the account
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM account WHERE id = ?', [1])
+    })
+
+    it('deletes multiple INITIAL transactions before deleting account', async () => {
+      const mockTrxId1 = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
+      const mockTrxId2 = new Uint8Array([2, 2, 3, 4, 5, 6, 7, 8])
+      mockQueryOne.mockResolvedValue({ count: 0 })
+      mockQuerySQL.mockResolvedValue([{ trx_id: mockTrxId1 }, { trx_id: mockTrxId2 }])
+
+      await accountRepository.delete(1)
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM trx WHERE id = ?', [mockTrxId1])
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM trx WHERE id = ?', [mockTrxId2])
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM account WHERE id = ?', [1])
     })
   })
 

@@ -218,6 +218,64 @@ describe('AccountsPage', () => {
     })
   })
 
+  it('displays wallet without color', async () => {
+    mockWalletRepository.findAll.mockResolvedValue([
+      {
+        ...mockWallets[0],
+        color: null, // No color
+      },
+    ])
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+    })
+  })
+
+  it('displays wallet with no accounts array', async () => {
+    mockWalletRepository.findAll.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Empty Wallet',
+        color: '#3B82F6',
+        is_default: false,
+        accounts: undefined, // No accounts array
+      },
+    ])
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Empty Wallet')).toBeInTheDocument()
+      expect(screen.getByText('0 account(s)')).toBeInTheDocument()
+    })
+  })
+
+  it('displays balance as raw number when currency not found', async () => {
+    mockWalletRepository.findAll.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Unknown Currency Wallet',
+        color: '#3B82F6',
+        is_default: false,
+        accounts: [{
+          ...mockAccount,
+          currency_id: 999, // Non-existent currency
+          balance: 12345,
+        }],
+      },
+    ])
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Unknown Currency Wallet')).toBeInTheDocument()
+      // Balance displayed as raw number when currency not found
+      expect(screen.getByText('12345')).toBeInTheDocument()
+    })
+  })
+
   it('displays account currency', async () => {
     renderWithRouter()
 
@@ -534,6 +592,127 @@ describe('AccountsPage', () => {
       })
 
       consoleSpy.mockRestore()
+    })
+
+    it('displays Initial Balance input field in modal', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      expect(screen.getByLabelText('Initial Balance')).toBeInTheDocument()
+    })
+
+    it('passes initial balance to repository when provided', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      // Enter initial balance (100.50 for currency with 2 decimal places = 10050)
+      const balanceInput = screen.getByLabelText('Initial Balance')
+      fireEvent.change(balanceInput, { target: { value: '100.50' } })
+
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(addButton)
+
+      await waitFor(() => {
+        expect(mockWalletRepository.addAccount).toHaveBeenCalledWith(1, 2, 10050)
+      })
+    })
+
+    it('passes undefined when initial balance is empty', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      // Don't enter any initial balance
+
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(addButton)
+
+      await waitFor(() => {
+        expect(mockWalletRepository.addAccount).toHaveBeenCalledWith(1, 2, undefined)
+      })
+    })
+
+    it('input field has min=0 attribute for browser validation', async () => {
+      // Browser enforces min=0 constraint on type="number" inputs,
+      // preventing form submission with negative values via HTML5 validation.
+      // This test verifies the correct attributes are set.
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      const balanceInput = screen.getByLabelText('Initial Balance') as HTMLInputElement
+      expect(balanceInput.type).toBe('number')
+      expect(balanceInput.min).toBe('0')
+    })
+
+    it('resets initial balance when modal is closed', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      // Open modal and enter a balance
+      await openDropdownAndClick(0, '+ Currency')
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+      const balanceInput = screen.getByLabelText('Initial Balance') as HTMLInputElement
+      fireEvent.change(balanceInput, { target: { value: '100' } })
+
+      // Close modal
+      const cancelButton = screen.getByRole('button', { name: 'Cancel' })
+      fireEvent.click(cancelButton)
+
+      await waitFor(() => {
+        expect(screen.queryByText('Add Currency to Wallet')).not.toBeInTheDocument()
+      })
+
+      // Re-open modal
+      await openDropdownAndClick(0, '+ Currency')
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      // Balance should be reset
+      const newBalanceInput = screen.getByLabelText('Initial Balance') as HTMLInputElement
+      expect(newBalanceInput.value).toBe('')
     })
   })
 
