@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { TransactionForm } from '../components/transactions'
@@ -46,6 +46,10 @@ export function EditTransactionPage() {
   const handleSubmit = () => {
     navigate(-1)
   }
+
+  const handleCancel = useCallback(() => {
+    navigate(-1)
+  }, [navigate])
 
   const handleDelete = async () => {
     if (!id || !confirm('Are you sure you want to delete this transaction?')) return
@@ -99,11 +103,12 @@ export function EditTransactionPage() {
           </Button>
         }
       />
-      <div className="p-4">
+      <div className="p-4 pb-24">
         <TransactionForm
           initialData={transaction}
           onSubmit={handleSubmit}
-          onCancel={() => navigate(-1)}
+          onCancel={handleCancel}
+          useActionBar
         />
       </div>
     </div>

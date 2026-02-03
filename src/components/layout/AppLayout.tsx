@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { TabBar } from '../ui'
+import { ActionBar } from './ActionBar'
 
 interface AppLayoutProps {
   children: ReactNode
@@ -12,6 +13,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {children}
       </main>
       <TabBar />
+      <ActionBar />
     </div>
   )
 }

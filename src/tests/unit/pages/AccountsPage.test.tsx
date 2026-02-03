@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { AccountsPage } from '../../../pages/AccountsPage'
+import { LayoutProvider } from '../../../store/LayoutContext'
+import { TestPlusButton } from '../../helpers/TestPlusButton'
 import type { Wallet, Currency, Account } from '../../../types'
 
 // Mock dependencies
@@ -107,9 +109,12 @@ describe('AccountsPage', () => {
 
   const renderWithRouter = () => {
     return render(
-      <BrowserRouter>
-        <AccountsPage />
-      </BrowserRouter>
+      <MemoryRouter>
+        <LayoutProvider>
+          <AccountsPage />
+          <TestPlusButton />
+        </LayoutProvider>
+      </MemoryRouter>
     )
   }
 
@@ -154,11 +159,11 @@ describe('AccountsPage', () => {
     })
   })
 
-  it('displays Add Wallet button', async () => {
+  it('displays Add button for wallets', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
     })
   })
 
@@ -172,14 +177,14 @@ describe('AccountsPage', () => {
     })
   })
 
-  it('opens wallet modal when Add Wallet button is clicked', async () => {
+  it('opens wallet modal when Add button is clicked', async () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByText('Add Wallet'))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
     await waitFor(() => {
       expect(screen.getByText('Add Wallet', { selector: 'h2' })).toBeInTheDocument()
@@ -281,10 +286,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add Wallet'))
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
       await waitFor(() => {
         expect(screen.getByLabelText('Name')).toBeInTheDocument()
@@ -314,10 +319,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add Wallet'))
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
       await waitFor(() => {
         expect(screen.getByLabelText('Name')).toBeInTheDocument()
@@ -340,10 +345,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add Wallet'))
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
@@ -488,7 +493,9 @@ describe('AccountsPage', () => {
       })
 
       // Submit the form (EUR should be pre-selected as it's not in the wallet)
-      const addButton = screen.getByRole('button', { name: 'Add' })
+      // Use getAllByRole and find the one inside the modal (not the TestPlusButton)
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
       fireEvent.click(addButton)
 
       await waitFor(() => {
@@ -527,10 +534,10 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByText('Add Wallet'))
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()

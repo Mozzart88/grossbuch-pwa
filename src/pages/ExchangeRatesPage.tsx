@@ -4,6 +4,7 @@ import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 import { Badge } from '../components/ui/Badge'
+import { useLayoutContextSafe } from '../store/LayoutContext'
 
 interface CurrencyWithRate extends Currency {
   currentRate: number | null
@@ -12,6 +13,7 @@ interface CurrencyWithRate extends Currency {
 
 export function ExchangeRatesPage() {
   const { showToast } = useToast()
+  const layoutContext = useLayoutContextSafe()
   const [currencies, setCurrencies] = useState<CurrencyWithRate[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -24,6 +26,20 @@ export function ExchangeRatesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  // Set up plus button to navigate to exchange transaction
+  useEffect(() => {
+    const setPlusButtonConfig = layoutContext?.setPlusButtonConfig
+    if (!setPlusButtonConfig) return
+
+    setPlusButtonConfig({
+      to: '/add?type=exchange',
+    })
+
+    return () => {
+      setPlusButtonConfig(null)
+    }
+  }, [layoutContext?.setPlusButtonConfig])
 
   const loadData = async () => {
     try {

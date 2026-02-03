@@ -2,17 +2,25 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { AppLayout } from '../../../../components/layout/AppLayout'
+import { LayoutProvider } from '../../../../store/LayoutContext'
 
 // Mock TabBar component
 vi.mock('../../../../components/ui', () => ({
   TabBar: () => <nav data-testid="tab-bar">TabBar</nav>,
 }))
 
+// Mock ActionBar component
+vi.mock('../../../../components/layout/ActionBar', () => ({
+  ActionBar: () => <div data-testid="action-bar">ActionBar</div>,
+}))
+
 describe('AppLayout', () => {
   const renderLayout = (children: React.ReactNode = null) => {
     return render(
       <BrowserRouter>
-        <AppLayout>{children}</AppLayout>
+        <LayoutProvider>
+          <AppLayout>{children}</AppLayout>
+        </LayoutProvider>
       </BrowserRouter>
     )
   }
@@ -29,6 +37,12 @@ describe('AppLayout', () => {
       renderLayout()
 
       expect(screen.getByTestId('tab-bar')).toBeInTheDocument()
+    })
+
+    it('renders ActionBar component', () => {
+      renderLayout()
+
+      expect(screen.getByTestId('action-bar')).toBeInTheDocument()
     })
 
     it('has main element for content', () => {
@@ -144,6 +158,23 @@ describe('AppLayout', () => {
       const tabBarIndex = children.indexOf(tabBar as Element)
 
       expect(mainIndex).toBeLessThan(tabBarIndex)
+    })
+
+    it('renders ActionBar after TabBar in DOM order', () => {
+      const { container } = renderLayout(<div>Content</div>)
+
+      const wrapper = container.firstChild as HTMLElement
+      const tabBar = wrapper.querySelector('[data-testid="tab-bar"]')
+      const actionBar = wrapper.querySelector('[data-testid="action-bar"]')
+
+      expect(tabBar).toBeTruthy()
+      expect(actionBar).toBeTruthy()
+
+      const children = Array.from(wrapper.children)
+      const tabBarIndex = children.indexOf(tabBar as Element)
+      const actionBarIndex = children.indexOf(actionBar as Element)
+
+      expect(tabBarIndex).toBeLessThan(actionBarIndex)
     })
   })
 

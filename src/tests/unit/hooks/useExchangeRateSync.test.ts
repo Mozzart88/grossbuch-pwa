@@ -191,6 +191,25 @@ describe('useExchangeRateSync', () => {
       )
     })
 
+    it('shows info toast for other skipped reasons', async () => {
+      mockSyncRates.mockResolvedValue({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'rate_limit',
+      })
+
+      renderHook(() => useExchangeRateSync({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(1500)
+      })
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Rate sync skipped: rate_limit',
+        'info'
+      )
+    })
+
     it('shows error toast when sync fails', async () => {
       mockSyncRates.mockRejectedValue(new Error('Connection failed'))
 

@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { counterpartyRepository, tagRepository } from '../services/repositories'
 import type { Counterparty, CounterpartyInput, Tag } from '../types'
+import { useLayoutContextSafe } from '../store/LayoutContext'
 
 export function CounterpartiesPage() {
   const { showToast } = useToast()
+  const layoutContext = useLayoutContextSafe()
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,7 +39,7 @@ export function CounterpartiesPage() {
     }
   }
 
-  const openModal = (counterparty?: Counterparty) => {
+  const openModal = useCallback((counterparty?: Counterparty) => {
     if (counterparty) {
       setEditingCounterparty(counterparty)
       setName(counterparty.name)
@@ -50,12 +52,26 @@ export function CounterpartiesPage() {
       setSelectedTagIds([])
     }
     setModalOpen(true)
-  }
+  }, [])
 
   const closeModal = () => {
     setModalOpen(false)
     setEditingCounterparty(null)
   }
+
+  // Set up plus button to open modal
+  useEffect(() => {
+    const setPlusButtonConfig = layoutContext?.setPlusButtonConfig
+    if (!setPlusButtonConfig) return
+
+    setPlusButtonConfig({
+      onClick: () => openModal(),
+    })
+
+    return () => {
+      setPlusButtonConfig(null)
+    }
+  }, [layoutContext?.setPlusButtonConfig, openModal])
 
   const toggleTag = (tagId: number) => {
     setSelectedTagIds((prev) =>
@@ -136,11 +152,6 @@ export function CounterpartiesPage() {
       <PageHeader
         title="Counterparties"
         showBack
-        rightAction={
-          <Button size="sm" onClick={() => openModal()}>
-            Add
-          </Button>
-        }
       />
 
       <div className="p-4">

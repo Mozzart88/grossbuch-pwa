@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AddTransactionPage } from '../../../pages/AddTransactionPage'
+import { LayoutProvider } from '../../../store/LayoutContext'
+import { ActionBar } from '../../../components/layout/ActionBar'
 
 // Mock react-router-dom
 const mockNavigate = vi.fn()
@@ -152,7 +154,10 @@ describe('AddTransactionPage', () => {
   const renderPage = () => {
     return render(
       <MemoryRouter>
-        <AddTransactionPage />
+        <LayoutProvider>
+          <AddTransactionPage />
+          <ActionBar />
+        </LayoutProvider>
       </MemoryRouter>
     )
   }
@@ -199,7 +204,8 @@ describe('AddTransactionPage', () => {
     })
     fireEvent.click(screen.getByRole('option', { name: 'food' }))
 
-    const submitButton = screen.getByRole('button', { name: 'Add' })
+    // Submit button is now in ActionBar with label "Submit"
+    const submitButton = screen.getByRole('button', { name: 'Submit' })
     fireEvent.click(submitButton)
 
     await waitFor(() => {
@@ -220,16 +226,36 @@ describe('AddTransactionPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/')
   })
 
-  it('navigates to home on cancel', async () => {
+  it('navigates back on cancel', async () => {
     renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('Account')).toBeInTheDocument()
     })
 
+    // Cancel button is now in ActionBar
     const cancelButton = screen.getByRole('button', { name: 'Cancel' })
     fireEvent.click(cancelButton)
 
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith(-1)
+  })
+
+  it('handles type=exchange query parameter', async () => {
+    render(
+      <MemoryRouter initialEntries={['/add?type=exchange']}>
+        <LayoutProvider>
+          <AddTransactionPage />
+          <ActionBar />
+        </LayoutProvider>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Account')).toBeInTheDocument()
+    })
+
+    // Exchange button should be active
+    const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
+    expect(exchangeButton.className).toContain('bg-white')
   })
 })
