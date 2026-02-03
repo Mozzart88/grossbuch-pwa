@@ -1,17 +1,20 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository, settingsRepository } from '../../services/repositories'
 import { Button, Input, Select, LiveSearch, DateTimeUI, Modal, Badge } from '../ui'
 import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
+import { useLayoutContextSafe } from '../../store/LayoutContext'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
 
 interface TransactionFormProps {
   initialData?: Transaction
+  initialMode?: TransactionMode
   onSubmit: () => void
   onCancel: () => void
+  useActionBar?: boolean
 }
 
 // Extended account with display info
@@ -27,8 +30,10 @@ interface CurrencyOption extends LiveSearchOption {
   isCrypto?: boolean
 }
 
-export function TransactionForm({ initialData, onSubmit, onCancel }: TransactionFormProps) {
-  const [mode, setMode] = useState<TransactionMode>('expense')
+export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, useActionBar = false }: TransactionFormProps) {
+  const formRef = useRef<HTMLFormElement>(null)
+  const layoutContext = useLayoutContextSafe()
+  const [mode, setMode] = useState<TransactionMode>(initialMode || 'expense')
   const [amount, setAmount] = useState('')
   const [accountId, setAccountId] = useState('')
   const [tagId, setTagId] = useState('')
@@ -67,6 +72,27 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
       populateFromInitialData()
     }
   }, [initialData, accounts, currencies])
+
+  // Set up action bar when useActionBar is true
+  useEffect(() => {
+    const setActionBarConfig = layoutContext?.setActionBarConfig
+    if (!useActionBar || !setActionBarConfig) return
+
+    setActionBarConfig({
+      primaryLabel: initialData ? 'Update' : 'Submit',
+      primaryAction: () => {
+        formRef.current?.requestSubmit()
+      },
+      cancelAction: onCancel,
+      loading: submitting,
+      disabled: submitting,
+    })
+
+    // Cleanup on unmount
+    return () => {
+      setActionBarConfig(null)
+    }
+  }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
 
   // Detect if this is a multi-currency expense pattern (exchange + expense)
   const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -566,7 +592,7 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
       {/* Transaction Type */}
       <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
         {(['expense', 'income', 'transfer', 'exchange'] as TransactionMode[]).map((t) => (
@@ -834,15 +860,17 @@ export function TransactionForm({ initialData, onSubmit, onCancel }: Transaction
         />
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-3 pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
-          Cancel
-        </Button>
-        <Button type="submit" disabled={submitting} className="flex-1">
-          {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
-        </Button>
-      </div>
+      {/* Actions - only show inline buttons when not using action bar */}
+      {!useActionBar && (
+        <div className="flex gap-3 pt-4">
+          <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
+            Cancel
+          </Button>
+          <Button type="submit" disabled={submitting} className="flex-1">
+            {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
+          </Button>
+        </div>
+      )}
 
       {/* New Tag Type Modal */}
       <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="New Category">

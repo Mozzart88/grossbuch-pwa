@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { EditTransactionPage } from '../../../pages/EditTransactionPage'
+import { LayoutProvider } from '../../../store/LayoutContext'
+import { TestActionBar } from '../../helpers/TestActionBar'
 import type { Transaction } from '../../../types'
 
 // Mock react-router-dom
@@ -205,9 +207,12 @@ describe('EditTransactionPage', () => {
   const renderPage = (id = sampleHexId) => {
     return render(
       <MemoryRouter initialEntries={[`/edit/${id}`]}>
-        <Routes>
-          <Route path="/edit/:id" element={<EditTransactionPage />} />
-        </Routes>
+        <LayoutProvider>
+          <Routes>
+            <Route path="/edit/:id" element={<EditTransactionPage />} />
+          </Routes>
+          <TestActionBar />
+        </LayoutProvider>
       </MemoryRouter>
     )
   }

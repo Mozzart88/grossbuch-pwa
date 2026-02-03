@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { CounterpartiesPage } from '../../../pages/CounterpartiesPage'
+import { LayoutProvider } from '../../../store/LayoutContext'
+import { TestPlusButton } from '../../helpers/TestPlusButton'
 import type { Counterparty, Tag } from '../../../types'
 
 // Mock dependencies
@@ -84,9 +86,12 @@ describe('CounterpartiesPage', () => {
 
   const renderWithRouter = () => {
     return render(
-      <BrowserRouter>
-        <CounterpartiesPage />
-      </BrowserRouter>
+      <MemoryRouter>
+        <LayoutProvider>
+          <CounterpartiesPage />
+          <TestPlusButton />
+        </LayoutProvider>
+      </MemoryRouter>
     )
   }
 

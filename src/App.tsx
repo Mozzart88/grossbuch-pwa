@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { DatabaseProvider, useDatabase } from './store/DatabaseContext'
 import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
+import { LayoutProvider } from './store/LayoutContext'
 import { ToastProvider, Spinner } from './components/ui'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { AppLayout } from './components/layout/AppLayout'
@@ -120,7 +121,9 @@ export default function App() {
           <DatabaseProvider>
             <AuthProvider>
               <AuthGate>
-                <AppContent />
+                <LayoutProvider>
+                  <AppContent />
+                </LayoutProvider>
               </AuthGate>
             </AuthProvider>
           </DatabaseProvider>

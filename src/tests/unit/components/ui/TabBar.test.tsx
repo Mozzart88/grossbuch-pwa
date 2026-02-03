@@ -1,10 +1,36 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { BrowserRouter, MemoryRouter } from 'react-router-dom'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { TabBar } from '../../../../components/ui/TabBar'
+import { LayoutProvider, useLayoutContext } from '../../../../store/LayoutContext'
+import { useEffect } from 'react'
+
+const mockNavigate = vi.fn()
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom')
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  }
+})
 
 describe('TabBar', () => {
+  beforeEach(() => {
+    mockNavigate.mockClear()
+  })
+
   const renderWithRouter = (initialRoute = '/') => {
+    return render(
+      <MemoryRouter initialEntries={[initialRoute]}>
+        <LayoutProvider>
+          <TabBar />
+        </LayoutProvider>
+      </MemoryRouter>
+    )
+  }
+
+  const renderWithoutProvider = (initialRoute = '/') => {
     return render(
       <MemoryRouter initialEntries={[initialRoute]}>
         <TabBar />
@@ -32,18 +58,20 @@ describe('TabBar', () => {
     })
 
     it('renders Add button', () => {
-      const { container } = renderWithRouter()
+      renderWithRouter()
 
-      // Add button is primary and has special styling (no label, just icon)
-      const addLink = container.querySelector('a[href="/add"]')
-      expect(addLink).toBeInTheDocument()
+      const addButton = screen.getByRole('button', { name: /add/i })
+      expect(addButton).toBeInTheDocument()
     })
 
-    it('renders 3 navigation links', () => {
+    it('renders 2 navigation links and 1 button', () => {
       renderWithRouter()
 
       const links = screen.getAllByRole('link')
-      expect(links).toHaveLength(3)
+      expect(links).toHaveLength(2)
+
+      const buttons = screen.getAllByRole('button')
+      expect(buttons).toHaveLength(1)
     })
   })
 
@@ -53,13 +81,6 @@ describe('TabBar', () => {
 
       const transactionsLink = screen.getByRole('link', { name: /transactions/i })
       expect(transactionsLink).toHaveAttribute('href', '/')
-    })
-
-    it('links to add page', () => {
-      const { container } = renderWithRouter()
-
-      const addLink = container.querySelector('a[href="/add"]')
-      expect(addLink).toBeInTheDocument()
     })
 
     it('links to settings page', () => {
@@ -94,11 +115,11 @@ describe('TabBar', () => {
   })
 
   describe('Primary button styling', () => {
-    it('Add button has primary styling with white text', () => {
-      const { container } = renderWithRouter()
+    it('Add button has white text color', () => {
+      renderWithRouter()
 
-      const addLink = container.querySelector('a[href="/add"]')
-      expect(addLink?.className).toContain('text-white')
+      const addButton = screen.getByRole('button', { name: /add/i })
+      expect(addButton.className).toContain('text-white')
     })
 
     it('Add button contains circular primary button', () => {
@@ -125,6 +146,13 @@ describe('TabBar', () => {
       const nav = container.querySelector('nav')
       expect(nav?.className).toContain('fixed')
       expect(nav?.className).toContain('bottom-0')
+    })
+
+    it('has z-40 z-index', () => {
+      const { container } = renderWithRouter()
+
+      const nav = container.querySelector('nav')
+      expect(nav?.className).toContain('z-40')
     })
   })
 
@@ -156,7 +184,13 @@ describe('TabBar', () => {
 
       expect(screen.getByText('Transactions')).toBeInTheDocument()
       expect(screen.getByText('Settings')).toBeInTheDocument()
-      // Add button doesn't show label but has svg
+    })
+
+    it('Add button has aria-label', () => {
+      renderWithRouter()
+
+      const addButton = screen.getByRole('button', { name: /add/i })
+      expect(addButton).toHaveAttribute('aria-label', 'Add')
     })
   })
 
@@ -167,6 +201,104 @@ describe('TabBar', () => {
       const nav = container.querySelector('nav')
       expect(nav?.className).toContain('dark:bg-gray-800')
       expect(nav?.className).toContain('dark:border-gray-700')
+    })
+  })
+
+  describe('Plus button behavior', () => {
+    it('navigates to /add by default when no config', () => {
+      renderWithRouter()
+
+      const addButton = screen.getByRole('button', { name: /add/i })
+      fireEvent.click(addButton)
+
+      expect(mockNavigate).toHaveBeenCalledWith('/add')
+    })
+
+    it('works without LayoutProvider', () => {
+      renderWithoutProvider()
+
+      const addButton = screen.getByRole('button', { name: /add/i })
+      fireEvent.click(addButton)
+
+      expect(mockNavigate).toHaveBeenCalledWith('/add')
+    })
+
+    it('calls onClick when plusButtonConfig has onClick', () => {
+      const onClick = vi.fn()
+
+      const TestSetup = () => {
+        const { setPlusButtonConfig } = useLayoutContext()
+        useEffect(() => {
+          setPlusButtonConfig({ onClick })
+        }, [setPlusButtonConfig])
+        return null
+      }
+
+      render(
+        <MemoryRouter>
+          <LayoutProvider>
+            <TestSetup />
+            <TabBar />
+          </LayoutProvider>
+        </MemoryRouter>
+      )
+
+      const addButton = screen.getByRole('button', { name: /add/i })
+      fireEvent.click(addButton)
+
+      expect(onClick).toHaveBeenCalled()
+      expect(mockNavigate).not.toHaveBeenCalled()
+    })
+
+    it('navigates to custom route when plusButtonConfig has to', () => {
+      const TestSetup = () => {
+        const { setPlusButtonConfig } = useLayoutContext()
+        useEffect(() => {
+          setPlusButtonConfig({ to: '/add?type=exchange' })
+        }, [setPlusButtonConfig])
+        return null
+      }
+
+      render(
+        <MemoryRouter>
+          <LayoutProvider>
+            <TestSetup />
+            <TabBar />
+          </LayoutProvider>
+        </MemoryRouter>
+      )
+
+      const addButton = screen.getByRole('button', { name: /add/i })
+      fireEvent.click(addButton)
+
+      expect(mockNavigate).toHaveBeenCalledWith('/add?type=exchange')
+    })
+
+    it('prefers onClick over to when both are set', () => {
+      const onClick = vi.fn()
+
+      const TestSetup = () => {
+        const { setPlusButtonConfig } = useLayoutContext()
+        useEffect(() => {
+          setPlusButtonConfig({ onClick, to: '/add?type=exchange' })
+        }, [setPlusButtonConfig])
+        return null
+      }
+
+      render(
+        <MemoryRouter>
+          <LayoutProvider>
+            <TestSetup />
+            <TabBar />
+          </LayoutProvider>
+        </MemoryRouter>
+      )
+
+      const addButton = screen.getByRole('button', { name: /add/i })
+      fireEvent.click(addButton)
+
+      expect(onClick).toHaveBeenCalled()
+      expect(mockNavigate).not.toHaveBeenCalled()
     })
   })
 })

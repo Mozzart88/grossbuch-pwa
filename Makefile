@@ -10,7 +10,7 @@ dev:
 	npm run dev
 
 coverage:
-	npm run test:coverage $(ARGS)
+	npx vitest run --coverage --reporter=dot
 
 test:
 	npm run test:run $(ARGS)

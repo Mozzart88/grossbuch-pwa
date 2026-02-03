@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository } from '../services/repositories'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
 import { Badge } from '../components/ui/Badge'
+import { useLayoutContextSafe } from '../store/LayoutContext'
 
 export function AccountsPage() {
+  const layoutContext = useLayoutContextSafe()
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -47,7 +49,7 @@ export function AccountsPage() {
   }
 
   // Wallet modal handlers
-  const openWalletModal = (wallet?: Wallet) => {
+  const openWalletModal = useCallback((wallet?: Wallet) => {
     if (wallet) {
       setEditingWallet(wallet)
       setWalletName(wallet.name)
@@ -58,7 +60,21 @@ export function AccountsPage() {
       setWalletColor('')
     }
     setWalletModalOpen(true)
-  }
+  }, [])
+
+  // Set up plus button to open wallet modal
+  useEffect(() => {
+    const setPlusButtonConfig = layoutContext?.setPlusButtonConfig
+    if (!setPlusButtonConfig) return
+
+    setPlusButtonConfig({
+      onClick: () => openWalletModal(),
+    })
+
+    return () => {
+      setPlusButtonConfig(null)
+    }
+  }, [layoutContext?.setPlusButtonConfig, openWalletModal])
 
   const closeWalletModal = () => {
     setWalletModalOpen(false)
@@ -187,11 +203,6 @@ export function AccountsPage() {
       <PageHeader
         title="Wallets & Accounts"
         showBack
-        rightAction={
-          <Button size="sm" onClick={() => openWalletModal()}>
-            Add Wallet
-          </Button>
-        }
       />
 
       <div className="p-4 space-y-4">

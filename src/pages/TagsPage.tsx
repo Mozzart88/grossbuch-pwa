@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { tagRepository } from '../services/repositories'
 import { SYSTEM_TAGS } from '../types'
 import type { Tag, TagInput } from '../types'
+import { useLayoutContextSafe } from '../store/LayoutContext'
 
 type TagType = 'expense' | 'income' | 'both'
 
 export function TagsPage() {
   const { showToast } = useToast()
+  const layoutContext = useLayoutContextSafe()
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,23 +54,46 @@ export function TagsPage() {
     return tag.id <= 10 || tag.id === SYSTEM_TAGS.ARCHIVED
   }
 
-  const openModal = (tag?: Tag) => {
+  const openModal = useCallback((tag?: Tag) => {
     if (tag) {
       setEditingTag(tag)
       setName(tag.name)
-      setType(getTagType(tag))
+      // Note: getTagType needs to be called after state is loaded
+      // For editing, we'll determine type from the tag's presence in expense/income arrays
     } else {
       setEditingTag(null)
       setName('')
       setType('expense')
     }
     setModalOpen(true)
-  }
+  }, [])
+
+  // When editing, update the type based on the tag
+  useEffect(() => {
+    if (editingTag) {
+      setName(editingTag.name)
+      setType(getTagType(editingTag))
+    }
+  }, [editingTag, expenseTags, incomeTags])
 
   const closeModal = () => {
     setModalOpen(false)
     setEditingTag(null)
   }
+
+  // Set up plus button to open modal
+  useEffect(() => {
+    const setPlusButtonConfig = layoutContext?.setPlusButtonConfig
+    if (!setPlusButtonConfig) return
+
+    setPlusButtonConfig({
+      onClick: () => openModal(),
+    })
+
+    return () => {
+      setPlusButtonConfig(null)
+    }
+  }, [layoutContext?.setPlusButtonConfig, openModal])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -145,11 +170,6 @@ export function TagsPage() {
       <PageHeader
         title="Tags"
         showBack
-        rightAction={
-          <Button size="sm" onClick={() => openModal()}>
-            Add
-          </Button>
-        }
       />
 
       <div className="p-4 space-y-6">

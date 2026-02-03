@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { BrowserRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../../../components/ui'
 import { TagsPage } from '../../../pages/TagsPage'
+import { LayoutProvider } from '../../../store/LayoutContext'
+import { TestPlusButton } from '../../helpers/TestPlusButton'
 import { tagRepository } from '../../../services/repositories'
 import { SYSTEM_TAGS } from '../../../types'
 
@@ -43,11 +45,14 @@ describe('TagsPage', () => {
 
     const renderTagsPage = () => {
         return render(
-            <BrowserRouter>
-                <ToastProvider>
-                    <TagsPage />
-                </ToastProvider>
-            </BrowserRouter>
+            <MemoryRouter>
+                <LayoutProvider>
+                    <ToastProvider>
+                        <TagsPage />
+                        <TestPlusButton />
+                    </ToastProvider>
+                </LayoutProvider>
+            </MemoryRouter>
         )
     }
 
