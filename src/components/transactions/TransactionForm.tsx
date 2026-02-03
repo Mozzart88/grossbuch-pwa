@@ -20,6 +20,7 @@ interface TransactionFormProps {
 // Extended account with display info
 interface AccountOption extends Account {
   walletName: string
+  walletIsDefault: boolean
   currencyCode: string
   currencySymbol: string
   decimalPlaces: number
@@ -230,6 +231,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             accountOptions.push({
               ...acc,
               walletName: wallet.name,
+              walletIsDefault: wallet.is_default ?? false,
               currencyCode: currency?.code ?? '',
               currencySymbol: currency?.symbol ?? '',
               decimalPlaces: currency?.decimal_places ?? 2,
@@ -249,8 +251,11 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       }
 
       // Set default account only if not editing
+      // Priority: 1. Default account in default wallet, 2. Any default account, 3. First account
       if (!initialData && accountOptions.length > 0) {
-        const defaultAcc = accountOptions.find(a => a.is_default) || accountOptions[0]
+        const defaultAcc = accountOptions.find(a => a.walletIsDefault && a.is_default)
+          || accountOptions.find(a => a.is_default)
+          || accountOptions[0]
         setAccountId(defaultAcc.id.toString())
       }
     } catch (error) {

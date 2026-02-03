@@ -1312,6 +1312,50 @@ describe('TransactionForm', () => {
     })
   })
 
+  describe('Default account selection', () => {
+    it('selects default account from default wallet as initial account', async () => {
+      render(<TransactionForm onSubmit={vi.fn()} onCancel={vi.fn()} />)
+
+      await waitFor(() => {
+        const accountSelect = screen.getByLabelText('Account')
+        // Should be Cash - USD (from default wallet, default account)
+        expect(accountSelect).toHaveValue('1')
+      })
+    })
+
+    it('falls back to any default account if no default wallet', async () => {
+      mockWalletRepository.findActive.mockResolvedValueOnce([
+        { ...mockWallets[0], is_default: false },
+        mockWallets[1],
+      ])
+
+      render(<TransactionForm onSubmit={vi.fn()} onCancel={vi.fn()} />)
+
+      await waitFor(() => {
+        const accountSelect = screen.getByLabelText('Account')
+        // Should still select account with is_default: true
+        expect(accountSelect).toHaveValue('1')
+      })
+    })
+
+    it('falls back to first account if no default accounts exist', async () => {
+      mockWalletRepository.findActive.mockResolvedValueOnce([
+        {
+          ...mockWallets[0],
+          is_default: false,
+          accounts: [{ ...mockAccount, is_default: false }],
+        },
+      ])
+
+      render(<TransactionForm onSubmit={vi.fn()} onCancel={vi.fn()} />)
+
+      await waitFor(() => {
+        const accountSelect = screen.getByLabelText('Account')
+        expect(accountSelect).toHaveValue('1')
+      })
+    })
+  })
+
   describe('Currency LiveSearch sorting', () => {
     it('shows currency LiveSearch in expense mode', async () => {
       renderForm()

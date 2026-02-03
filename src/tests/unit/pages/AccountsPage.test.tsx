@@ -21,6 +21,7 @@ vi.mock('../../../services/repositories', () => ({
   },
   accountRepository: {
     delete: vi.fn(),
+    setDefault: vi.fn(),
   },
 }))
 
@@ -49,6 +50,7 @@ const mockAccount: Account = {
   currency: 'USD',
   symbol: '$',
   decimal_places: 2,
+  is_default: true,
 }
 
 const mockBankAccount: Account = {
@@ -61,6 +63,7 @@ const mockBankAccount: Account = {
   currency: 'USD',
   symbol: '$',
   decimal_places: 2,
+  is_default: false,
 }
 
 const mockWallets: Wallet[] = [
@@ -261,7 +264,8 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('Default')).toBeInTheDocument()
+      // 2 Default badges: 1 for default wallet, 1 for default account
+      expect(screen.getAllByText('Default').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -504,6 +508,33 @@ describe('AccountsPage', () => {
 
       expect(mockShowToast).toHaveBeenCalledWith('Currency added to wallet', 'success')
     })
+
+    it('shows error when add currency fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockWalletRepository.addAccount.mockRejectedValueOnce(new Error('Add currency failed'))
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(addButton)
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Add currency failed', 'error')
+      })
+
+      consoleSpy.mockRestore()
+    })
   })
 
   describe('Delete account', () => {
@@ -516,16 +547,37 @@ describe('AccountsPage', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getAllByText('Remove').length > 0)
+        expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getAllByText('Remove')[0])
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      await openDropdownAndClick(1, 'Remove')
 
       await waitFor(() => {
         expect(mockAccountRepository.delete).toHaveBeenCalledWith(1)
       })
 
       expect(mockShowToast).toHaveBeenCalledWith('Account removed', 'success')
+    })
+
+    it('shows error when delete account fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockAccountRepository.delete.mockRejectedValueOnce(new Error('Delete account failed'))
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      await openDropdownAndClick(1, 'Remove')
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Delete account failed', 'error')
+      })
+
+      consoleSpy.mockRestore()
     })
   })
 
@@ -593,10 +645,12 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      // Open first wallet dropdown (Cash - default wallet)
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
       const menuTriggers = screen.getAllByRole('button', { expanded: false }).filter(
         btn => btn.getAttribute('aria-haspopup') === 'menu'
       )
+
+      // Open first wallet dropdown (Cash - default wallet)
       fireEvent.click(menuTriggers[0])
 
       await waitFor(() => {
@@ -609,8 +663,8 @@ describe('AccountsPage', () => {
       // Close dropdown
       fireEvent.click(menuTriggers[0])
 
-      // Open second wallet dropdown (Bank - non-default wallet)
-      fireEvent.click(menuTriggers[1])
+      // Open second wallet dropdown (Bank - non-default wallet) at index 2
+      fireEvent.click(menuTriggers[2])
 
       await waitFor(() => {
         expect(screen.getByRole('menu')).toBeInTheDocument()
@@ -626,8 +680,9 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Bank')).toBeInTheDocument()
       })
 
-      // Bank is the second wallet (index 1)
-      await openDropdownAndClick(1, 'Set Default')
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      // Bank wallet is at index 2
+      await openDropdownAndClick(2, 'Set Default')
 
       await waitFor(() => {
         expect(mockWalletRepository.setDefault).toHaveBeenCalledWith(2)
@@ -644,13 +699,100 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Bank')).toBeInTheDocument()
       })
 
-      // Bank is the second wallet (index 1)
-      await openDropdownAndClick(1, 'Set Default')
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      // Bank wallet is at index 2
+      await openDropdownAndClick(2, 'Set Default')
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
       })
 
+      consoleSpy.mockRestore()
+    })
+  })
+
+  describe('Set default account', () => {
+    beforeEach(() => {
+      mockAccountRepository.setDefault.mockResolvedValue(undefined)
+    })
+
+    // Helper to open account dropdown
+    // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+    const openAccountDropdownAndClick = async (accountDropdownIndex: number, actionText: string) => {
+      const menuTriggers = screen.getAllByRole('button', { expanded: false }).filter(
+        btn => btn.getAttribute('aria-haspopup') === 'menu'
+      )
+      // accountDropdownIndex 0 = Cash account (index 1), accountDropdownIndex 1 = Bank account (index 3)
+      // Formula: walletIndex * 2 + 1 for accounts
+      const accountMenuIndex = accountDropdownIndex * 2 + 1
+      fireEvent.click(menuTriggers[accountMenuIndex])
+
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText(actionText))
+    }
+
+    it('displays Default badge for default accounts', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        // There should be 2 "Default" badges: 1 wallet + 1 account
+        expect(screen.getAllByText('Default').length).toBe(2)
+      })
+    })
+
+    it('shows Set Default option only for non-default accounts in dropdown', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      // Open dropdown for default account (first account in Cash wallet)
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      const menuTriggers = screen.getAllByRole('button', { expanded: false }).filter(
+        btn => btn.getAttribute('aria-haspopup') === 'menu'
+      )
+      fireEvent.click(menuTriggers[1]) // Cash's account dropdown (default account)
+
+      await waitFor(() => {
+        expect(screen.getByRole('menu')).toBeInTheDocument()
+      })
+
+      // Should NOT show Set Default for default account
+      expect(screen.queryByText('Set Default')).not.toBeInTheDocument()
+      expect(screen.getByText('Remove')).toBeInTheDocument()
+    })
+
+    it('sets account as default when clicked from dropdown', async () => {
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Bank')).toBeInTheDocument()
+      })
+
+      // Bank account (index 1) is non-default
+      await openAccountDropdownAndClick(1, 'Set Default')
+
+      await waitFor(() => {
+        expect(mockAccountRepository.setDefault).toHaveBeenCalledWith(2)
+      })
+      expect(mockShowToast).toHaveBeenCalledWith('Default account updated', 'success')
+    })
+
+    it('shows error toast when setDefault fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockAccountRepository.setDefault.mockRejectedValueOnce(new Error('DB error'))
+
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Bank')).toBeInTheDocument()
+      })
+
+      await openAccountDropdownAndClick(1, 'Set Default')
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
+      })
       consoleSpy.mockRestore()
     })
   })
