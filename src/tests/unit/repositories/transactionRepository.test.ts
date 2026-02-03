@@ -129,6 +129,17 @@ describe('transactionRepository', () => {
         expect.anything()
       )
     })
+
+    it('excludes INITIAL transactions', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByMonth('2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining("tags != 'initial'"),
+        expect.anything()
+      )
+    })
   })
 
   describe('findByMonthFiltered', () => {

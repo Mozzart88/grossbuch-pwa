@@ -108,13 +108,23 @@ export const accountRepository = {
   },
 
   async delete(id: number): Promise<void> {
-    // Check if account has transactions (will fail due to RESTRICT on foreign key)
-    const txCount = await queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM trx_base WHERE account_id = ?',
-      [id]
+    // Check if account has any non-INITIAL transactions
+    const nonInitialCount = await queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM trx_base WHERE account_id = ? AND tag_id != ?',
+      [id, SYSTEM_TAGS.INITIAL]
     )
-    if (txCount && txCount.count > 0) {
-      throw new Error(`Cannot delete: ${txCount.count} transactions linked to this account`)
+    if (nonInitialCount && nonInitialCount.count > 0) {
+      throw new Error(`Cannot delete: ${nonInitialCount.count} transactions linked to this account`)
+    }
+
+    // Delete any INITIAL transactions for this account (allowed)
+    // First get the trx_ids to delete the parent trx records
+    const initialTrxIds = await querySQL<{ trx_id: Uint8Array }>(
+      'SELECT trx_id FROM trx_base WHERE account_id = ? AND tag_id = ?',
+      [id, SYSTEM_TAGS.INITIAL]
+    )
+    for (const { trx_id } of initialTrxIds) {
+      await execSQL('DELETE FROM trx WHERE id = ?', [trx_id])
     }
 
     // Triggers handle: setting new default, deleting wallet if last account

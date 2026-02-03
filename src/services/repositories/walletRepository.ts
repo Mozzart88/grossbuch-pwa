@@ -1,6 +1,7 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Wallet, WalletInput, Account } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
+import { transactionRepository } from './transactionRepository'
 
 export const walletRepository = {
   async findAll(): Promise<Wallet[]> {
@@ -191,7 +192,8 @@ export const walletRepository = {
   },
 
   // Add an account (currency) to the wallet
-  async addAccount(walletId: number, currencyId: number): Promise<Account> {
+  // If initialBalance is provided (> 0), creates an INITIAL transaction
+  async addAccount(walletId: number, currencyId: number, initialBalance?: number): Promise<Account> {
     // Check if this wallet already has an account with this currency
     const existing = await queryOne<Account>(
       'SELECT * FROM account WHERE wallet_id = ? AND currency_id = ?',
@@ -218,6 +220,20 @@ export const walletRepository = {
     `, [SYSTEM_TAGS.DEFAULT, id])
 
     if (!account) throw new Error('Failed to create account')
+
+    // Create INITIAL transaction if initialBalance > 0
+    if (initialBalance && initialBalance > 0) {
+      await transactionRepository.create({
+        lines: [{
+          account_id: account.id,
+          tag_id: SYSTEM_TAGS.INITIAL,
+          sign: '+',
+          amount: initialBalance,
+          rate: 0  // Will auto-populate from currency rate
+        }]
+      })
+    }
+
     return account
   },
 

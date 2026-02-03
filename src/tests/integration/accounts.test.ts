@@ -300,4 +300,148 @@ describe('Accounts Integration', () => {
       expect(result[0].values[0][0]).toBe(3) // 1 expense + 1 transfer out + 1 transfer in
     })
   })
+
+  describe('Initial Balance Transactions', () => {
+    it('creates INITIAL transaction with correct tag', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'New Wallet' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Create INITIAL transaction manually (simulating what walletRepository.addAccount does)
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.INITIAL,
+        sign: '+',
+        amount: 100000, // 1000.00
+      })
+
+      // Verify the INITIAL transaction exists
+      const result = db.exec(`
+        SELECT tb.tag_id, tb.sign, tb.amount, tag.name as tag_name
+        FROM trx_base tb
+        JOIN tag ON tb.tag_id = tag.id
+        WHERE tb.account_id = ? AND tb.tag_id = ?
+      `, [accountId, SYSTEM_TAGS.INITIAL])
+
+      expect(result[0].values.length).toBe(1)
+      expect(result[0].values[0][0]).toBe(SYSTEM_TAGS.INITIAL)
+      expect(result[0].values[0][1]).toBe('+')
+      expect(result[0].values[0][2]).toBe(100000)
+      expect(result[0].values[0][3]).toBe('initial')
+    })
+
+    it('INITIAL transaction updates account balance via trigger', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Balance Test' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Account balance should start at 0
+      let result = db.exec('SELECT balance FROM account WHERE id = ?', [accountId])
+      expect(result[0].values[0][0]).toBe(0)
+
+      // Create INITIAL transaction
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.INITIAL,
+        sign: '+',
+        amount: 50000, // 500.00
+      })
+
+      // Account balance should now reflect the initial balance (trigger updates it)
+      result = db.exec('SELECT balance FROM account WHERE id = ?', [accountId])
+      expect(result[0].values[0][0]).toBe(50000)
+    })
+
+    it('INITIAL transactions are excluded from trx_log by tag filter', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Filter Test' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Create INITIAL transaction
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.INITIAL,
+        sign: '+',
+        amount: 100000,
+      })
+
+      // Create regular expense
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 5000,
+      })
+
+      // Query trx_log excluding 'initial' tag (as findByMonth does)
+      const result = db.exec(`
+        SELECT * FROM trx_log
+        WHERE tags != 'initial'
+      `)
+
+      // Should only return the expense, not the initial
+      expect(result[0].values.length).toBe(1)
+      expect(result[0].values[0]).not.toContain('initial')
+    })
+
+    it('INITIAL transactions are excluded from month summary', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Summary Test' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      const timestamp = Math.floor(Date.now() / 1000)
+
+      // Create INITIAL transaction (+1000)
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.INITIAL,
+        sign: '+',
+        amount: 100000,
+        rate: 100,
+        timestamp,
+      })
+
+      // Create income (+500)
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.SALE,
+        sign: '+',
+        amount: 50000,
+        rate: 100,
+        timestamp,
+      })
+
+      // Create expense (-200)
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 20000,
+        rate: 100,
+        timestamp,
+      })
+
+      // Query summary excluding INITIAL, TRANSFER, EXCHANGE
+      const result = db.exec(`
+        SELECT
+          COALESCE(SUM(CASE WHEN sign = '+' AND tag_id NOT IN (?, ?, ?) THEN amount ELSE 0 END), 0) as income,
+          COALESCE(SUM(CASE WHEN sign = '-' AND tag_id NOT IN (?, ?, ?) THEN amount ELSE 0 END), 0) as expenses
+        FROM trx_base
+        WHERE account_id = ?
+      `, [
+        SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
+        SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
+        accountId
+      ])
+
+      // Income should only include the sale (50000), not the initial (100000)
+      expect(result[0].values[0][0]).toBe(50000)
+      // Expenses should be 20000
+      expect(result[0].values[0][1]).toBe(20000)
+    })
+  })
 })

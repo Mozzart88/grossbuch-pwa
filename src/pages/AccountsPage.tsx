@@ -24,6 +24,7 @@ export function AccountsPage() {
   const [currencyModalOpen, setCurrencyModalOpen] = useState(false)
   const [targetWallet, setTargetWallet] = useState<Wallet | null>(null)
   const [selectedCurrencyId, setSelectedCurrencyId] = useState('')
+  const [initialBalance, setInitialBalance] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
 
@@ -136,6 +137,7 @@ export function AccountsPage() {
   const closeCurrencyModal = () => {
     setCurrencyModalOpen(false)
     setTargetWallet(null)
+    setInitialBalance('')
   }
 
   const handleAddCurrency = async (e: React.FormEvent) => {
@@ -144,7 +146,20 @@ export function AccountsPage() {
 
     setSubmitting(true)
     try {
-      await walletRepository.addAccount(targetWallet.id, parseInt(selectedCurrencyId))
+      // Parse initial balance (HTML5 input type="number" min="0" ensures valid non-negative input)
+      const balanceValue = initialBalance.trim() ? parseFloat(initialBalance) : 0
+
+      // Get decimal places for selected currency to convert to integer
+      const currencyId = parseInt(selectedCurrencyId)
+      const selectedCurrency = currencies.find(c => c.id === currencyId)
+      const decimalPlaces = selectedCurrency?.decimal_places ?? 2
+
+      // Convert to integer (smallest currency unit)
+      const balanceInteger = balanceValue > 0
+        ? Math.round(balanceValue * Math.pow(10, decimalPlaces))
+        : undefined
+
+      await walletRepository.addAccount(targetWallet.id, currencyId, balanceInteger)
       showToast('Currency added to wallet', 'success')
       closeCurrencyModal()
       loadData()
@@ -345,6 +360,15 @@ export function AccountsPage() {
                 value: c.id,
                 label: `${c.code} - ${c.name}`,
               }))}
+          />
+          <Input
+            label="Initial Balance"
+            type="number"
+            min="0"
+            step="any"
+            placeholder="0.00"
+            value={initialBalance}
+            onChange={(e) => setInitialBalance(e.target.value)}
           />
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={closeCurrencyModal} className="flex-1">

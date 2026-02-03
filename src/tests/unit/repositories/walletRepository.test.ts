@@ -10,13 +10,22 @@ vi.mock('../../../services/database', () => ({
   getLastInsertId: vi.fn(),
 }))
 
+// Mock transactionRepository for addAccount with initialBalance
+vi.mock('../../../services/repositories/transactionRepository', () => ({
+  transactionRepository: {
+    create: vi.fn().mockResolvedValue({ id: new Uint8Array(8), timestamp: 0, lines: [] }),
+  },
+}))
+
 import { walletRepository } from '../../../services/repositories/walletRepository'
 import { execSQL, querySQL, queryOne, getLastInsertId } from '../../../services/database'
+import { transactionRepository } from '../../../services/repositories/transactionRepository'
 
 const mockExecSQL = vi.mocked(execSQL)
 const mockQuerySQL = vi.mocked(querySQL)
 const mockQueryOne = vi.mocked(queryOne)
 const mockGetLastInsertId = vi.mocked(getLastInsertId)
+const mockTransactionRepository = vi.mocked(transactionRepository)
 
 describe('walletRepository', () => {
   beforeEach(() => {
@@ -417,6 +426,47 @@ describe('walletRepository', () => {
         [SYSTEM_TAGS.DEFAULT, 2]
       )
       expect(result.is_default).toBeTruthy()
+    })
+
+    it('creates INITIAL transaction when initialBalance provided', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null) // Existing account check
+        .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2, currency: 'EUR' })
+      mockGetLastInsertId.mockResolvedValue(2)
+
+      await walletRepository.addAccount(1, 2, 10000)
+
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith({
+        lines: [{
+          account_id: 2,
+          tag_id: SYSTEM_TAGS.INITIAL,
+          sign: '+',
+          amount: 10000,
+          rate: 0
+        }]
+      })
+    })
+
+    it('does not create INITIAL transaction when initialBalance is 0', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null) // Existing account check
+        .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2, currency: 'EUR' })
+      mockGetLastInsertId.mockResolvedValue(2)
+
+      await walletRepository.addAccount(1, 2, 0)
+
+      expect(mockTransactionRepository.create).not.toHaveBeenCalled()
+    })
+
+    it('does not create INITIAL transaction when initialBalance is undefined', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null) // Existing account check
+        .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2, currency: 'EUR' })
+      mockGetLastInsertId.mockResolvedValue(2)
+
+      await walletRepository.addAccount(1, 2)
+
+      expect(mockTransactionRepository.create).not.toHaveBeenCalled()
     })
   })
 
