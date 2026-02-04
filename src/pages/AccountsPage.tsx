@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
@@ -8,6 +9,7 @@ import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
 
 export function AccountsPage() {
+  const navigate = useNavigate()
   const layoutContext = useLayoutContextSafe()
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
@@ -332,7 +334,11 @@ export function AccountsPage() {
                   {wallet.accounts.map((account) => {
                     const currency = getCurrency(account.currency_id)
                     return (
-                      <div key={account.id} className="px-4 py-3 flex last:rounded-b-xl items-center justify-between bg-gray-50 dark:bg-gray-800/50">
+                      <div
+                        key={account.id}
+                        className="px-4 py-3 flex last:rounded-b-xl items-center justify-between bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                        onClick={() => navigate(`/accounts/${account.id}/transactions`)}
+                      >
                         <div>
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
@@ -343,13 +349,15 @@ export function AccountsPage() {
                           <p className={`text-sm font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {formatBalance(account.balance, currency)}
                           </p>
-                          <DropdownMenu
-                            items={[
-                              { label: 'Adjust Balance', onClick: () => openAdjustBalanceModal(account) },
-                              ...(!account.is_default ? [{ label: 'Set Default', onClick: () => handleSetAccountDefault(account) }] : []),
-                              { label: 'Remove', onClick: () => handleDeleteAccount(account, wallet.name), variant: 'danger' as const },
-                            ] as DropdownMenuItem[]}
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu
+                              items={[
+                                { label: 'Adjust Balance', onClick: () => openAdjustBalanceModal(account) },
+                                ...(!account.is_default ? [{ label: 'Set Default', onClick: () => handleSetAccountDefault(account) }] : []),
+                                { label: 'Remove', onClick: () => handleDeleteAccount(account, wallet.name), variant: 'danger' as const },
+                              ] as DropdownMenuItem[]}
+                            />
+                          </div>
                         </div>
                       </div>
                     )

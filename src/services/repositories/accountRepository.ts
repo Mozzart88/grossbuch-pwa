@@ -27,6 +27,7 @@ export const accountRepository = {
         a.*,
         w.name as wallet,
         c.code as currency,
+        c.symbol,
         c.decimal_places,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a
@@ -43,6 +44,7 @@ export const accountRepository = {
         a.*,
         w.name as wallet,
         c.code as currency,
+        c.symbol,
         c.decimal_places,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a
@@ -59,6 +61,7 @@ export const accountRepository = {
         a.*,
         w.name as wallet,
         c.code as currency,
+        c.symbol,
         c.decimal_places,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a
@@ -75,6 +78,7 @@ export const accountRepository = {
         a.*,
         w.name as wallet,
         c.code as currency,
+        c.symbol,
         c.decimal_places,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a

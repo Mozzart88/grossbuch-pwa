@@ -360,4 +360,5 @@ export interface TransactionFilter {
   tagId?: number
   counterpartyId?: number
   type?: 'income' | 'expense'
+  accountId?: number
 }
