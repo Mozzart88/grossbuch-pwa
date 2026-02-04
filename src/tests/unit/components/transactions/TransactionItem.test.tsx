@@ -405,4 +405,67 @@ describe('TransactionItem', () => {
     const title = screen.getByText('Food')
     expect(title.className).toContain('text-gray-900')
   })
+
+  describe('readonly transactions', () => {
+    it('does not call onClick for INITIAL transactions', () => {
+      const initialTransaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'initial',
+        amount: 100000,
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+      // Initial transactions should not have button role
+      expect(screen.queryByRole('button')).toBeNull()
+
+      // Click should not trigger onClick
+      const item = screen.getByText('Initial Balance').closest('div[class*="w-full"]')
+      fireEvent.click(item!)
+
+      expect(onClick).not.toHaveBeenCalled()
+    })
+
+    it('does not call onClick for ADJUSTMENT transactions', () => {
+      const adjustmentTransaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'adjustment',
+        amount: 5000,
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
+
+      // Adjustment transactions should not have button role
+      expect(screen.queryByRole('button')).toBeNull()
+
+      // Click should not trigger onClick
+      const item = screen.getByText('Adjustment').closest('div[class*="w-full"]')
+      fireEvent.click(item!)
+
+      expect(onClick).not.toHaveBeenCalled()
+    })
+
+    it('has cursor-default class for INITIAL transactions', () => {
+      const initialTransaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'initial',
+        amount: 100000,
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+      const item = screen.getByText('Initial Balance').closest('div[class*="w-full"]')
+      expect(item?.className).toContain('cursor-default')
+      expect(item?.className).not.toContain('cursor-pointer')
+    })
+
+    it('has cursor-pointer class for regular transactions', () => {
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
+
+      const item = screen.getByRole('button')
+      expect(item?.className).toContain('cursor-pointer')
+      expect(item?.className).not.toContain('cursor-default')
+    })
+  })
 })

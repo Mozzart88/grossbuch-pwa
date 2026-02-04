@@ -196,11 +196,18 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
   const amount = getAmountDisplay()
   const transactionType = getTransactionType(transaction)
+  const isReadOnly = transactionType === 'initial' || transactionType === 'adjustment'
 
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+    <div
+      onClick={isReadOnly ? undefined : onClick}
+      role={isReadOnly ? undefined : 'button'}
+      tabIndex={isReadOnly ? undefined : 0}
+      className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${
+        isReadOnly
+          ? 'cursor-default'
+          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
+      }`}
     >
       {/* Icon */}
       <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-lg">
@@ -222,6 +229,6 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
         <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
       </div>
-    </button>
+    </div>
   )
 }
