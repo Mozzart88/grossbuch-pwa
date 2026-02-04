@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 5
+export const CURRENT_VERSION = 6
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1100,6 +1100,58 @@ ORDER BY id
     `update tag set name = 'Fines' where id = 19 and not exists (select 1 from tag where name = 'Fines' and id != 19);`,
     `update tag set name = 'Households' where id = 20 and not exists (select 1 from tag where name = 'Households' and id != 20);`,
     `update tag set name = 'Auto' where id = 21 and not exists (select 1 from tag where name = 'Auto' and id != 21);`,
+  ],
+  6: [
+    // ============================================
+    // MIGRATION 6: Add adjustment tag for balance adjustments
+    // Handle case where id 23 might already be taken by a user-created tag
+    // ============================================
+
+    // Disable foreign key checks for this migration
+    `PRAGMA foreign_keys = OFF;`,
+
+    // Step 1: Create temp table to track relocation if needed
+    `CREATE TEMP TABLE IF NOT EXISTS _tag_remap (old_id INTEGER, new_id INTEGER);`,
+
+    // Step 2: If id 23 is taken by a non-adjustment tag, calculate new id
+    `INSERT INTO _tag_remap (old_id, new_id)
+     SELECT 23, (SELECT COALESCE(MAX(id), 0) + 1 FROM tag)
+     FROM tag WHERE id = 23 AND name != 'adjustment';`,
+
+    // Step 3: Relocate the tag to new id
+    `UPDATE tag SET id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    // Step 4-9: Update all foreign key references
+    `UPDATE tag_to_tag SET child_id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE child_id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    `UPDATE tag_to_tag SET parent_id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE parent_id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    `UPDATE trx_base SET tag_id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE tag_id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    `UPDATE counterparty_to_tags SET tag_id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE tag_id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    `UPDATE tag_icon SET tag_id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE tag_id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    `UPDATE budget SET tag_id = (SELECT new_id FROM _tag_remap LIMIT 1)
+     WHERE tag_id = 23 AND EXISTS (SELECT 1 FROM _tag_remap);`,
+
+    // Step 10: Clean up temp table
+    `DROP TABLE IF EXISTS _tag_remap;`,
+
+    // Step 11: Insert adjustment tag with id 23 (now guaranteed to be available)
+    `INSERT OR IGNORE INTO tag (id, name) VALUES (23, 'adjustment');`,
+
+    // Step 12: Link to system tag (parent_id = 1)
+    `INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (23, 1);`,
+
+    // Re-enable foreign key checks
+    `PRAGMA foreign_keys = ON;`,
   ]
 }
 

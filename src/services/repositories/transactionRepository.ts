@@ -798,4 +798,79 @@ export const transactionRepository = {
 
     return querySQL<TransactionLog>(sql, params)
   },
+
+  // Check if account has an INITIAL transaction
+  async hasInitialTransaction(accountId: number): Promise<boolean> {
+    const result = await queryOne<{ count: number }>(`
+      SELECT COUNT(*) as count
+      FROM trx_base
+      WHERE account_id = ? AND tag_id = ?
+    `, [accountId, SYSTEM_TAGS.INITIAL])
+    return (result?.count ?? 0) > 0
+  },
+
+  // Get first transaction timestamp (excluding INITIAL/ADJUSTMENT)
+  async getFirstTransactionTimestamp(accountId: number): Promise<number | null> {
+    const result = await queryOne<{ timestamp: number }>(`
+      SELECT MIN(t.timestamp) as timestamp
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      WHERE tb.account_id = ?
+        AND tb.tag_id NOT IN (?, ?)
+    `, [accountId, SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.ADJUSTMENT])
+    return result?.timestamp ?? null
+  },
+
+  // Create balance adjustment transaction
+  // - If account has INITIAL: create ADJUSTMENT (visible, datetime = now)
+  // - If account has no INITIAL: create INITIAL (hidden, datetime = start of day of first transaction)
+  async createBalanceAdjustment(
+    accountId: number,
+    currentBalance: number,
+    targetBalance: number
+  ): Promise<Transaction> {
+    const difference = targetBalance - currentBalance
+    if (difference === 0) {
+      throw new Error('No adjustment needed')
+    }
+
+    const sign: '+' | '-' = difference > 0 ? '+' : '-'
+    const amount = Math.abs(difference)
+
+    const hasInitial = await this.hasInitialTransaction(accountId)
+    let tagId: number
+    let timestamp: number
+
+    if (hasInitial) {
+      // Has INITIAL -> create ADJUSTMENT with datetime = now
+      tagId = SYSTEM_TAGS.ADJUSTMENT
+      timestamp = Math.floor(Date.now() / 1000)
+    } else {
+      // No INITIAL -> create INITIAL with datetime = start of day of first transaction
+      tagId = SYSTEM_TAGS.INITIAL
+      const firstTs = await this.getFirstTransactionTimestamp(accountId)
+      if (firstTs) {
+        // Start of day of first transaction
+        const firstDate = new Date(firstTs * 1000)
+        firstDate.setHours(0, 0, 0, 0)
+        timestamp = Math.floor(firstDate.getTime() / 1000)
+      } else {
+        // No transactions, use current time
+        timestamp = Math.floor(Date.now() / 1000)
+      }
+    }
+
+    return this.create({
+      timestamp,
+      lines: [
+        {
+          account_id: accountId,
+          tag_id: tagId,
+          sign,
+          amount,
+          rate: 0, // Will be auto-populated from currency
+        },
+      ],
+    })
+  },
 }

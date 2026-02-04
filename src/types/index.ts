@@ -309,6 +309,7 @@ export const SYSTEM_TAGS = {
   HOUSEHOLDS: 20,
   AUTO: 21,
   ARCHIVED: 22,
+  ADJUSTMENT: 23,
 } as const
 
 // Helper types

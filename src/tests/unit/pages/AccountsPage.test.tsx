@@ -23,6 +23,9 @@ vi.mock('../../../services/repositories', () => ({
     delete: vi.fn(),
     setDefault: vi.fn(),
   },
+  transactionRepository: {
+    createBalanceAdjustment: vi.fn(),
+  },
 }))
 
 const mockShowToast = vi.fn()
@@ -34,11 +37,12 @@ vi.mock('../../../components/ui', async () => {
   }
 })
 
-import { walletRepository, currencyRepository, accountRepository } from '../../../services/repositories'
+import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../../../services/repositories'
 
 const mockWalletRepository = vi.mocked(walletRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
+const mockTransactionRepository = vi.mocked(transactionRepository)
 
 const mockAccount: Account = {
   id: 1,
@@ -973,6 +977,204 @@ describe('AccountsPage', () => {
         expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
       })
       consoleSpy.mockRestore()
+    })
+  })
+
+  describe('Adjust balance', () => {
+    beforeEach(() => {
+      mockTransactionRepository.createBalanceAdjustment.mockResolvedValue({
+        id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+        timestamp: 1704067200,
+      })
+    })
+
+    it('opens adjust balance modal from account dropdown', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByText('Adjust Balance', { selector: 'h2' })).toBeInTheDocument()
+      })
+    })
+
+    it('displays current balance in modal', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByText(/Current balance:/)).toBeInTheDocument()
+        expect(screen.getByText('$1500.00', { selector: 'strong' })).toBeInTheDocument()
+      })
+    })
+
+    it('creates balance adjustment when form submitted', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Target Balance')).toBeInTheDocument()
+      })
+
+      const targetInput = screen.getByLabelText('Target Balance')
+      fireEvent.change(targetInput, { target: { value: '2000' } })
+
+      const dialog = screen.getByRole('dialog')
+      const adjustButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(adjustButton)
+
+      await waitFor(() => {
+        // Current balance is 150000 (1500.00), target is 2000.00 = 200000
+        expect(mockTransactionRepository.createBalanceAdjustment).toHaveBeenCalledWith(
+          1, // account id
+          150000, // current balance
+          200000 // target balance
+        )
+      })
+
+      expect(mockShowToast).toHaveBeenCalledWith('Balance adjusted', 'success')
+    })
+
+    it('shows info toast when target equals current balance', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Target Balance')).toBeInTheDocument()
+      })
+
+      // Current balance is 1500.00
+      const targetInput = screen.getByLabelText('Target Balance')
+      fireEvent.change(targetInput, { target: { value: '1500' } })
+
+      const dialog = screen.getByRole('dialog')
+      const adjustButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(adjustButton)
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Balance already matches target', 'info')
+      })
+
+      expect(mockTransactionRepository.createBalanceAdjustment).not.toHaveBeenCalled()
+    })
+
+    it('shows error when adjustment fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockTransactionRepository.createBalanceAdjustment.mockRejectedValueOnce(new Error('Adjustment failed'))
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Target Balance')).toBeInTheDocument()
+      })
+
+      const targetInput = screen.getByLabelText('Target Balance')
+      fireEvent.change(targetInput, { target: { value: '2000' } })
+
+      const dialog = screen.getByRole('dialog')
+      const adjustButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(adjustButton)
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Adjustment failed', 'error')
+      })
+
+      consoleSpy.mockRestore()
+    })
+
+    it('closes modal when cancel is clicked', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByText('Adjust Balance', { selector: 'h2' })).toBeInTheDocument()
+      })
+
+      const cancelButton = screen.getByRole('button', { name: 'Cancel' })
+      fireEvent.click(cancelButton)
+
+      await waitFor(() => {
+        expect(screen.queryByText('Adjust Balance', { selector: 'h2' })).not.toBeInTheDocument()
+      })
+    })
+
+    it('resets target balance when modal is reopened', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      // Open modal and enter a value
+      await openDropdownAndClick(1, 'Adjust Balance')
+      await waitFor(() => {
+        expect(screen.getByLabelText('Target Balance')).toBeInTheDocument()
+      })
+      const targetInput = screen.getByLabelText('Target Balance') as HTMLInputElement
+      fireEvent.change(targetInput, { target: { value: '999' } })
+
+      // Close modal
+      const cancelButton = screen.getByRole('button', { name: 'Cancel' })
+      fireEvent.click(cancelButton)
+
+      await waitFor(() => {
+        expect(screen.queryByText('Adjust Balance', { selector: 'h2' })).not.toBeInTheDocument()
+      })
+
+      // Reopen modal
+      await openDropdownAndClick(1, 'Adjust Balance')
+      await waitFor(() => {
+        expect(screen.getByLabelText('Target Balance')).toBeInTheDocument()
+      })
+
+      // Value should be reset
+      const newTargetInput = screen.getByLabelText('Target Balance') as HTMLInputElement
+      expect(newTargetInput.value).toBe('')
+    })
+
+    it('displays explanatory text about adjustment transaction', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(1, 'Adjust Balance')
+
+      await waitFor(() => {
+        expect(screen.getByText(/adjustment transaction will be created/i)).toBeInTheDocument()
+      })
     })
   })
 })

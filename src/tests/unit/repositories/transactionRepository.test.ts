@@ -1423,4 +1423,212 @@ describe('transactionRepository', () => {
       )
     })
   })
+
+  describe('hasInitialTransaction', () => {
+    it('returns true when INITIAL transaction exists for account', async () => {
+      mockQueryOne.mockResolvedValue({ count: 1 })
+
+      const result = await transactionRepository.hasInitialTransaction(1)
+
+      expect(result).toBe(true)
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT COUNT(*) as count'),
+        [1, SYSTEM_TAGS.INITIAL]
+      )
+    })
+
+    it('returns false when no INITIAL transaction exists for account', async () => {
+      mockQueryOne.mockResolvedValue({ count: 0 })
+
+      const result = await transactionRepository.hasInitialTransaction(1)
+
+      expect(result).toBe(false)
+    })
+
+    it('returns false when query returns null', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await transactionRepository.hasInitialTransaction(1)
+
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('getFirstTransactionTimestamp', () => {
+    it('returns timestamp of first transaction excluding INITIAL and ADJUSTMENT', async () => {
+      mockQueryOne.mockResolvedValue({ timestamp: 1704800000 })
+
+      const result = await transactionRepository.getFirstTransactionTimestamp(1)
+
+      expect(result).toBe(1704800000)
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT MIN(t.timestamp) as timestamp'),
+        [1, SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.ADJUSTMENT]
+      )
+    })
+
+    it('returns null when no transactions exist', async () => {
+      mockQueryOne.mockResolvedValue({ timestamp: null })
+
+      const result = await transactionRepository.getFirstTransactionTimestamp(1)
+
+      expect(result).toBeNull()
+    })
+
+    it('returns null when query returns null', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await transactionRepository.getFirstTransactionTimestamp(1)
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('createBalanceAdjustment', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it('throws error when no adjustment needed (difference is 0)', async () => {
+      await expect(
+        transactionRepository.createBalanceAdjustment(1, 10000, 10000)
+      ).rejects.toThrow('No adjustment needed')
+    })
+
+    it('creates ADJUSTMENT when account has INITIAL transaction', async () => {
+      // First call: hasInitialTransaction check (count = 1 means has INITIAL)
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 1 }) // hasInitialTransaction returns true
+        .mockResolvedValueOnce({ id: mockId() }) // trx creation
+        .mockResolvedValueOnce({ id: mockId2() }) // line id
+        .mockResolvedValueOnce(sampleLine) // line result
+        .mockResolvedValueOnce({ id: mockId(), timestamp: Math.floor(Date.now() / 1000) }) // findById
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+
+      // Should use ADJUSTMENT tag when account already has INITIAL
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_base'),
+        expect.arrayContaining([SYSTEM_TAGS.ADJUSTMENT, '+', 5000])
+      )
+    })
+
+    it('creates INITIAL when account has no INITIAL transaction', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 0 }) // hasInitialTransaction returns false
+        .mockResolvedValueOnce({ timestamp: 1704800000 }) // getFirstTransactionTimestamp
+        .mockResolvedValueOnce({ id: mockId() }) // trx creation
+        .mockResolvedValueOnce({ id: mockId2() }) // line id
+        .mockResolvedValueOnce(sampleLine) // line result
+        .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) }) // findById
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+
+      // Should use INITIAL tag when account has no INITIAL
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_base'),
+        expect.arrayContaining([SYSTEM_TAGS.INITIAL, '+', 5000])
+      )
+    })
+
+    it('uses current timestamp when has INITIAL', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 1 }) // hasInitialTransaction returns true
+        .mockResolvedValueOnce({ id: mockId() })
+        .mockResolvedValueOnce({ id: mockId2() })
+        .mockResolvedValueOnce(sampleLine)
+        .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      const before = Math.floor(Date.now() / 1000)
+      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      const after = Math.floor(Date.now() / 1000)
+
+      // Timestamp should be roughly current time
+      const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
+      expect(insertCall![1]![0]).toBeGreaterThanOrEqual(before)
+      expect(insertCall![1]![0]).toBeLessThanOrEqual(after)
+    })
+
+    it('uses start of day of first transaction timestamp when no INITIAL', async () => {
+      // First transaction at 14:30:00 on 2025-01-09
+      const firstTxTimestamp = 1704803400 // Some timestamp during the day
+      const expectedStartOfDay = new Date(firstTxTimestamp * 1000)
+      expectedStartOfDay.setHours(0, 0, 0, 0)
+      const expectedTimestamp = Math.floor(expectedStartOfDay.getTime() / 1000)
+
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 0 }) // hasInitialTransaction returns false
+        .mockResolvedValueOnce({ timestamp: firstTxTimestamp }) // getFirstTransactionTimestamp
+        .mockResolvedValueOnce({ id: mockId() })
+        .mockResolvedValueOnce({ id: mockId2() })
+        .mockResolvedValueOnce(sampleLine)
+        .mockResolvedValueOnce({ id: mockId(), timestamp: expectedTimestamp })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+
+      // Timestamp should be start of day of first transaction
+      const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
+      expect(insertCall![1]![0]).toBe(expectedTimestamp)
+    })
+
+    it('uses current timestamp when no INITIAL and no transactions', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 0 }) // hasInitialTransaction returns false
+        .mockResolvedValueOnce({ timestamp: null }) // getFirstTransactionTimestamp returns null
+        .mockResolvedValueOnce({ id: mockId() })
+        .mockResolvedValueOnce({ id: mockId2() })
+        .mockResolvedValueOnce(sampleLine)
+        .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      const before = Math.floor(Date.now() / 1000)
+      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      const after = Math.floor(Date.now() / 1000)
+
+      // Should use current timestamp when no transactions exist
+      const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
+      expect(insertCall![1]![0]).toBeGreaterThanOrEqual(before)
+      expect(insertCall![1]![0]).toBeLessThanOrEqual(after)
+    })
+
+    it('calculates correct amount for positive adjustment', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 1 }) // hasInitialTransaction
+        .mockResolvedValueOnce({ id: mockId() })
+        .mockResolvedValueOnce({ id: mockId2() })
+        .mockResolvedValueOnce(sampleLine)
+        .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      await transactionRepository.createBalanceAdjustment(1, 5000, 8000)
+
+      // Difference is 3000, sign is +
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_base'),
+        expect.arrayContaining(['+', 3000])
+      )
+    })
+
+    it('calculates correct amount for negative adjustment', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ count: 1 }) // hasInitialTransaction
+        .mockResolvedValueOnce({ id: mockId() })
+        .mockResolvedValueOnce({ id: mockId2() })
+        .mockResolvedValueOnce(sampleLine)
+        .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      await transactionRepository.createBalanceAdjustment(1, 8000, 5000)
+
+      // Difference is -3000, sign is -, amount is 3000
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_base'),
+        expect.arrayContaining(['-', 3000])
+      )
+    })
+  })
 })
