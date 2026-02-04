@@ -56,6 +56,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDatabase() {
   return useContext(DatabaseContext)
 }

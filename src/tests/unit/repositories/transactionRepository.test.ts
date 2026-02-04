@@ -136,7 +136,7 @@ describe('transactionRepository', () => {
       await transactionRepository.findByMonth('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining("tags != 'initial'"),
+        expect.stringContaining("tags NOT LIKE '%initial%'"),
         expect.anything()
       )
     })
@@ -627,6 +627,7 @@ describe('transactionRepository', () => {
             tag_id: 10,
             sign: '-' as const,
             amount: 5000,
+            rate: 0
           },
         ],
       }
@@ -656,6 +657,7 @@ describe('transactionRepository', () => {
             tag_id: 10,
             sign: '-' as const,
             amount: 5000,
+            rate: 0
           },
         ],
       }
@@ -685,6 +687,7 @@ describe('transactionRepository', () => {
             tag_id: 10,
             sign: '-' as const,
             amount: 5000,
+            rate: 0
           },
         ],
       }
@@ -714,6 +717,7 @@ describe('transactionRepository', () => {
             tag_id: 10,
             sign: '-' as const,
             amount: 5000,
+            rate: 0
           },
         ],
       }
@@ -743,6 +747,7 @@ describe('transactionRepository', () => {
             tag_id: 10,
             sign: '-' as const,
             amount: 5000,
+            rate: 0
           },
         ],
       }
@@ -779,6 +784,7 @@ describe('transactionRepository', () => {
               tag_id: 10,
               sign: '-',
               amount: 5000,
+              rate: 0
             },
           ],
         })
@@ -791,7 +797,7 @@ describe('transactionRepository', () => {
 
       await expect(
         transactionRepository.create({
-          lines: [{ account_id: 1, tag_id: 10, sign: '-', amount: 5000 }],
+          lines: [{ account_id: 1, tag_id: 10, sign: '-', amount: 5000, rate: 0 }],
         })
       ).rejects.toThrow('Failed to create transaction')
     })
@@ -804,6 +810,7 @@ describe('transactionRepository', () => {
         tag_id: 10,
         sign: '-',
         amount: 5000,
+        rate: 0
       }
 
       mockQueryOne
@@ -825,6 +832,7 @@ describe('transactionRepository', () => {
         sign: '-',
         amount: 5000,
         note: 'Test note',
+        rate: 0
       }
 
       mockQueryOne
@@ -848,6 +856,7 @@ describe('transactionRepository', () => {
           tag_id: 10,
           sign: '-',
           amount: 5000,
+          rate: 0
         })
       ).rejects.toThrow('Failed to create transaction line')
     })
@@ -863,6 +872,7 @@ describe('transactionRepository', () => {
           tag_id: 10,
           sign: '-',
           amount: 5000,
+          rate: 0
         })
       ).rejects.toThrow('Failed to retrieve transaction line')
     })
@@ -1015,6 +1025,7 @@ describe('transactionRepository', () => {
           sign: '-' as const,
           amount: 5000,
           note: 'Updated note',
+          rate: 0
         },
       ],
     }

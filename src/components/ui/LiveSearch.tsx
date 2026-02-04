@@ -60,6 +60,7 @@ export function LiveSearch({
     if (value) {
       const opt = options.find(o => String(o.value) === String(value))
       if (opt) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled input from props is valid
         setInputValue(getDisplayValue ? getDisplayValue(opt) : opt.label)
       }
     } else {
@@ -86,6 +87,7 @@ export function LiveSearch({
 
   // Reset highlighted index when filtered options change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting derived state is valid
     setHighlightedIndex(0)
   }, [filteredOptions.length, showCreateNew])
 
@@ -98,21 +100,6 @@ export function LiveSearch({
       }
     }
   }, [highlightedIndex, isOpen])
-
-  // Handle click outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        commitValue()
-        setIsOpen(false)
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-      return () => document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [isOpen, inputValue, filteredOptions, exactMatch])
 
   const commitValue = useCallback(() => {
     const trimmedInput = inputValue.trim()
@@ -135,6 +122,21 @@ export function LiveSearch({
       onCreateNew(trimmedInput)
     }
   }, [inputValue, options, onChange, onCreateNew, getDisplayValue])
+
+  // Handle click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        commitValue()
+        setIsOpen(false)
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isOpen, inputValue, filteredOptions, exactMatch, commitValue])
 
   const handleSelectOption = (option: LiveSearchOption) => {
     onChange(option.value, option.label)

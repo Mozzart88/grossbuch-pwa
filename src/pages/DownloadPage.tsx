@@ -14,7 +14,7 @@ export function DownloadPage() {
     navigator.storage.getDirectory()
       .then(async (d) => {
         const files: opfsList = []
-        // @ts-ignore
+        // @ts-expect-error OPFS entries() returns AsyncIterableIterator but TS types are incomplete
         for await (const [name, handle] of d.entries()) {
           files.push({ name, handle })
         }
@@ -36,7 +36,7 @@ export function DownloadPage() {
   const handleDelete = async (filename: string, fileHandler: FileSystemFileHandle) => {
     try {
       if ('remove' in fileHandler) {
-        // @ts-ignore
+        // @ts-expect-error FileSystemFileHandle.remove() is not in TS types yet
         await fileHandler.remove()
       } else {
         const d = await navigator.storage.getDirectory()
@@ -56,7 +56,11 @@ export function DownloadPage() {
       input.accept = '.db,.sqlite'
       input.onchange = () => {
         const file = input.files?.[0]
-        file ? resolve(file) : reject('file not selected')
+        if (file) {
+          resolve(file)
+        } else {
+          reject('file not selected')
+        }
       }
       input.click()
 
