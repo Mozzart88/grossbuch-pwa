@@ -9,6 +9,7 @@ describe('TransactionItem', () => {
     date_time: '2025-01-09 14:30:00',
     counterparty: null,
     wallet: 'Cash',
+    wallet_color: null,
     currency: 'USD',
     tags: 'food',
     amount: -5000, // -50.00
@@ -81,7 +82,11 @@ describe('TransactionItem', () => {
 
     expect(screen.getByText('Transfer')).toBeInTheDocument()
     expect(screen.getByText('↔️')).toBeInTheDocument()
-    expect(screen.getByText('Cash:$ → Bank:AR$')).toBeInTheDocument()
+    // Check description contains both wallet:symbol pairs
+    const description = screen.getByText((_, element) => {
+      return element?.textContent === 'Cash:$ → Bank:AR$'
+    })
+    expect(description).toBeInTheDocument()
   })
 
   it('renders exchange transaction in same wallet', () => {
@@ -128,7 +133,11 @@ describe('TransactionItem', () => {
 
     expect(screen.getByText('Exchange')).toBeInTheDocument()
     expect(screen.getByText('💱')).toBeInTheDocument()
-    expect(screen.getByText('Cash:$ → Bank:AR$')).toBeInTheDocument()
+    // Check description contains both wallet:symbol pairs
+    const description = screen.getByText((_, element) => {
+      return element?.textContent === 'Cash:$ → Bank:AR$'
+    })
+    expect(description).toBeInTheDocument()
     expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
   })
 
@@ -404,6 +413,174 @@ describe('TransactionItem', () => {
 
     const title = screen.getByText('Food')
     expect(title.className).toContain('text-gray-900')
+  })
+
+  describe('wallet color in description', () => {
+    it('renders wallet name with color when wallet_color is set', () => {
+      const coloredTransaction: TransactionLog = {
+        ...baseTransaction,
+        wallet_color: '#FF5733',
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[coloredTransaction]} onClick={onClick} />)
+
+      const walletText = screen.getByText('Cash')
+      expect(walletText).toHaveStyle({ color: '#FF5733' })
+    })
+
+    it('renders wallet name without style when wallet_color is null', () => {
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
+
+      const walletText = screen.getByText('Cash')
+      expect(walletText).not.toHaveStyle({ color: expect.any(String) })
+    })
+
+    it('renders transfer with both wallets colored independently', () => {
+      const transferTransaction: TransactionLog[] = [
+        {
+          ...baseTransaction,
+          tags: 'transfer',
+          wallet_color: '#FF5733',
+          amount: -5000,
+        },
+        {
+          ...baseTransaction,
+          wallet: 'Bank',
+          wallet_color: '#3498DB',
+          tags: 'transfer',
+          amount: 5000,
+        },
+      ]
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={transferTransaction} onClick={onClick} />)
+
+      const cashText = screen.getByText('Cash')
+      const bankText = screen.getByText('Bank')
+      expect(cashText).toHaveStyle({ color: '#FF5733' })
+      expect(bankText).toHaveStyle({ color: '#3498DB' })
+    })
+
+    it('renders transfer with mixed colors (one null, one set)', () => {
+      const transferTransaction: TransactionLog[] = [
+        {
+          ...baseTransaction,
+          tags: 'transfer',
+          wallet_color: '#FF5733',
+          amount: -5000,
+        },
+        {
+          ...baseTransaction,
+          wallet: 'Bank',
+          wallet_color: null,
+          tags: 'transfer',
+          amount: 5000,
+        },
+      ]
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={transferTransaction} onClick={onClick} />)
+
+      // Cash should have a colored span
+      const cashText = screen.getByText('Cash')
+      expect(cashText).toHaveStyle({ color: '#FF5733' })
+      expect(cashText.tagName).toBe('SPAN')
+
+      // Bank has no color, so it's a text node in parent (not wrapped in span)
+      // Verify description contains "Bank" but as plain text
+      const descriptionLine = screen.getByText((_, element) => {
+        return element?.textContent === 'Cash → Bank'
+      })
+      expect(descriptionLine).toBeInTheDocument()
+    })
+
+    it('renders counterparty with wallet color', () => {
+      const withCounterparty: TransactionLog = {
+        ...baseTransaction,
+        counterparty: 'Amazon',
+        wallet_color: '#FF5733',
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[withCounterparty]} onClick={onClick} />)
+
+      const counterpartyText = screen.getByText('Amazon')
+      expect(counterpartyText).toHaveStyle({ color: '#FF5733' })
+    })
+
+    it('renders counterparty without style when wallet_color is null', () => {
+      const withCounterparty: TransactionLog = {
+        ...baseTransaction,
+        counterparty: 'Supermarket',
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[withCounterparty]} onClick={onClick} />)
+
+      const counterpartyText = screen.getByText('Supermarket')
+      expect(counterpartyText).not.toHaveStyle({ color: expect.any(String) })
+    })
+
+    it('renders same-wallet exchange with currency names colored', () => {
+      const exchangeTransaction: TransactionLog[] = [
+        {
+          ...baseTransaction,
+          tags: 'exchange',
+          wallet_color: '#FF5733',
+          amount: -5000,
+        },
+        {
+          ...baseTransaction,
+          tags: 'exchange',
+          wallet_color: '#FF5733',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: 50,
+        },
+      ]
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={exchangeTransaction} onClick={onClick} />)
+
+      const usdText = screen.getByText('USD')
+      const arsText = screen.getByText('ARS')
+      expect(usdText).toHaveStyle({ color: '#FF5733' })
+      expect(arsText).toHaveStyle({ color: '#FF5733' })
+    })
+
+    it('renders multi-currency expense counterparty with wallet color', () => {
+      const exchangeTransaction: TransactionLog[] = [
+        {
+          ...baseTransaction,
+          tags: 'exchange',
+          wallet_color: '#FF5733',
+          amount: -5000,
+          counterparty: 'Amazon',
+        },
+        {
+          ...baseTransaction,
+          tags: 'exchange',
+          wallet: 'Bank',
+          wallet_color: '#3498DB',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: 50,
+          counterparty: 'Amazon',
+        },
+        {
+          ...baseTransaction,
+          tags: 'Food',
+          wallet: 'Bank',
+          wallet_color: '#3498DB',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: -50,
+          counterparty: 'Amazon',
+        },
+      ]
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={exchangeTransaction} onClick={onClick} />)
+
+      const counterpartyText = screen.getByText('Amazon')
+      // Counterparty uses the first line's wallet color that has the counterparty
+      expect(counterpartyText).toHaveStyle({ color: '#FF5733' })
+    })
   })
 
   describe('readonly transactions', () => {

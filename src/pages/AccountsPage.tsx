@@ -35,7 +35,7 @@ export function AccountsPage() {
 
   const [submitting, setSubmitting] = useState(false)
 
-  const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6']
+  const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6', '#06B6D4', '#84CC16']
 
   useEffect(() => {
     loadData()

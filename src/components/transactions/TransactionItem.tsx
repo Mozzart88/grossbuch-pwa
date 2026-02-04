@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { type TransactionLog } from '../../types'
 import { formatCurrency } from '../../utils/formatters'
 import { formatTime } from '../../utils/dateUtils'
@@ -113,18 +114,27 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     }
   }
 
-  const getDescription = () => {
+  // Helper to wrap text in a colored span when wallet has a color configured.
+  // Returns plain text when color is null/falsy to inherit parent's gray styling.
+  const getColoredText = (text: string, color: string | null): ReactNode => {
+    if (color) {
+      return <span style={{ color }}>{text}</span>
+    }
+    return text
+  }
+
+  const getDescription = (): ReactNode => {
     const transactionType = getTransactionType(transaction)
 
     // For multi-currency expense, show counterparty or source wallet info
     if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
-      const counterparty = transaction.find(l => l.counterparty)?.counterparty
-      if (counterparty) {
-        return counterparty
+      const line = transaction.find(l => l.counterparty)
+      if (line?.counterparty) {
+        return getColoredText(line.counterparty, line.wallet_color)
       }
       // Show source wallet (where money came from) with source currency
       const exchangeOut = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
-      return `${exchangeOut.wallet}:${exchangeOut.symbol}`
+      return <>{getColoredText(exchangeOut.wallet, exchangeOut.wallet_color)}:{exchangeOut.symbol}</>
     }
 
     const from = transaction.find(l => l.amount < 0 && l.tags === transactionType)!
@@ -133,15 +143,19 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     switch (transactionType) {
       case 'transfer':
         if (from.currency == to.currency)
-          return `${from.wallet} → ${to.wallet}`
-        return `${from.wallet}:${from.symbol} → ${to.wallet}:${to.symbol}`
+          return <>{getColoredText(from.wallet, from.wallet_color)} → {getColoredText(to.wallet, to.wallet_color)}</>
+        return <>{getColoredText(`${from.wallet}:${from.symbol}`, from.wallet_color)} → {getColoredText(`${to.wallet}:${to.symbol}`, to.wallet_color)}</>
       case 'exchange':
         if (from.wallet === to.wallet)
-          return `${from.currency} → ${to.currency}`
-        return `${from.wallet}:${from.symbol} → ${to.wallet}:${to.symbol}`
-      default:
-        return transaction.find(l => l.counterparty)?.counterparty
-          || transaction[0].wallet
+          return <>{getColoredText(from.currency, from.wallet_color)} → {getColoredText(to.currency, to.wallet_color)}</>
+        return <>{getColoredText(`${from.wallet}:${from.symbol}`, from.wallet_color)} → {getColoredText(`${to.wallet}:${to.symbol}`, to.wallet_color)}</>
+      default: {
+        const line = transaction.find(l => l.counterparty)
+        if (line?.counterparty) {
+          return getColoredText(line.counterparty, line.wallet_color)
+        }
+        return getColoredText(transaction[0].wallet, transaction[0].wallet_color)
+      }
     }
   }
 
