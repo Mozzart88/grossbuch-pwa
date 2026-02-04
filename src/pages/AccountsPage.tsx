@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
-import { walletRepository, currencyRepository, accountRepository } from '../services/repositories'
+import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
 
 export function AccountsPage() {
+  const navigate = useNavigate()
   const layoutContext = useLayoutContextSafe()
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
@@ -25,6 +27,11 @@ export function AccountsPage() {
   const [targetWallet, setTargetWallet] = useState<Wallet | null>(null)
   const [selectedCurrencyId, setSelectedCurrencyId] = useState('')
   const [initialBalance, setInitialBalance] = useState('')
+
+  // Adjust balance modal state
+  const [adjustBalanceModalOpen, setAdjustBalanceModalOpen] = useState(false)
+  const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null)
+  const [targetBalance, setTargetBalance] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
 
@@ -206,6 +213,55 @@ export function AccountsPage() {
     }
   }
 
+  // Adjust balance handlers
+  const openAdjustBalanceModal = (account: Account) => {
+    setAdjustingAccount(account)
+    setTargetBalance('')
+    setAdjustBalanceModalOpen(true)
+  }
+
+  const closeAdjustBalanceModal = () => {
+    setAdjustBalanceModalOpen(false)
+    setAdjustingAccount(null)
+    setTargetBalance('')
+  }
+
+  const handleAdjustBalance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!adjustingAccount || !targetBalance.trim()) return
+
+    setSubmitting(true)
+    try {
+      const currency = getCurrency(adjustingAccount.currency_id)
+      const decimalPlaces = currency?.decimal_places ?? 2
+
+      // Convert target balance from user input to integer
+      const targetBalanceFloat = parseFloat(targetBalance)
+      const targetBalanceInt = Math.round(targetBalanceFloat * Math.pow(10, decimalPlaces))
+
+      if (targetBalanceInt === adjustingAccount.balance) {
+        showToast('Balance already matches target', 'info')
+        closeAdjustBalanceModal()
+        return
+      }
+
+      await transactionRepository.createBalanceAdjustment(
+        adjustingAccount.id,
+        adjustingAccount.balance,
+        targetBalanceInt
+      )
+
+      showToast('Balance adjusted', 'success')
+      closeAdjustBalanceModal()
+      loadData()
+    } catch (error) {
+      console.error('Failed to adjust balance:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to adjust balance', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const formatBalance = (balance: number, currency: Currency | undefined) => {
     if (!currency) return balance.toString()
     const decimals = currency.decimal_places
@@ -278,7 +334,11 @@ export function AccountsPage() {
                   {wallet.accounts.map((account) => {
                     const currency = getCurrency(account.currency_id)
                     return (
-                      <div key={account.id} className="px-4 py-3 flex last:rounded-b-xl items-center justify-between bg-gray-50 dark:bg-gray-800/50">
+                      <div
+                        key={account.id}
+                        className="px-4 py-3 flex last:rounded-b-xl items-center justify-between bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                        onClick={() => navigate(`/accounts/${account.id}/transactions`)}
+                      >
                         <div>
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
@@ -289,12 +349,15 @@ export function AccountsPage() {
                           <p className={`text-sm font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                             {formatBalance(account.balance, currency)}
                           </p>
-                          <DropdownMenu
-                            items={[
-                              ...(!account.is_default ? [{ label: 'Set Default', onClick: () => handleSetAccountDefault(account) }] : []),
-                              { label: 'Remove', onClick: () => handleDeleteAccount(account, wallet.name), variant: 'danger' as const },
-                            ] as DropdownMenuItem[]}
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenu
+                              items={[
+                                { label: 'Adjust Balance', onClick: () => openAdjustBalanceModal(account) },
+                                ...(!account.is_default ? [{ label: 'Set Default', onClick: () => handleSetAccountDefault(account) }] : []),
+                                { label: 'Remove', onClick: () => handleDeleteAccount(account, wallet.name), variant: 'danger' as const },
+                              ] as DropdownMenuItem[]}
+                            />
+                          </div>
                         </div>
                       </div>
                     )
@@ -376,6 +439,39 @@ export function AccountsPage() {
             </Button>
             <Button type="submit" disabled={submitting || !selectedCurrencyId} className="flex-1">
               {submitting ? 'Adding...' : 'Add'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Adjust Balance Modal */}
+      <Modal isOpen={adjustBalanceModalOpen} onClose={closeAdjustBalanceModal} title="Adjust Balance">
+        <form onSubmit={handleAdjustBalance} className="space-y-4">
+          {adjustingAccount && (
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Current balance: <strong>{formatBalance(adjustingAccount.balance, getCurrency(adjustingAccount.currency_id))}</strong>
+              </p>
+              <Input
+                label="Target Balance"
+                type="number"
+                step="any"
+                placeholder="0.00"
+                value={targetBalance}
+                onChange={(e) => setTargetBalance(e.target.value)}
+                required
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                An adjustment transaction will be created to reach the target balance.
+              </p>
+            </>
+          )}
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={closeAdjustBalanceModal} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || !targetBalance.trim()} className="flex-1">
+              {submitting ? 'Adjusting...' : 'Adjust'}
             </Button>
           </div>
         </form>

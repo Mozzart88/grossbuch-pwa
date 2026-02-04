@@ -798,4 +798,151 @@ export const transactionRepository = {
 
     return querySQL<TransactionLog>(sql, params)
   },
+
+  // Get transactions for a specific account and month (includes ALL transaction types)
+  // Returns all lines of each transaction for full display (transfers/exchanges show both sides)
+  async findByAccountAndMonth(accountId: number, yearMonth: string): Promise<TransactionLog[]> {
+    // Get transaction IDs that involve this account
+    const sql = `
+      SELECT
+        t.id as id,
+        datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
+        c.name as counterparty,
+        a.wallet as wallet,
+        a.currency as currency,
+        a.symbol as symbol,
+        a.decimal_places as decimal_places,
+        tag.name as tags,
+        iif(tb.sign = '-', -tb.amount, tb.amount) as amount,
+        tb.rate as rate
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+      WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?
+        AND t.id IN (
+          SELECT DISTINCT trx_id FROM trx_base WHERE account_id = ?
+        )
+      ORDER BY t.timestamp DESC
+    `
+    return querySQL<TransactionLog>(sql, [`${yearMonth}%`, accountId])
+  },
+
+  // Get day summary for a specific account (net amount in account's currency)
+  async getAccountDaySummary(accountId: number, date: string): Promise<number> {
+    const startTs = Math.floor(new Date(`${date}T00:00:00`).getTime() / 1000)
+    const endTs = Math.floor(new Date(`${date}T23:59:59`).getTime() / 1000) + 1
+
+    const result = await queryOne<{ net: number }>(`
+      SELECT
+        COALESCE(SUM(
+          CASE WHEN tb.sign = '+' THEN tb.amount ELSE -tb.amount END
+        ), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      WHERE t.timestamp >= ? AND t.timestamp < ?
+        AND tb.account_id = ?
+    `, [startTs, endTs, accountId])
+
+    return result?.net ?? 0
+  },
+
+  // Get the net sum of all transactions for an account AFTER a given month
+  // Used to calculate historical running balances from current balance
+  async getAccountTransactionsAfterMonth(accountId: number, yearMonth: string): Promise<number> {
+    // Get the first day of the next month
+    const [year, month] = yearMonth.split('-').map(Number)
+    const nextMonth = new Date(year, month, 1) // month is 0-indexed in Date, so this gives us the 1st of next month
+    const startTs = Math.floor(nextMonth.getTime() / 1000)
+
+    const result = await queryOne<{ net: number }>(`
+      SELECT
+        COALESCE(SUM(
+          CASE WHEN tb.sign = '+' THEN tb.amount ELSE -tb.amount END
+        ), 0) as net
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      WHERE t.timestamp >= ?
+        AND tb.account_id = ?
+    `, [startTs, accountId])
+
+    return result?.net ?? 0
+  },
+
+  // Check if account has an INITIAL transaction
+  async hasInitialTransaction(accountId: number): Promise<boolean> {
+    const result = await queryOne<{ count: number }>(`
+      SELECT COUNT(*) as count
+      FROM trx_base
+      WHERE account_id = ? AND tag_id = ?
+    `, [accountId, SYSTEM_TAGS.INITIAL])
+    return (result?.count ?? 0) > 0
+  },
+
+  // Get first transaction timestamp (excluding INITIAL/ADJUSTMENT)
+  async getFirstTransactionTimestamp(accountId: number): Promise<number | null> {
+    const result = await queryOne<{ timestamp: number }>(`
+      SELECT MIN(t.timestamp) as timestamp
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      WHERE tb.account_id = ?
+        AND tb.tag_id NOT IN (?, ?)
+    `, [accountId, SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.ADJUSTMENT])
+    return result?.timestamp ?? null
+  },
+
+  // Create balance adjustment transaction
+  // - If account has INITIAL: create ADJUSTMENT (visible, datetime = now)
+  // - If account has no INITIAL: create INITIAL (hidden, datetime = start of day of first transaction)
+  async createBalanceAdjustment(
+    accountId: number,
+    currentBalance: number,
+    targetBalance: number
+  ): Promise<Transaction> {
+    const difference = targetBalance - currentBalance
+    if (difference === 0) {
+      throw new Error('No adjustment needed')
+    }
+
+    const sign: '+' | '-' = difference > 0 ? '+' : '-'
+    const amount = Math.abs(difference)
+
+    const hasInitial = await this.hasInitialTransaction(accountId)
+    let tagId: number
+    let timestamp: number
+
+    if (hasInitial) {
+      // Has INITIAL -> create ADJUSTMENT with datetime = now
+      tagId = SYSTEM_TAGS.ADJUSTMENT
+      timestamp = Math.floor(Date.now() / 1000)
+    } else {
+      // No INITIAL -> create INITIAL with datetime = start of day of first transaction
+      tagId = SYSTEM_TAGS.INITIAL
+      const firstTs = await this.getFirstTransactionTimestamp(accountId)
+      if (firstTs) {
+        // Start of day of first transaction
+        const firstDate = new Date(firstTs * 1000)
+        firstDate.setHours(0, 0, 0, 0)
+        timestamp = Math.floor(firstDate.getTime() / 1000)
+      } else {
+        // No transactions, use current time
+        timestamp = Math.floor(Date.now() / 1000)
+      }
+    }
+
+    return this.create({
+      timestamp,
+      lines: [
+        {
+          account_id: accountId,
+          tag_id: tagId,
+          sign,
+          amount,
+          rate: 0, // Will be auto-populated from currency
+        },
+      ],
+    })
+  },
 }

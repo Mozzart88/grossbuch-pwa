@@ -7,7 +7,7 @@ interface TransactionItemProps {
   onClick: () => void
 }
 
-type transactionT = 'exchange' | 'transfer' | 'expense' | 'income'
+type transactionT = 'exchange' | 'transfer' | 'expense' | 'income' | 'initial' | 'adjustment'
 
 function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
   return trx.some(l => {
@@ -28,6 +28,13 @@ const isMultiCurrencyExpense = (trx: TransactionLog[]): boolean => {
 }
 
 const getTransactionType = (trx: TransactionLog[]): transactionT => {
+  // Check for INITIAL and ADJUSTMENT first (special system transactions)
+  if (isTypeOf(trx, 'initial')) {
+    return 'initial'
+  }
+  if (isTypeOf(trx, 'adjustment')) {
+    return 'adjustment'
+  }
   // Check for multi-currency expense first (exchange + expense pattern)
   if (isMultiCurrencyExpense(trx)) {
     return 'expense'
@@ -92,6 +99,12 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
           color: 'text-purple-600 dark:text-purple-400',
         }
       }
+      case 'initial':
+      case 'adjustment':
+        return {
+          text: `${formatCurrency(amount, symbol)}`,
+          color: 'text-slate-500 dark:text-slate-400',
+        }
       default:
         return {
           text: `${formatCurrency(amount, symbol)}`,
@@ -138,13 +151,31 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       case 'exchange': return '💱'
       case 'income': return '📈'
       case 'expense': return '📉'
+      case 'initial': return '🏦'
+      case 'adjustment': return '⚖️'
       default: return '📝'
     }
   }
 
   const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
 
+  const getTitleColor = () => {
+    if (transactionType === 'initial') {
+      return 'text-green-600 dark:text-green-400'
+    }
+    if (transactionType === 'adjustment') {
+      return 'text-yellow-600 dark:text-yellow-400'
+    }
+    return 'text-gray-900 dark:text-gray-100'
+  }
+
   const getTitle = () => {
+    if (transactionType === 'initial') {
+      return 'Initial Balance'
+    }
+    if (transactionType === 'adjustment') {
+      return 'Adjustment'
+    }
     if (['transfer', 'exchange'].includes(transactionType)) {
       return capitalize(transactionType)
     }
@@ -165,11 +196,18 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
   const amount = getAmountDisplay()
   const transactionType = getTransactionType(transaction)
+  const isReadOnly = transactionType === 'initial' || transactionType === 'adjustment'
 
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+    <div
+      onClick={isReadOnly ? undefined : onClick}
+      role={isReadOnly ? undefined : 'button'}
+      tabIndex={isReadOnly ? undefined : 0}
+      className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${
+        isReadOnly
+          ? 'cursor-default'
+          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
+      }`}
     >
       {/* Icon */}
       <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-lg">
@@ -178,7 +216,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
       {/* Details */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+        <p className={`text-sm font-medium truncate ${getTitleColor()}`}>
           {getTitle()}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
@@ -191,6 +229,6 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
         <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
       </div>
-    </button>
+    </div>
   )
 }

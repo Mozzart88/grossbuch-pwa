@@ -166,6 +166,41 @@ describe('TransactionItem', () => {
     expect(screen.getByText('AR$0.50')).toBeInTheDocument()
   })
 
+  it('renders multi-currency expense with counterparty', () => {
+    const exchangeTransaction: TransactionLog[] = [
+      {
+        ...baseTransaction,
+        tags: 'exchange',
+        amount: -5000,
+        counterparty: 'Amazon',
+      },
+      {
+        ...baseTransaction,
+        tags: 'exchange',
+        wallet: 'Bank',
+        currency: 'ARS',
+        symbol: 'AR$',
+        amount: 50,
+        counterparty: 'Amazon',
+      },
+      {
+        ...baseTransaction,
+        tags: 'Food',
+        wallet: 'Bank',
+        currency: 'ARS',
+        symbol: 'AR$',
+        amount: -50,
+        counterparty: 'Amazon',
+      },
+    ]
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={exchangeTransaction} onClick={onClick} />)
+
+    expect(screen.getByText('Food')).toBeInTheDocument()
+    // Shows counterparty when available for multi-currency expense
+    expect(screen.getByText('Amazon')).toBeInTheDocument()
+  })
+
   it('calls onClick when clicked', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
@@ -283,5 +318,154 @@ describe('TransactionItem', () => {
 
     // Should show "Uncategorized" for empty tags
     expect(screen.getByText('Uncategorized')).toBeInTheDocument()
+  })
+
+  it('renders INITIAL transaction with bank icon', () => {
+    const initialTransaction: TransactionLog = {
+      ...baseTransaction,
+      tags: 'initial',
+      amount: 100000,
+    }
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+    expect(screen.getByText('Initial Balance')).toBeInTheDocument()
+    expect(screen.getByText('🏦')).toBeInTheDocument()
+  })
+
+  it('renders ADJUSTMENT transaction with balance icon', () => {
+    const adjustmentTransaction: TransactionLog = {
+      ...baseTransaction,
+      tags: 'adjustment',
+      amount: 5000,
+    }
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
+
+    expect(screen.getByText('Adjustment')).toBeInTheDocument()
+    expect(screen.getByText('⚖️')).toBeInTheDocument()
+  })
+
+  it('applies neutral slate color for INITIAL transactions', () => {
+    const initialTransaction: TransactionLog = {
+      ...baseTransaction,
+      tags: 'initial',
+      amount: 100000,
+    }
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+    const amount = screen.getByText('$1,000.00')
+    expect(amount.className).toContain('text-slate-500')
+  })
+
+  it('applies neutral slate color for ADJUSTMENT transactions', () => {
+    const adjustmentTransaction: TransactionLog = {
+      ...baseTransaction,
+      tags: 'adjustment',
+      amount: -5000,
+    }
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
+
+    const amount = screen.getByText('$50.00')
+    expect(amount.className).toContain('text-slate-500')
+  })
+
+  it('applies green color to INITIAL transaction title', () => {
+    const initialTransaction: TransactionLog = {
+      ...baseTransaction,
+      tags: 'initial',
+      amount: 100000,
+    }
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+    const title = screen.getByText('Initial Balance')
+    expect(title.className).toContain('text-green-600')
+  })
+
+  it('applies yellow color to ADJUSTMENT transaction title', () => {
+    const adjustmentTransaction: TransactionLog = {
+      ...baseTransaction,
+      tags: 'adjustment',
+      amount: 5000,
+    }
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
+
+    const title = screen.getByText('Adjustment')
+    expect(title.className).toContain('text-yellow-600')
+  })
+
+  it('applies default gray color to regular transaction title', () => {
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
+
+    const title = screen.getByText('Food')
+    expect(title.className).toContain('text-gray-900')
+  })
+
+  describe('readonly transactions', () => {
+    it('does not call onClick for INITIAL transactions', () => {
+      const initialTransaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'initial',
+        amount: 100000,
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+      // Initial transactions should not have button role
+      expect(screen.queryByRole('button')).toBeNull()
+
+      // Click should not trigger onClick
+      const item = screen.getByText('Initial Balance').closest('div[class*="w-full"]')
+      fireEvent.click(item!)
+
+      expect(onClick).not.toHaveBeenCalled()
+    })
+
+    it('does not call onClick for ADJUSTMENT transactions', () => {
+      const adjustmentTransaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'adjustment',
+        amount: 5000,
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
+
+      // Adjustment transactions should not have button role
+      expect(screen.queryByRole('button')).toBeNull()
+
+      // Click should not trigger onClick
+      const item = screen.getByText('Adjustment').closest('div[class*="w-full"]')
+      fireEvent.click(item!)
+
+      expect(onClick).not.toHaveBeenCalled()
+    })
+
+    it('has cursor-default class for INITIAL transactions', () => {
+      const initialTransaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'initial',
+        amount: 100000,
+      }
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
+
+      const item = screen.getByText('Initial Balance').closest('div[class*="w-full"]')
+      expect(item?.className).toContain('cursor-default')
+      expect(item?.className).not.toContain('cursor-pointer')
+    })
+
+    it('has cursor-pointer class for regular transactions', () => {
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
+
+      const item = screen.getByRole('button')
+      expect(item?.className).toContain('cursor-pointer')
+      expect(item?.className).not.toContain('cursor-default')
+    })
   })
 })

@@ -226,12 +226,12 @@ describe('migrations', () => {
     })
 
     it('parses db_version correctly', async () => {
-      // Already at version 5
-      mockQueryOne.mockResolvedValue({ value: '5' })
+      // Already at version 6 (current version)
+      mockQueryOne.mockResolvedValue({ value: '6' })
 
       await runMigrations()
 
-      // No migrations should run since we're at version 5
+      // No migrations should run since we're at version 6
       expect(mockExecSQL).not.toHaveBeenCalled()
     })
 
@@ -240,9 +240,9 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      // Full migration (v1 + v2) has many statements
-      // Should be >= 50 (tables, views, triggers, indexes, seeds, etc.)
-      expect(mockExecSQL.mock.calls.length).toEqual(9)
+      // Full migration (v1-v6): each migration joins statements into one execSQL call
+      // v1 = 1 call, v2-v6 = 2 calls each (migration + version update) = 1 + 5*2 = 11
+      expect(mockExecSQL.mock.calls.length).toEqual(11)
     })
 
     it('updates db_version to 4 after migration', async () => {
@@ -734,6 +734,110 @@ describe('migrations', () => {
       expect(mockExecSQL).toHaveBeenCalled()
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT OR IGNORE INTO currency')
+      )
+    })
+
+    // ----- MIGRATION V6 TESTS (Adjustment Tag) -----
+
+    it('creates adjustment tag in migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT OR IGNORE INTO tag (id, name) VALUES (23, 'adjustment')")
+      )
+    })
+
+    it('links adjustment tag to system tag in migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (23, 1)')
+      )
+    })
+
+    it('creates temp table for tag relocation in migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TEMP TABLE IF NOT EXISTS _tag_remap')
+      )
+    })
+
+    it('handles relocation of existing tag at id 23 in migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      // Should update tag table to relocate conflicting tag
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE tag SET id = (SELECT new_id FROM _tag_remap')
+      )
+    })
+
+    it('disables and re-enables foreign keys in migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('PRAGMA foreign_keys = OFF')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('PRAGMA foreign_keys = ON')
+      )
+    })
+
+    it('updates all foreign key references when relocating tag in migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      // Should update references in all related tables
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE tag_to_tag SET child_id')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE tag_to_tag SET parent_id')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE trx_base SET tag_id')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE counterparty_to_tags SET tag_id')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE tag_icon SET tag_id')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE budget SET tag_id')
+      )
+    })
+
+    it('cleans up temp table after migration v6', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('DROP TABLE IF EXISTS _tag_remap')
+      )
+    })
+
+    it('runs migration v6 when at version 5', async () => {
+      mockQueryOne.mockResolvedValue({ value: '5' })
+
+      await runMigrations()
+
+      // Should run migration v6 statements
+      expect(mockExecSQL).toHaveBeenCalled()
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('adjustment')
       )
     })
   })

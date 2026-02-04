@@ -12,6 +12,7 @@ import {
   EditTransactionPage,
   SettingsPage,
   AccountsPage,
+  AccountTransactionsPage,
   // CategoriesPage,
   CounterpartiesPage,
   CurrenciesPage,
@@ -100,6 +101,7 @@ function AppContent() {
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/accounts" element={<AccountsPage />} />
+        <Route path="/accounts/:accountId/transactions" element={<AccountTransactionsPage />} />
         <Route path="/settings/counterparties" element={<CounterpartiesPage />} />
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
         <Route path="/settings/exchange-rates" element={<ExchangeRatesPage />} />
