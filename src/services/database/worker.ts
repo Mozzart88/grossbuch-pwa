@@ -28,9 +28,7 @@ interface WorkerResponse {
   error?: string
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: OpfsDatabase | null = null
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let sqlite3Module: Sqlite3Static | null = null
 
 const DB_FILENAME = '/expense-tracker.sqlite3'

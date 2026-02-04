@@ -84,13 +84,14 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
           text: formatCurrency(transaction[0].amount / getDecimalPlaces(decimalPlaces), symbol),
           color: 'text-blue-600 dark:text-blue-400',
         }
-      case 'exchange':
+      case 'exchange': {
         const from = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
         const to = transaction.find(l => l.amount >= 0 && l.tags.includes('exchange'))!
         return {
           text: `${formatCurrency(from.amount / getDecimalPlaces(from.decimal_places), from.symbol)} → ${formatCurrency(to.amount / getDecimalPlaces(to.decimal_places), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
         }
+      }
       default:
         return {
           text: `${formatCurrency(amount, symbol)}`,

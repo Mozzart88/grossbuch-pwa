@@ -52,6 +52,7 @@ export function LayoutProvider({ children }: LayoutProviderProps) {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLayoutContext(): LayoutContextValue {
   const context = useContext(LayoutContext)
   if (!context) {
@@ -60,6 +61,7 @@ export function useLayoutContext(): LayoutContextValue {
   return context
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useLayoutContextSafe(): LayoutContextValue | null {
   return useContext(LayoutContext)
 }
