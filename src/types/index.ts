@@ -236,6 +236,7 @@ export interface TransactionLog {
   date_time: string
   counterparty: string | null
   wallet: string
+  wallet_color: string | null
   currency: string
   symbol: string
   decimal_places: number

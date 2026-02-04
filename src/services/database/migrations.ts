@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 6
+export const CURRENT_VERSION = 7
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1152,7 +1152,54 @@ ORDER BY id
 
     // Re-enable foreign key checks
     `PRAGMA foreign_keys = ON;`,
-  ]
+  ],
+  7: [
+    // ============================================
+    // MIGRATION 7: Add wallet_color to accounts and trx_log views
+    // ============================================
+
+    // Drop and recreate accounts view with wallet_color
+    `DROP VIEW IF EXISTS accounts;`,
+    `CREATE VIEW IF NOT EXISTS accounts AS
+    SELECT
+      a.id as id,
+      w.name as wallet,
+      w.color as wallet_color,
+      c.code as currency, c.symbol as symbol, c.decimal_places as decimal_places,
+      group_concat(t.name, ', ') as tags,
+      a.balance as balance,
+      a.updated_at as updated_at
+    FROM account a
+    JOIN wallet w ON a.wallet_id = w.id
+    JOIN currency c ON a.currency_id = c.id
+    LEFT JOIN account_to_tags a2t ON a2t.account_id = a.id
+    LEFT JOIN tag t ON a2t.tag_id = t.id
+    GROUP BY a.id
+    ORDER BY wallet_id;`,
+
+    // Drop and recreate trx_log view with wallet_color
+    `DROP VIEW IF EXISTS trx_log;`,
+    `CREATE VIEW IF NOT EXISTS trx_log AS
+    SELECT
+      t.id as id,
+      datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
+      c.name as counterparty,
+      a.wallet as wallet,
+      a.wallet_color as wallet_color,
+      a.currency as currency,
+      a.symbol as symbol,
+      a.decimal_places as decimal_places,
+      tag.name as tags,
+      iif(tb.sign = '-', -tb.amount, tb.amount) as amount,
+      tb.rate as rate
+    FROM trx t
+    JOIN trx_base tb ON tb.trx_id = t.id
+    JOIN accounts a ON tb.account_id = a.id
+    JOIN tag ON tb.tag_id = tag.id
+    LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+    LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+    ORDER BY t.timestamp;`,
+  ],
 }
 
 export async function runMigrations(): Promise<void> {
