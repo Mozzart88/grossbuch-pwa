@@ -10,6 +10,7 @@ vi.mock('../../pages', () => ({
   EditTransactionPage: () => <div data-testid="edit-transaction-page">Edit Transaction</div>,
   SettingsPage: () => <div data-testid="settings-page">Settings</div>,
   AccountsPage: () => <div data-testid="accounts-page">Accounts</div>,
+  AccountTransactionsPage: () => <div data-testid="account-transactions-page">Account Transactions</div>,
   TagsPage: () => <div data-testid="tags-page">Tags</div>,
   CounterpartiesPage: () => <div data-testid="counterparties-page">Counterparties</div>,
   CurrenciesPage: () => <div data-testid="currencies-page">Currencies</div>,
@@ -21,6 +22,7 @@ vi.mock('../../pages', () => ({
   PinSetupPage: () => <div data-testid="pin-setup-page">PIN Setup</div>,
   PinLoginPage: () => <div data-testid="pin-login-page">PIN Login</div>,
   ChangePinPage: () => <div data-testid="change-pin-page">Change PIN</div>,
+  MigrationPage: () => <div data-testid="migration-page">Migration</div>,
 }))
 
 // Mock TabBar

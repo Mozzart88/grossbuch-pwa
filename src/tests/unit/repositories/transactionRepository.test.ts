@@ -1424,6 +1424,117 @@ describe('transactionRepository', () => {
     })
   })
 
+  describe('findByAccountAndMonth', () => {
+    it('returns transactions for specified account and month', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      const result = await transactionRepository.findByAccountAndMonth(1, '2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT'),
+        expect.arrayContaining(['2025-01%', 1])
+      )
+      expect(result).toEqual([sampleTransactionLog])
+    })
+
+    it('returns empty array when no transactions', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      const result = await transactionRepository.findByAccountAndMonth(1, '2025-01')
+
+      expect(result).toEqual([])
+    })
+
+    it('filters by transactions that involve the account', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByAccountAndMonth(1, '2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT DISTINCT trx_id FROM trx_base WHERE account_id = ?'),
+        expect.anything()
+      )
+    })
+
+    it('orders by timestamp DESC', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByAccountAndMonth(1, '2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('ORDER BY t.timestamp DESC'),
+        expect.anything()
+      )
+    })
+
+    it('includes all transaction types (no tag exclusions)', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByAccountAndMonth(1, '2025-01')
+
+      // Should NOT contain exclusions for INITIAL, TRANSFER, EXCHANGE
+      const call = mockQuerySQL.mock.calls[0]
+      expect(call![0]).not.toContain('tag_id NOT IN')
+      expect(call![0]).not.toContain("tags NOT LIKE '%initial%'")
+    })
+  })
+
+  describe('getAccountDaySummary', () => {
+    it('returns net amount for a specific account and date', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      const result = await transactionRepository.getAccountDaySummary(1, '2025-01-09')
+
+      expect(result).toBe(5000)
+    })
+
+    it('returns zero when no transactions', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await transactionRepository.getAccountDaySummary(1, '2025-01-09')
+
+      expect(result).toBe(0)
+    })
+
+    it('filters by account_id', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getAccountDaySummary(42, '2025-01-09')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('tb.account_id = ?'),
+        expect.arrayContaining([42])
+      )
+    })
+
+    it('uses date range for filtering', async () => {
+      mockQueryOne.mockResolvedValue({ net: 0 })
+
+      await transactionRepository.getAccountDaySummary(1, '2025-01-09')
+
+      const call = mockQueryOne.mock.calls[0]
+      const startTs = call![1]![0] as number
+      const endTs = call![1]![1] as number
+
+      // Start should be beginning of day
+      expect(startTs).toBe(Math.floor(new Date('2025-01-09T00:00:00').getTime() / 1000))
+      // End should be end of day + 1 second
+      expect(endTs).toBe(Math.floor(new Date('2025-01-09T23:59:59').getTime() / 1000) + 1)
+    })
+
+    it('calculates net as sum of signed amounts', async () => {
+      mockQueryOne.mockResolvedValue({ net: 5000 })
+
+      await transactionRepository.getAccountDaySummary(1, '2025-01-09')
+
+      // SQL should sum amounts with signs
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining("CASE WHEN tb.sign = '+' THEN tb.amount ELSE -tb.amount END"),
+        expect.anything()
+      )
+    })
+  })
+
   describe('hasInitialTransaction', () => {
     it('returns true when INITIAL transaction exists for account', async () => {
       mockQueryOne.mockResolvedValue({ count: 1 })
