@@ -241,6 +241,7 @@ export interface TransactionLog {
   currency: string
   symbol: string
   decimal_places: number
+  // TODO: tags should be renamed to tag, because trx_log.tags contains only one tag
   tags: string
   amount: number
   rate: number
