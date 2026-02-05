@@ -76,6 +76,7 @@ export interface Wallet {
   tags?: string[]
   is_default?: boolean
   is_archived?: boolean
+  is_virtual?: boolean
   accounts?: Account[]
 }
 

@@ -9,10 +9,11 @@ export const walletRepository = {
       SELECT
         w.*,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_default,
-        EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_archived
+        EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_archived,
+        EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_virtual
       FROM wallet w
       ORDER BY is_default DESC, name ASC
-    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.ARCHIVED])
+    `, [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.ARCHIVED, SYSTEM_TAGS.SYSTEM])
 
     // Load accounts for each wallet
     for (const wallet of wallets) {
