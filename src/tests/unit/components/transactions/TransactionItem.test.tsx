@@ -62,6 +62,7 @@ describe('TransactionItem', () => {
   })
 
   it('renders transfer transaction in different currencies currency', () => {
+    // this test case should not be exists in real live - transfer in different currencies = exchange
     const transferTransaction: TransactionLog[] = [
       {
         ...baseTransaction,
@@ -141,8 +142,8 @@ describe('TransactionItem', () => {
     expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
   })
 
-  it('renders complex transaction in different currencies', () => {
-    const exchangeTransaction: TransactionLog[] = [
+  it('renders multi-currency expense', () => {
+    const transaction: TransactionLog[] = [
       {
         ...baseTransaction,
         tags: 'exchange',
@@ -166,13 +167,115 @@ describe('TransactionItem', () => {
       },
     ]
     const onClick = vi.fn()
-    render(<TransactionItem transaction={exchangeTransaction} onClick={onClick} />)
+    render(<TransactionItem transaction={transaction} onClick={onClick} />)
 
     expect(screen.getByText('Food')).toBeInTheDocument()
     expect(screen.getByText('📉')).toBeInTheDocument()
     // Shows source wallet (where money came from) with source currency
     expect(screen.getByText('Cash:$')).toBeInTheDocument()
     expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+  })
+
+  describe('multi-currency transactions edge-cases', () => {
+    const transaction: TransactionLog[] = []
+    beforeEach(() => {
+      transaction.splice(0)
+      transaction
+        .push(
+          {
+            ...baseTransaction,
+            tags: 'exchange',
+            amount: -5000,
+          },
+          {
+            ...baseTransaction,
+            tags: 'exchange',
+            wallet: 'Bank',
+            currency: 'ARS',
+            symbol: 'AR$',
+            amount: 50,
+          })
+    })
+
+    it('should render transaction with Coffee tag', () => {
+      transaction.push(
+        {
+          ...baseTransaction,
+          tags: 'Coffee',
+          wallet: 'Bank',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: -50,
+        })
+
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={transaction} onClick={onClick} />)
+
+      expect(screen.getByText('Coffee')).toBeInTheDocument()
+      expect(screen.getByText('📉')).toBeInTheDocument()
+      // Shows source wallet (where money came from) with source currency
+      expect(screen.getByText('Cash:$')).toBeInTheDocument()
+      expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+    })
+
+    it('should render transaction with Fee tag as exchange', () => {
+      transaction.push(
+        {
+          ...baseTransaction,
+          tags: 'Fee',
+          wallet: 'Bank',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: -50,
+        })
+
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={transaction} onClick={onClick} />)
+
+      expect(screen.getByText('Exchange')).toBeInTheDocument()
+      expect(screen.getByText('💱')).toBeInTheDocument()
+    })
+
+    it('transactions order should not matters for expense', () => {
+      transaction.push(
+        {
+          ...baseTransaction,
+          tags: 'Coffee',
+          wallet: 'Bank',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: -50,
+        })
+      transaction.reverse()
+
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={transaction} onClick={onClick} />)
+
+      expect(screen.getByText('Coffee')).toBeInTheDocument()
+      expect(screen.getByText('📉')).toBeInTheDocument()
+      // Shows source wallet (where money came from) with source currency
+      expect(screen.getByText('Cash:$')).toBeInTheDocument()
+      expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+    })
+
+    it('transactions order should not matters for exchange', () => {
+      transaction.push(
+        {
+          ...baseTransaction,
+          tags: 'Fee',
+          wallet: 'Bank',
+          currency: 'ARS',
+          symbol: 'AR$',
+          amount: -50,
+        })
+      transaction.reverse()
+
+      const onClick = vi.fn()
+      render(<TransactionItem transaction={transaction} onClick={onClick} />)
+
+      expect(screen.getByText('Exchange')).toBeInTheDocument()
+      expect(screen.getByText('💱')).toBeInTheDocument()
+    })
   })
 
   it('renders multi-currency expense with counterparty', () => {

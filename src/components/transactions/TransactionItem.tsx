@@ -21,9 +21,9 @@ const isMultiCurrencyExpense = (trx: TransactionLog[]): boolean => {
   const exchangeLines = trx.filter(l => l.tags.includes('exchange'))
   const expenseLines = trx.filter(l =>
     l.amount < 0 &&
-    !l.tags.includes('exchange') &&
-    !l.tags.includes('transfer') &&
-    !(l.tags).toLocaleLowerCase().includes('fee')
+    l.tags !== 'exchange' &&
+    l.tags !== 'transfer' &&
+    l.tags.match(/^fee[s]?$/i) === null
   )
   return exchangeLines.length === 2 && expenseLines.length > 0
 }
@@ -57,9 +57,9 @@ const getDecimalPlaces = (p: number): number => {
 const getExpenseLine = (trx: TransactionLog[]): TransactionLog | undefined => {
   return trx.find(l =>
     l.amount < 0 &&
-    !l.tags.includes('exchange') &&
-    !l.tags.includes('transfer') &&
-    !l.tags.includes('fee')
+    l.tags !== 'exchange' &&
+    l.tags !== 'transfer' &&
+    l.tags.match(/^fee[s]?$/i) === null
   )
 }
 
