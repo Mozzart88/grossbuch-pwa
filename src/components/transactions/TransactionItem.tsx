@@ -23,9 +23,9 @@ const isMultiCurrencyExpense = (trx: TransactionLog[]): boolean => {
     l.amount < 0 &&
     !l.tags.includes('exchange') &&
     !l.tags.includes('transfer') &&
-    !l.tags.includes('fee')
+    !(l.tags).toLocaleLowerCase().includes('fee')
   )
-  return exchangeLines.length === 2 && expenseLines.length === 1
+  return exchangeLines.length === 2 && expenseLines.length > 0
 }
 
 const getTransactionType = (trx: TransactionLog[]): transactionT => {
@@ -124,8 +124,6 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
   }
 
   const getDescription = (): ReactNode => {
-    const transactionType = getTransactionType(transaction)
-
     // For multi-currency expense, show counterparty or source wallet info
     if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
       const line = transaction.find(l => l.counterparty)
@@ -134,7 +132,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       }
       // Show source wallet (where money came from) with source currency
       const exchangeOut = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
-      return <>{getColoredText(exchangeOut.wallet, exchangeOut.wallet_color)}:{exchangeOut.symbol}</>
+      return <>{getColoredText(`${exchangeOut.wallet}:${exchangeOut.symbol}`, exchangeOut.wallet_color)}</>
     }
 
     const from = transaction.find(l => l.amount < 0 && l.tags === transactionType)!
@@ -217,11 +215,10 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       onClick={isReadOnly ? undefined : onClick}
       role={isReadOnly ? undefined : 'button'}
       tabIndex={isReadOnly ? undefined : 0}
-      className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${
-        isReadOnly
-          ? 'cursor-default'
-          : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
-      }`}
+      className={`w-full flex items-center gap-3 px-4 py-3 transition-colors text-left ${isReadOnly
+        ? 'cursor-default'
+        : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
+        }`}
     >
       {/* Icon */}
       <div className="shrink-0 w-10 h-10 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-full text-lg">

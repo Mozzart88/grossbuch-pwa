@@ -572,13 +572,22 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           amount: intToAmount,
           rate: toRate,
         })
+
+        if (intFee) {
+          payload.lines.push({
+            account_id: parseInt(accountId),
+            tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
+            sign: '-' as const,
+            amount: intFee,
+            rate: fromRate,
+          })
+        }
       }
       if (initialData) {
         await transactionRepository.update(initialData.id, payload)
       } else {
         await transactionRepository.create(payload)
       }
-
 
       onSubmit()
     } catch (error) {
@@ -780,7 +789,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
                 if (e.target.value === '' || e.target.value === '0')
                   setFeeTagId('')
                 else
-                  setFeeTagId('13')
+                  setFeeTagId(SYSTEM_TAGS.FEE.toString())
                 setFee(e.target.value)
               }}
               placeholder="0.00"
@@ -816,7 +825,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             <Input
               label="Exchange Rate"
               type="number"
-              step="0.000001"
+              step="any"
               min="0"
               value={exchangeRate}
               onChange={(e) => setExchangeRate(e.target.value)}
