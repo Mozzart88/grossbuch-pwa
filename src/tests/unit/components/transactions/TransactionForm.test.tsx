@@ -25,10 +25,6 @@ vi.mock('../../../../services/repositories', () => ({
     findUsedInAccounts: vi.fn(),
   },
   transactionRepository: {
-    createIncome: vi.fn(),
-    createExpense: vi.fn(),
-    createTransfer: vi.fn(),
-    createExchange: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
   },
@@ -174,10 +170,6 @@ describe('TransactionForm', () => {
     mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
     mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
-    mockTransactionRepository.createExpense.mockResolvedValue({} as any)
-    mockTransactionRepository.createIncome.mockResolvedValue({} as any)
-    mockTransactionRepository.createTransfer.mockResolvedValue({} as any)
-    mockTransactionRepository.createExchange.mockResolvedValue({} as any)
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
     mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency

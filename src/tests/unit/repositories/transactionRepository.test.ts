@@ -51,6 +51,7 @@ const sampleTransactionLog: TransactionLog = {
   date_time: '2025-01-09 14:30:00',
   counterparty: null,
   wallet: 'Cash',
+  wallet_color: '#fff',
   currency: 'USD',
   tags: 'food',
   amount: -5000,
@@ -678,6 +679,31 @@ describe('transactionRepository', () => {
       )
     })
 
+    it('creates transaction with multiple lines (exchange/transfer/multi-currency)', async () => {
+      // Mock for trx creation
+      mockQueryOne
+        .mockResolvedValueOnce({ id: mockId() }) // trx id
+        .mockResolvedValueOnce({ id: mockId2() }) // first line id
+        .mockResolvedValueOnce(sampleLine) // first line result
+        .mockResolvedValueOnce({ id: mockId() }) // second line id
+        .mockResolvedValueOnce(sampleLine) // second line result
+        .mockResolvedValueOnce({ id: mockId() }) // second line id
+        .mockResolvedValueOnce(sampleLine) // second line result
+        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      const input = {
+        lines: new Array(3).fill(sampleLine)
+      }
+      await transactionRepository.create(input)
+
+      // Should create two lines with SYSTEM_TAGS.TRANSFER
+      const insertCalls = mockExecSQL.mock.calls.filter(
+        call => call[0].includes('INSERT INTO trx_base')
+      )
+      expect(insertCalls.length).toBe(3)
+    })
+
     it('links counterparty when counterparty_id provided', async () => {
       const input = {
         counterparty_id: 1,
@@ -1174,190 +1200,6 @@ describe('transactionRepository', () => {
       await transactionRepository.getTransfers()
       expect(mockQuerySQL).not.toHaveBeenCalledWith(
         expect.stringContaining('LIMIT')
-      )
-    })
-  })
-
-  describe('createIncome', () => {
-    it('creates income transaction with + sign', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce({ ...sampleLine, sign: '+' })
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([{ ...sampleLine, sign: '+' }])
-
-      await transactionRepository.createIncome(1, 10, 10000)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([1, 10, '+', 10000])
-      )
-    })
-
-    it('works without options', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce({ ...sampleLine, sign: '+' })
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([{ ...sampleLine, sign: '+' }])
-
-      await transactionRepository.createIncome(1, 10, 10000)
-    })
-
-    it('passes counterparty options', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce({ ...sampleLine, sign: '+' })
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([{ ...sampleLine, sign: '+' }])
-
-      await transactionRepository.createIncome(1, 10, 10000, {
-        counterpartyId: 1,
-      })
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO trx_to_counterparty'),
-        expect.anything()
-      )
-    })
-  })
-
-  describe('createExpense', () => {
-    it('creates expense transaction with - sign', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createExpense(1, 10, 5000)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([1, 10, '-', 5000])
-      )
-    })
-
-    it('works without options', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createExpense(1, 10, 5000)
-      // Should hit this.create with minimal input
-    })
-  })
-
-  describe('createTransfer', () => {
-    it('creates transfer with two lines (from and to)', async () => {
-      // Mock for trx creation
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() }) // trx id
-        .mockResolvedValueOnce({ id: mockId2() }) // first line id
-        .mockResolvedValueOnce(sampleLine) // first line result
-        .mockResolvedValueOnce({ id: mockId() }) // second line id
-        .mockResolvedValueOnce(sampleLine) // second line result
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createTransfer(1, 2, 10000)
-
-      // Should create two lines with SYSTEM_TAGS.TRANSFER
-      const insertCalls = mockExecSQL.mock.calls.filter(
-        call => call[0].includes('INSERT INTO trx_base')
-      )
-      expect(insertCalls.length).toBe(2)
-    })
-
-    it('adds fee line when fee option provided', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createTransfer(1, 2, 10000, { fee: 100 })
-
-      // Should create three lines (from, to, fee)
-      const insertCalls = mockExecSQL.mock.calls.filter(
-        call => call[0].includes('INSERT INTO trx_base')
-      )
-      expect(insertCalls.length).toBe(3)
-    })
-  })
-
-  describe('createExchange', () => {
-    it('creates exchange with two lines (from and to)', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createExchange(1, 2, 10000, 9200)
-
-      // Should create two lines with SYSTEM_TAGS.EXCHANGE
-      const insertCalls = mockExecSQL.mock.calls.filter(
-        call => call[0].includes('INSERT INTO trx_base')
-      )
-      expect(insertCalls.length).toBe(2)
-    })
-
-    it('uses different amounts for from and to', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createExchange(1, 2, 10000, 9200)
-
-      const insertCalls = mockExecSQL.mock.calls.filter(
-        call => call[0].includes('INSERT INTO trx_base')
-      )
-      // First line: from amount
-      expect(insertCalls[0][1]).toContain(10000)
-      // Second line: to amount
-      expect(insertCalls[1][1]).toContain(9200)
-    })
-
-    it('passes options correctly', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId() })
-        .mockResolvedValueOnce(sampleLine)
-        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
-      mockQuerySQL.mockResolvedValue([sampleLine])
-
-      await transactionRepository.createExchange(1, 2, 10000, 9200, {
-        counterpartyId: 1,
-        note: 'Exchange note',
-        timestamp: 1700000000,
-      })
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO trx'),
-        expect.arrayContaining([1700000000])
       )
     })
   })
