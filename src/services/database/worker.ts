@@ -14,11 +14,12 @@ declare type SqlValue =
 
 interface WorkerMessage {
   id: number
-  type: 'init' | 'init_encrypted' | 'exec' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe'
+  type: 'init' | 'init_encrypted' | 'exec' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted'
   sql?: string
   bind?: SqlValue[]
   key?: string      // Hex-encoded encryption key
   newKey?: string   // Hex-encoded new key for rekey operation
+  filename?: string // Source filename for export_decrypted
 }
 
 interface WorkerResponse {
@@ -251,8 +252,76 @@ function closeDatabase(): void {
   }
 }
 
+async function exportDecrypted(filename: string, key: string): Promise<ArrayBuffer> {
+  const sqlite3 = await getSqlite3()
+  const tempFilename = '/export-temp-decrypted.sqlite3'
+
+  // Close existing connection if any
+  if (db) {
+    db.close()
+    db = null
+  }
+
+  let sqlite3OpenFlags = 'cw'
+  if (import.meta.env.DEV) {
+    sqlite3OpenFlags += 't'
+  }
+  // 1. Open encrypted source database in read-only mode
+  const sourceDb = new sqlite3.oo1.OpfsDb(filename, sqlite3OpenFlags)
+
+  try {
+    // Set encryption key and verify
+    sourceDb.exec([
+      `PRAGMA key = "x'${key}'";`,
+      'SELECT count(*) FROM sqlite_master;'
+    ].join(' '))
+
+    // 2. Create temp file in OPFS for decrypted export
+    await createFile(tempFilename.replace('/', ''))
+
+    // 3. Attach temp as unencrypted database (empty key = no encryption)
+    sourceDb.exec(`ATTACH DATABASE '${tempFilename}' AS plaintext KEY ''`)
+
+    // 4. Export data to plaintext database
+    sourceDb.exec(`SELECT sqlcipher_export('plaintext')`)
+
+    // 5. Detach
+    sourceDb.exec('DETACH DATABASE plaintext')
+
+    // 6. Close source database
+    sourceDb.close()
+
+    // 7. Read temp file as ArrayBuffer from OPFS
+    const root = await navigator.storage.getDirectory()
+    const tempHandle = await root.getFileHandle(tempFilename.replace('/', ''))
+    const tempFile = await tempHandle.getFile()
+    const decryptedContent = await tempFile.arrayBuffer()
+
+    // 8. Delete temp file from OPFS
+    await root.removeEntry(tempFilename.replace('/', ''))
+
+    // 9. Return ArrayBuffer
+    return decryptedContent
+
+  } catch (error) {
+    try {
+      sourceDb.close()
+    } catch {
+      // Ignore close errors
+    }
+    // Clean up temp file if it exists
+    try {
+      const root = await navigator.storage.getDirectory()
+      await root.removeEntry(tempFilename.replace('/', ''))
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error
+  }
+}
+
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const { id, type, sql, bind, key, newKey } = event.data
+  const { id, type, sql, bind, key, newKey, filename } = event.data
   const response: WorkerResponse = { id, success: false }
 
   try {
@@ -291,6 +360,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
       case 'wipe':
         await wipeDatabase()
+        response.success = true
+        break
+
+      case 'export_decrypted':
+        if (!filename || !key) throw new Error('Filename and key required for export_decrypted')
+        response.data = await exportDecrypted(filename, key)
         response.success = true
         break
 

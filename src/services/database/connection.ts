@@ -46,6 +46,7 @@ interface SendMessageOptions {
   bind?: unknown[]
   key?: string
   newKey?: string
+  filename?: string
 }
 
 function sendMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
@@ -94,6 +95,11 @@ export async function rekeyDatabase(key: string, newKey: string): Promise<void> 
 export async function wipeDatabase(): Promise<void> {
   await sendMessage('wipe')
   initPromise = null
+}
+
+export async function exportDecryptedDatabase(filename: string, key: string): Promise<ArrayBuffer> {
+  const result = await sendMessage('export_decrypted', { filename, key })
+  return result as ArrayBuffer
 }
 
 export async function execSQL(sql: string, bind?: unknown[]): Promise<void> {
