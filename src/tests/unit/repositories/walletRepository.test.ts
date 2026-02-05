@@ -61,7 +61,7 @@ describe('walletRepository', () => {
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining('SELECT'),
-        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.ARCHIVED]
+        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.ARCHIVED, SYSTEM_TAGS.SYSTEM]
       )
       expect(result).toHaveLength(1)
       expect(result[0].accounts).toEqual([sampleAccount])

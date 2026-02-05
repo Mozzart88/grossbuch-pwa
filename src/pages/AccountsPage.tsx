@@ -47,7 +47,7 @@ export function AccountsPage() {
         walletRepository.findAll(),
         currencyRepository.findAll(),
       ])
-      setWallets(ws)
+      setWallets(ws.filter(w => !w.is_virtual))
       setCurrencies(curs)
     } catch (error) {
       console.error('Failed to load data:', error)
@@ -296,11 +296,11 @@ export function AccountsPage() {
         ) : (
           wallets.map((wallet) => (
             <Card key={wallet.id}
-              className="">
+              style={{ borderLeft: wallet.color ? `4px solid ${wallet.color}` : undefined }}
+            >
               {/* Wallet header */}
               <div
-                className="p-4 flex items-center justify-between"
-                style={{ borderLeft: wallet.color ? `4px solid ${wallet.color}` : undefined }}
+                className={`p-4  flex items-center justify-between`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">💰</span>
