@@ -403,8 +403,20 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         ? (await currencyRepository.getExchangeRate(selectedAccount.currency_id))?.rate ?? 100
         : 100
 
+      let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
+      if (counterpartyName && !counterpartyId) {
+        finalCounterpartyId = (await counterpartyRepository.create({
+          name: counterpartyName,
+          tag_ids: [parseInt(finalTagId)]
+        })).id
+      } else if (finalCounterpartyId) {
+        const tagsIds = counterparties.find(c => c.id === finalCounterpartyId)?.tag_ids || []
+        tagsIds.push(parseInt(finalTagId))
+        tagsIds
+        await counterpartyRepository.update(finalCounterpartyId, { tag_ids: [...new Set(tagsIds)] })
+      }
       const payload: TransactionInput = {
-        counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
+        counterparty_id: finalCounterpartyId ? finalCounterpartyId : undefined,
         counterparty_name: counterpartyName || undefined,
         timestamp: Math.floor(datetime / 1000),
         lines: []
@@ -588,7 +600,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       } else {
         await transactionRepository.create(payload)
       }
-
       onSubmit()
     } catch (error) {
       console.error('Failed to save transaction:', error)

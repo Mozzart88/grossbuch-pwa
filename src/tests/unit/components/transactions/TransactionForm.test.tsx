@@ -16,6 +16,8 @@ vi.mock('../../../../services/repositories', () => ({
   },
   counterpartyRepository: {
     findAll: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
   },
   currencyRepository: {
     findAll: vi.fn(),
@@ -166,6 +168,8 @@ describe('TransactionForm', () => {
     mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
+    mockCounterpartyRepository.create.mockResolvedValue({ id: 256 } as any)
+    mockCounterpartyRepository.update.mockResolvedValue({} as any)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
     mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
@@ -878,7 +882,7 @@ describe('TransactionForm', () => {
       })
     })
   })
-  describe('Submission with options', () => {
+  describe('submission with options', () => {
     it('submits with counterparty and note', async () => {
       renderForm()
       await screen.findByLabelText(/^Amount/i)
@@ -921,6 +925,46 @@ describe('TransactionForm', () => {
       })
     })
 
+    it('counterparty links to new transaction tag', async () => {
+      renderForm()
+      await screen.findByLabelText(/^Amount/i)
+
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
+
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'transport' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'transport' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'transport' }))
+
+      // Use LiveSearch to select existing counterparty
+      const counterpartyInput = screen.getByRole('combobox', { name: /counterparty/i })
+      fireEvent.focus(counterpartyInput)
+      fireEvent.change(counterpartyInput, { target: { value: 'Restaurant ABC' } })
+
+      // Click on the matching option
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'Restaurant ABC' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'Restaurant ABC' }))
+
+      fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'Dinner note' } })
+
+      fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
+
+      await waitFor(() => {
+        expect(mockCounterpartyRepository.update).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({
+            tag_ids: [10, 11]
+          })
+        )
+      })
+    })
+
     it('submits with new counterparty name', async () => {
       renderForm()
       await screen.findByLabelText(/^Amount/i)
@@ -953,6 +997,43 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             counterparty_name: 'New CP',
+          })
+        )
+      })
+    })
+
+    it('new counterparty links to transaction tag', async () => {
+      renderForm()
+      await screen.findByLabelText(/^Amount/i)
+
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
+
+      // Select category using LiveSearch
+      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: 'food' }))
+
+      // Use LiveSearch to enter a new counterparty name
+      const counterpartyInput = screen.getByRole('combobox', { name: /counterparty/i })
+      fireEvent.focus(counterpartyInput)
+      fireEvent.change(counterpartyInput, { target: { value: 'New CP' } })
+
+      // Click on the "Create new" option
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: /Create "New CP"/ })).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByRole('option', { name: /Create "New CP"/ }))
+
+      fireEvent.submit(screen.getByRole('button', { name: 'Add' }).closest('form')!)
+
+      await waitFor(() => {
+        expect(mockCounterpartyRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tag_ids: [10]
           })
         )
       })

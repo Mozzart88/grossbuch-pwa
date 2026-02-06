@@ -407,7 +407,6 @@ export const transactionRepository = {
     )
     if (!trxResult) throw new Error('Failed to create transaction')
     const trxId = trxResult.id
-    // const hexId = blobToHex(trxId)
 
     // Link counterparty if provided
     if (input.counterparty_id) {
@@ -415,20 +414,7 @@ export const transactionRepository = {
         'INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)',
         [trxId, input.counterparty_id]
       )
-    } else if (input.counterparty_name) {
-      // Auto-create counterparty if name provided
-      await execSQL(`
-        INSERT INTO counterparty (name)
-        SELECT ?
-        WHERE NOT EXISTS (SELECT 1 FROM counterparty WHERE name = ?)
-      `, [input.counterparty_name, input.counterparty_name])
-
-      await execSQL(`
-        INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
-        VALUES (?, (SELECT id FROM counterparty WHERE name = ?))
-      `, [trxId, input.counterparty_name])
     }
-
     // Insert transaction lines
     for (const line of input.lines) {
       await this.addLine(trxId, line)
