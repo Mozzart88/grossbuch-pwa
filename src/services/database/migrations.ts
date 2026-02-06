@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 7
+export const CURRENT_VERSION = 8
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1200,6 +1200,37 @@ ORDER BY id
     LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
     ORDER BY t.timestamp;`,
   ],
+
+  8: [
+    `CREATE TEMP TABLE _tmp_c2t (
+      c_id integer,
+      t_id integer
+    );`,
+
+    `INSERT INTO _tmp_c2t
+    SELECT counterparty_id, tag_id from counterparty_to_tags;`,
+
+    `DROP TABLE counterparty_to_tags;`,
+
+    `CREATE TABLE counterparty_to_tags (
+      counterparty_id INTEGER REFERENCES counterparty(id) ON DELETE CASCADE,
+      tag_id INTEGER REFERENCES tag(id) ON DELETE CASCADE,
+      UNIQUE(counterparty_id, tag_id)
+    );`,
+
+    `INSERT OR IGNORE INTO counterparty_to_tags
+    SELECT c_id, t_id from _tmp_c2t;`,
+
+    `DROP TABLE IF EXISTS _tmp_c2t;`,
+
+    `INSERT OR IGNORE INTO counterparty_to_tags (counterparty_id, tag_id)
+    SELECT t2c.counterparty_id, tb.tag_id
+    FROM trx t
+    LEFT JOIN trx_base tb ON tb.trx_id = t.id
+    JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+    JOIN tag_to_tag t2t ON t2t.child_id = tb.tag_id
+    WHERE t2t.parent_id != 1 ;`
+  ]
 }
 
 export async function runMigrations(): Promise<void> {
@@ -1220,10 +1251,9 @@ export async function runMigrations(): Promise<void> {
   for (let version = currentVersion + 1; version <= CURRENT_VERSION; version++) {
     const statements = migrations[version]
     if (statements) {
+      statements.unshift('BEGIN TRANSACTION;')
+      statements.push('COMMIT;')
       await execSQL(statements.join(' '))
-      // for (const sql of statements) {
-      //   await execSQL(sql)
-      // }
       // Update version
       if (version > 1) {
         await execSQL(`UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'db_version'`, [

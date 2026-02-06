@@ -316,6 +316,39 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     return result
   }, [currencies, activeCurrencies, selectedAccount?.currency_id, paymentCurrencyId])
 
+  const sortedTagsOptions = (() => {
+    const cId = counterpartyId ? parseInt(counterpartyId) : 0
+    const res: { value: number, label: string }[] = []
+
+    if (cId) {
+      const counterparty = counterparties.find(c => c.id === cId)!
+      filteredTags.filter(ft => counterparty.tag_ids?.includes(ft.id))
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .forEach(t => res.push({ value: t.id, label: t.name }))
+    }
+    filteredTags.forEach(t => {
+      if (!res.find(ft => t.id === ft.value)) {
+        res.push({ value: t.id, label: t.name })
+      }
+    })
+    return res
+  })();
+  const sortedCounterpartiesOptions = (() => {
+    const tId = tagId ? parseInt(tagId) : 0
+    const res: { value: number, label: string }[] = []
+    if (tId) {
+      counterparties.filter(c => c.tag_ids?.includes(tId))
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .forEach(c => res.push({ value: c.id, label: c.name }))
+
+    }
+    counterparties.forEach(c => {
+      if (!res.find(cp => cp.value === c.id))
+        res.push({ value: c.id, label: c.name })
+    })
+    return res
+  })();
+
   // Calculate step and placeholder based on decimal places
   const getStep = (decimals: number) => (1 / Math.pow(10, decimals)).toFixed(decimals)
   const getPlaceholder = (decimals: number) => '0.' + '0'.repeat(decimals)
@@ -403,8 +436,20 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         ? (await currencyRepository.getExchangeRate(selectedAccount.currency_id))?.rate ?? 100
         : 100
 
+      let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
+      if (counterpartyName && !counterpartyId) {
+        finalCounterpartyId = (await counterpartyRepository.create({
+          name: counterpartyName,
+          tag_ids: [parseInt(finalTagId)]
+        })).id
+      } else if (finalCounterpartyId) {
+        const tagsIds = counterparties.find(c => c.id === finalCounterpartyId)?.tag_ids || []
+        tagsIds.push(parseInt(finalTagId))
+        tagsIds
+        await counterpartyRepository.update(finalCounterpartyId, { tag_ids: [...new Set(tagsIds)] })
+      }
       const payload: TransactionInput = {
-        counterparty_id: counterpartyId ? parseInt(counterpartyId) : undefined,
+        counterparty_id: finalCounterpartyId ? finalCounterpartyId : undefined,
         counterparty_name: counterpartyName || undefined,
         timestamp: Math.floor(datetime / 1000),
         lines: []
@@ -588,7 +633,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       } else {
         await transactionRepository.create(payload)
       }
-
       onSubmit()
     } catch (error) {
       console.error('Failed to save transaction:', error)
@@ -713,10 +757,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               setTagId(`${v}`)
               setNewTagName('') // Clear pending new tag when existing selected
             }}
-            options={filteredTags.map((t) => ({
-              value: t.id,
-              label: t.name,
-            }))}
+            options={sortedTagsOptions}
             placeholder="Select category"
             error={errors.tagId}
             onCreateNew={(name) => {
@@ -737,10 +778,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       {(mode === 'income' || mode === 'expense') && (
         <LiveSearch
           label="Counterparty (optional)"
-          options={counterparties.map((cp) => ({
-            value: cp.id,
-            label: cp.name,
-          }))}
+          options={sortedCounterpartiesOptions}
           value={counterpartyId}
           onChange={(val) => {
             setCounterpartyId(val.toString())

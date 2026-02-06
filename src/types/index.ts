@@ -124,7 +124,7 @@ export interface CounterpartyNote {
 
 export interface CounterpartyInput {
   name: string
-  note?: string
+  note?: string | null
   tag_ids?: number[]
 }
 
