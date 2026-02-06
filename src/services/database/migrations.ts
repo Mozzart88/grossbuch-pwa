@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 7
+export const CURRENT_VERSION = 8
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1222,7 +1222,15 @@ ORDER BY id
     SELECT c_id, t_id from _tmp_c2t;`,
 
     `DROP TABLE IF EXISTS _tmp_c2t;`,
-  ],
+
+    `INSERT OR IGNORE INTO counterparty_to_tags (counterparty_id, tag_id)
+    SELECT t2c.counterparty_id, tb.tag_id
+    FROM trx t
+    LEFT JOIN trx_base tb ON tb.trx_id = t.id
+    JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+    JOIN tag_to_tag t2t ON t2t.child_id = tb.tag_id
+    WHERE t2t.parent_id != 1 ;`
+  ]
 }
 
 export async function runMigrations(): Promise<void> {
