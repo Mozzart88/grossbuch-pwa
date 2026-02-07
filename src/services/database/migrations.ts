@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 9
+export const CURRENT_VERSION = 10
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1295,6 +1295,62 @@ ORDER BY id
     FROM tag t
     LEFT JOIN tag_sort_order tso ON t.id = tso.tag_id
     ORDER BY sort_order DESC, name ASC;`,
+  ],
+  10: [
+
+    `CREATE TABLE counterparty_sort_order (
+      counterparty_id integer REFERENCES counterparty(id) on DELETE CASCADE,
+      count integer DEFAULT 0,
+      UNIQUE(counterparty_id)
+    );`,
+
+    `CREATE TRIGGER trg_counterparty_sort_order_increment
+    AFTER INSERT ON trx_to_counterparty
+    BEGIN
+      UPDATE counterparty_sort_order
+      SET count = count + 1
+      WHERE NEW.counterparty_id = counterparty_sort_order.counterparty_id;
+    END;`,
+
+    `CREATE TRIGGER trg_counterparty_sort_order_decrement
+    AFTER DELETE ON trx_to_counterparty
+    FOR EACH ROW
+    BEGIN
+      UPDATE counterparty_sort_order
+      SET count = count - 1
+      WHERE counterparty_sort_order.counterparty_id = OLD.counterparty_id;
+    END;`,
+
+    `CREATE
+    TRIGGER trg_counterparty_sort_order_new_counterparty
+    AFTER INSERT ON counterparty
+    FOR EACH ROW
+    BEGIN
+      INSERT INTO counterparty_sort_order
+      (counterparty_id) VALUES (new.id);
+    END;`,
+
+    `INSERT OR IGNORE INTO counterparty_sort_order
+    SELECT DISTINCT 
+      t.id,
+      0
+    FROM counterparty t;`,
+
+    `UPDATE counterparty_sort_order 
+      SET count = (
+      SELECT COUNT(*)
+      FROM trx_to_counterparty t2c
+      WHERE t2c.counterparty_id = counterparty_sort_order.counterparty_id
+    );`,
+
+    `CREATE VIEW counterparties AS 
+    SELECT 
+      t.id AS id,
+      t.name AS name,
+      cso.count AS sort_order
+    FROM counterparty t
+    LEFT JOIN counterparty_sort_order cso ON t.id = cso.counterparty_id
+    ORDER BY sort_order DESC, name ASC;`
   ]
 }
 

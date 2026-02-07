@@ -111,6 +111,7 @@ export interface AccountInput {
 export interface Counterparty {
   id: number
   name: string
+  sort_order: number
   // Joined fields
   note?: string | null // Joined from counterparty_note
   tag_ids?: number[]

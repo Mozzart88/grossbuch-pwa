@@ -5,9 +5,8 @@ export const counterpartyRepository = {
   async findAll(): Promise<Counterparty[]> {
     const counterparties = await querySQL<Counterparty>(`
       SELECT c.*, cn.note
-      FROM counterparty c
+      FROM counterparties c
       LEFT JOIN counterparty_note cn ON cn.counterparty_id = c.id
-      ORDER BY c.name ASC
     `)
 
     // Load tag IDs for each counterparty
@@ -28,7 +27,7 @@ export const counterpartyRepository = {
   async findById(id: number): Promise<Counterparty | null> {
     const counterparty = await queryOne<Counterparty>(`
       SELECT c.*, cn.note
-      FROM counterparty c
+      FROM counterparties c
       LEFT JOIN counterparty_note cn ON cn.counterparty_id = c.id
       WHERE c.id = ?
     `, [id])
@@ -47,12 +46,12 @@ export const counterpartyRepository = {
   },
 
   async findByName(name: string): Promise<Counterparty | null> {
-    return queryOne<Counterparty>('SELECT * FROM counterparty WHERE name = ?', [name])
+    return queryOne<Counterparty>('SELECT * FROM counterparties WHERE name = ?', [name])
   },
 
   async findByTagId(tagId: number): Promise<Counterparty[]> {
     return querySQL<Counterparty>(`
-      SELECT cp.* FROM counterparty cp
+      SELECT cp.* FROM counterparties cp
       JOIN counterparty_to_tags ct ON cp.id = ct.counterparty_id
       WHERE ct.tag_id = ?
       ORDER BY cp.name ASC

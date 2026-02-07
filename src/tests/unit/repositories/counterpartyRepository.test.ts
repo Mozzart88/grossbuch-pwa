@@ -25,6 +25,7 @@ describe('counterpartyRepository', () => {
   const sampleCounterparty: Counterparty = {
     id: 1,
     name: 'Supermarket',
+    sort_order: 10,
     note: 'Weekly groceries',
     tag_ids: [12, 14],
     tags: ['food', 'transport'],
@@ -39,7 +40,7 @@ describe('counterpartyRepository', () => {
       const result = await counterpartyRepository.findAll()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('FROM counterparty c')
+        expect.stringContaining('FROM counterparties c')
       )
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining('LEFT JOIN counterparty_note')
@@ -76,7 +77,7 @@ describe('counterpartyRepository', () => {
       const result = await counterpartyRepository.findById(1)
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('FROM counterparty c'),
+        expect.stringContaining('FROM counterparties c'),
         [1]
       )
       expect(mockQueryOne).toHaveBeenCalledWith(
@@ -103,7 +104,7 @@ describe('counterpartyRepository', () => {
       const result = await counterpartyRepository.findByName('Supermarket')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT * FROM counterparty WHERE name = ?',
+        'SELECT * FROM counterparties WHERE name = ?',
         ['Supermarket']
       )
       expect(result).toEqual(sampleCounterparty)
