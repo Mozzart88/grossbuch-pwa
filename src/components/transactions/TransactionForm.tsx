@@ -323,7 +323,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     if (cId) {
       const counterparty = counterparties.find(c => c.id === cId)!
       filteredTags.filter(ft => counterparty.tag_ids?.includes(ft.id))
-        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .toSorted((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
         .forEach(t => res.push({ value: t.id, label: t.name }))
     }
     filteredTags.forEach(t => {

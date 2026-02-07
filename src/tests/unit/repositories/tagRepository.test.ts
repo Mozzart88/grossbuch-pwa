@@ -26,6 +26,7 @@ describe('tagRepository', () => {
   const sampleTag: Tag = {
     id: 23,
     name: 'Groceries',
+    sort_order: 10
   }
 
   describe('findAll', () => {
@@ -35,7 +36,7 @@ describe('tagRepository', () => {
 
       const result = await tagRepository.findAll()
 
-      expect(mockQuerySQL).toHaveBeenCalledWith('SELECT * FROM tag ORDER BY id ASC')
+      expect(mockQuerySQL).toHaveBeenCalledWith('SELECT * FROM tags ORDER BY id ASC')
       expect(result).toEqual(tags)
     })
 
@@ -57,7 +58,7 @@ describe('tagRepository', () => {
 
       const result = await tagRepository.findById(23)
 
-      expect(mockQueryOne).toHaveBeenCalledWith('SELECT * FROM tag WHERE id = ?', [23])
+      expect(mockQueryOne).toHaveBeenCalledWith('SELECT * FROM tags WHERE id = ?', [23])
       expect(result).toEqual({
         ...sampleTag,
         parent_ids: [SYSTEM_TAGS.EXPENSE],
@@ -82,7 +83,7 @@ describe('tagRepository', () => {
 
       const result = await tagRepository.findByName('Groceries')
 
-      expect(mockQueryOne).toHaveBeenCalledWith('SELECT * FROM tag WHERE name = ?', ['Groceries'])
+      expect(mockQueryOne).toHaveBeenCalledWith('SELECT * FROM tags WHERE name = ?', ['Groceries'])
       expect(result).toEqual(sampleTag)
     })
 
@@ -103,7 +104,7 @@ describe('tagRepository', () => {
       const result = await tagRepository.findUserTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE parent_id = ?'),
+        expect.stringContaining('WHERE th.parent_id = ?'),
         [SYSTEM_TAGS.DEFAULT]
       )
 
@@ -119,7 +120,7 @@ describe('tagRepository', () => {
       const result = await tagRepository.findIncomeTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE parent_id = ?'),
+        expect.stringContaining('WHERE th.parent_id = ?'),
         [SYSTEM_TAGS.INCOME]
       )
       expect(result).toEqual(incomeTags)
@@ -134,7 +135,7 @@ describe('tagRepository', () => {
       const result = await tagRepository.findExpenseTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE parent_id = ?'),
+        expect.stringContaining('WHERE th.parent_id = ?'),
         [SYSTEM_TAGS.EXPENSE]
       )
       expect(result).toEqual(expenseTags)
@@ -149,7 +150,7 @@ describe('tagRepository', () => {
       const result = await tagRepository.findSystemTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE parent_id = ?'),
+        expect.stringContaining('WHERE th.parent_id = ?'),
         [SYSTEM_TAGS.SYSTEM]
       )
       expect(result).toEqual(systemTags)
