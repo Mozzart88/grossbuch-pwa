@@ -313,6 +313,7 @@ export const transactionRepository = {
   // Get monthly counterparties summary with rate conversion to default currency
   async getMonthlyCounterpartiesSummary(yearMonth: string): Promise<MonthlyCounterpartySummary[]> {
     const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    // TODO: Why do wee use defferent timezones?
     const endDate = new Date(`${yearMonth}-01`)
     endDate.setMonth(endDate.getMonth() + 1)
     const endTs = Math.floor(endDate.getTime() / 1000)
