@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 8
+export const CURRENT_VERSION = 9
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1230,6 +1230,71 @@ ORDER BY id
     JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
     JOIN tag_to_tag t2t ON t2t.child_id = tb.tag_id
     WHERE t2t.parent_id != 1 ;`
+  ],
+  9: [
+
+    `CREATE TABLE tag_sort_order (
+      tag_id integer REFERENCES tag(id) on DELETE CASCADE,
+      count integer DEFAULT 0,
+      UNIQUE(tag_id)
+    );`,
+
+    `CREATE TRIGGER trg_tag_sort_order_increment
+    AFTER INSERT ON trx_base
+    BEGIN
+      UPDATE tag_sort_order
+      SET count = count + 1
+      WHERE NEW.tag_id = tag_sort_order.tag_id;
+    END;`,
+
+    `CREATE TRIGGER trg_tag_sort_order_decrement
+    AFTER DELETE ON trx_base
+    FOR EACH ROW
+    BEGIN
+      UPDATE tag_sort_order
+      SET count = count - 1
+      WHERE tag_sort_order.tag_id = OLD.tag_id;
+    END;`,
+
+    `CREATE TRIGGER trg_tag_sort_roder_update_trx_base_tag
+    AFTER UPDATE OF tag_id ON trx_base
+    BEGIN
+      UPDATE tag_sort_order
+      SET count = count + 1
+      WHERE tag_sort_order.tag_id = NEW.tag_id;
+      UPDATE tag_sort_order
+      SET count = count - 1
+      WHERE tag_sort_order.tag_id = OLD.tag_id;
+    END;`,
+
+    `CREATE
+    TRIGGER trg_tag_sort_order_new_tag
+    AFTER INSERT ON tag
+    FOR EACH ROW
+    BEGIN
+      INSERT INTO tag_sort_order
+      (tag_id) VALUES (new.id);
+    END;`,
+
+    `INSERT OR IGNORE INTO tag_sort_order
+    SELECT DISTINCT 
+      t.id,
+      0
+    FROM tag t
+    JOIN tag_to_tag t2t ON t.id = t2t.child_id
+    WHERE t2t.parent_id != 1;`,
+
+    `UPDATE tag_sort_order 
+    SET count = (SELECT COUNT(*) FROM trx_base WHERE trx_base.tag_id = tag_sort_order.tag_id);`,
+
+    `CREATE VIEW tags AS 
+    SELECT 
+      t.id AS id,
+      t.name AS name,
+      tso.count AS sort_order
+    FROM tag t
+    LEFT JOIN tag_sort_order tso ON t.id = tso.tag_id
+    ORDER BY sort_order DESC, name ASC;`,
   ]
 }
 

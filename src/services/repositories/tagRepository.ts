@@ -4,14 +4,15 @@ import { SYSTEM_TAGS } from '../../types'
 
 export const tagRepository = {
   async findAll(): Promise<Tag[]> {
-    return querySQL<Tag>('SELECT * FROM tag ORDER BY id ASC')
+    return querySQL<Tag>('SELECT * FROM tags ORDER BY id ASC')
   },
 
   async findById(id: number): Promise<Tag | null> {
-    const tag = await queryOne<Tag>('SELECT * FROM tag WHERE id = ?', [id])
+    const tag = await queryOne<Tag>('SELECT * FROM tags WHERE id = ?', [id])
     if (!tag) return null
 
     // Load parent relationships
+    // TODO: should be used tags_hierarchy
     const parents = await querySQL<{ parent_id: number; name: string }>(`
       SELECT ttt.parent_id, t.name
       FROM tag_to_tag ttt
@@ -22,6 +23,7 @@ export const tagRepository = {
     tag.parent_names = parents.map(p => p.name)
 
     // Load child relationships
+    // TODO: should be used tags_hierarchy
     const children = await querySQL<{ child_id: number; name: string }>(`
       SELECT ttt.child_id, t.name
       FROM tag_to_tag ttt
@@ -35,7 +37,7 @@ export const tagRepository = {
   },
 
   async findByName(name: string): Promise<Tag | null> {
-    return queryOne<Tag>('SELECT * FROM tag WHERE name = ?', [name])
+    return queryOne<Tag>('SELECT * FROM tags WHERE name = ?', [name])
   },
 
   // Find user-visible tags (children of 'default' tag, id=2)
@@ -59,6 +61,7 @@ export const tagRepository = {
   },
 
   // Check if tag is a system tag (protected from deletion)
+  // TODO: can be used tags_hierarchy or tags with sort_order = null
   async isSystemTag(id: number): Promise<boolean> {
     const result = await queryOne<{ is_system: number }>(`
       SELECT EXISTS(
@@ -190,11 +193,10 @@ export const tagRepository = {
   async getTagsByParentId(id: number): Promise<Tag[]> {
     return querySQL<Tag>(`
       SELECT 
-        child_id as id,
-        child as name
-      FROM tags_hierarchy
-      WHERE parent_id = ?
-      ORDER BY name ASC
+        t.*
+      FROM tags t
+      JOIN tags_hierarchy th ON t.id = th.child_id
+      WHERE th.parent_id = ?
     `, [id])
   }
 }

@@ -17,6 +17,7 @@ export interface TagIcon {
 export interface Tag {
   id: number
   name: string
+  sort_order: number | null
   // Joined fields
   parent_ids?: number[]
   parent_names?: string[]
