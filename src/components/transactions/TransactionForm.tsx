@@ -323,14 +323,16 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     if (cId) {
       const counterparty = counterparties.find(c => c.id === cId)!
       filteredTags.filter(ft => counterparty.tag_ids?.includes(ft.id))
-        .toSorted((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+        .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
         .forEach(t => res.push({ value: t.id, label: t.name }))
     }
-    filteredTags.forEach(t => {
-      if (!res.find(ft => t.id === ft.value)) {
-        res.push({ value: t.id, label: t.name })
-      }
-    })
+    filteredTags
+      .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
+      .forEach(t => {
+        if (!res.find(ft => t.id === ft.value)) {
+          res.push({ value: t.id, label: t.name })
+        }
+      })
     return res
   })();
   const sortedCounterpartiesOptions = (() => {
@@ -338,14 +340,16 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     const res: { value: number, label: string }[] = []
     if (tId) {
       counterparties.filter(c => c.tag_ids?.includes(tId))
-        .toSorted((a, b) => a.sort_order - b.sort_order)
+        .toSorted((a, b) => b.sort_order - a.sort_order)
         .forEach(c => res.push({ value: c.id, label: c.name }))
 
     }
-    counterparties.forEach(c => {
-      if (!res.find(cp => cp.value === c.id))
-        res.push({ value: c.id, label: c.name })
-    })
+    counterparties
+      .toSorted((a, b) => b.sort_order - a.sort_order)
+      .forEach(c => {
+        if (!res.find(cp => cp.value === c.id))
+          res.push({ value: c.id, label: c.name })
+      })
     return res
   })();
 
