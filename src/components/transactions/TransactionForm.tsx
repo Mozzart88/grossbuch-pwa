@@ -338,7 +338,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     const res: { value: number, label: string }[] = []
     if (tId) {
       counterparties.filter(c => c.tag_ids?.includes(tId))
-        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .toSorted((a, b) => a.sort_order - b.sort_order)
         .forEach(c => res.push({ value: c.id, label: c.name }))
 
     }
