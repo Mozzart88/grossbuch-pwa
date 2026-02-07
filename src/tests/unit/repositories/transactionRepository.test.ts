@@ -271,16 +271,16 @@ describe('transactionRepository', () => {
 
       const result = await transactionRepository.getMonthlyTagsSummary('2025-01')
 
+      const expecteds = [
+        Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000),
+        Math.floor(new Date('2025-02-01').getTime() / 1000),
+      ]
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining(`WITH curr_dec AS (
         SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
         FROM currency c
       )`),
-        expect.arrayContaining([
-
-          1735700400,
-          1738368000,
-        ])
+        expect.arrayContaining(expecteds)
       )
 
       expect(result).toEqual(mockMonthlyTagSummary)
@@ -293,16 +293,16 @@ describe('transactionRepository', () => {
 
       const result = await transactionRepository.getMonthlyCounterpartiesSummary('2025-01')
 
+      const expecteds = [
+        Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000),
+        Math.floor(new Date('2025-02-01').getTime() / 1000),
+      ]
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining(`WITH curr_dec AS (
         SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
         FROM currency c
       )`),
-        expect.arrayContaining([
-
-          1735700400,
-          1738368000,
-        ])
+        expect.arrayContaining(expecteds)
       )
 
       expect(result).toEqual(mockMonthlyTagSummary)
@@ -314,17 +314,17 @@ describe('transactionRepository', () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
 
       const result = await transactionRepository.getMonthlyCategoryBreakdown('2025-01')
+      const expecteds = [
+        Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000),
+        Math.floor(new Date('2025-02-01').getTime() / 1000),
+      ]
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining(`WITH curr_dec AS (
         SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
         FROM currency c
       )`),
-        expect.arrayContaining([
-
-          1735700400,
-          1738368000,
-        ])
+        expect.arrayContaining(expecteds)
       )
 
       expect(result).toEqual(mockMonthlyTagSummary)
