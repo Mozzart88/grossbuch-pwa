@@ -272,7 +272,7 @@ export function insertTransaction(data: {
   }
 
   if (data.note) {
-    database.run('INSERT INTO trx_note (trx_base_id, note) VALUES (?, ?)', [trxBaseId, data.note])
+    database.run('INSERT INTO trx_note (trx_id, note) VALUES (?, ?)', [trxId, data.note])
   }
 
   return trxId

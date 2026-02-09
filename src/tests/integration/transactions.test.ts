@@ -368,4 +368,162 @@ describe('Transactions Integration', () => {
       }).toThrow()
     })
   })
+
+  describe('Transaction Notes', () => {
+    it('stores notes at transaction level (trx_id)', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Insert transaction with note
+      const trxId = insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 5000,
+        note: 'Lunch at restaurant',
+      })
+
+      // Verify note is stored with trx_id reference
+      const result = db.exec('SELECT note FROM trx_note WHERE trx_id = ?', [trxId])
+      expect(result[0].values[0][0]).toBe('Lunch at restaurant')
+    })
+
+    it('retrieves note when querying transaction with join', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      const trxId = insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 5000,
+        note: 'Test note for query',
+      })
+
+      // Query using the same pattern as findById
+      const result = db.exec(`
+        SELECT t.id, t.timestamp, tn.note
+        FROM trx t
+        LEFT JOIN trx_note tn ON tn.trx_id = t.id
+        WHERE t.id = ?
+      `, [trxId])
+
+      expect(result[0].values[0][2]).toBe('Test note for query')
+    })
+
+    it('returns null note when transaction has no note', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      const trxId = insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount: 5000,
+        // No note
+      })
+
+      const result = db.exec(`
+        SELECT t.id, tn.note
+        FROM trx t
+        LEFT JOIN trx_note tn ON tn.trx_id = t.id
+        WHERE t.id = ?
+      `, [trxId])
+
+      expect(result[0].values[0][1]).toBeNull()
+    })
+
+    it('shares note across multiple lines in same transaction', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+      const accountId2 = insertAccount({ wallet_id: walletId, currency_id: 2 })
+
+      // Create transaction with multiple lines
+      const trxId = new Uint8Array(8)
+      crypto.getRandomValues(trxId)
+      const timestamp = Math.floor(Date.now() / 1000)
+
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
+
+      // Add note at transaction level
+      db.run('INSERT INTO trx_note (trx_id, note) VALUES (?, ?)', [trxId, 'Multi-line transaction note'])
+
+      // Add two lines (e.g., exchange)
+      const lineId1 = new Uint8Array(8)
+      crypto.getRandomValues(lineId1)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [lineId1, trxId, accountId, SYSTEM_TAGS.EXCHANGE, '-', 10000, 100]
+      )
+
+      const lineId2 = new Uint8Array(8)
+      crypto.getRandomValues(lineId2)
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [lineId2, trxId, accountId2, SYSTEM_TAGS.EXCHANGE, '+', 9000, 90]
+      )
+
+      // Verify there's only one note for the transaction
+      const noteCount = db.exec('SELECT COUNT(*) FROM trx_note WHERE trx_id = ?', [trxId])
+      expect(noteCount[0].values[0][0]).toBe(1)
+
+      // Verify both lines can access the same note via transaction
+      const result = db.exec(`
+        SELECT tb.id, tn.note
+        FROM trx_base tb
+        JOIN trx t ON tb.trx_id = t.id
+        LEFT JOIN trx_note tn ON tn.trx_id = t.id
+        WHERE t.id = ?
+      `, [trxId])
+
+      expect(result[0].values.length).toBe(2) // Two lines
+      expect(result[0].values[0][1]).toBe('Multi-line transaction note')
+      expect(result[0].values[1][1]).toBe('Multi-line transaction note')
+    })
+
+    it('deletes note when transaction is deleted (CASCADE)', async () => {
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Create transaction manually without trx_base to test cascade
+      const trxId = new Uint8Array(8)
+      crypto.getRandomValues(trxId)
+      const timestamp = Math.floor(Date.now() / 1000)
+
+      db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
+      db.run('INSERT INTO trx_note (trx_id, note) VALUES (?, ?)', [trxId, 'Will be deleted'])
+
+      // Verify note exists
+      const before = db.exec('SELECT COUNT(*) FROM trx_note WHERE trx_id = ?', [trxId])
+      expect(before[0].values[0][0]).toBe(1)
+
+      // Delete transaction
+      db.run('DELETE FROM trx WHERE id = ?', [trxId])
+
+      // Verify note is also deleted
+      const after = db.exec('SELECT COUNT(*) FROM trx_note WHERE trx_id = ?', [trxId])
+      expect(after[0].values[0][0]).toBe(0)
+    })
+
+    it('trx_note table has trx_id column (not trx_base_id)', async () => {
+      const db = getTestDatabase()
+
+      // Check table structure
+      const schema = db.exec("PRAGMA table_info(trx_note)")
+      const columns = schema[0].values.map(row => row[1])
+
+      expect(columns).toContain('trx_id')
+      expect(columns).not.toContain('trx_base_id')
+    })
+  })
 })

@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 10
+export const CURRENT_VERSION = 11
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1343,14 +1343,39 @@ ORDER BY id
       WHERE t2c.counterparty_id = counterparty_sort_order.counterparty_id
     );`,
 
-    `CREATE VIEW counterparties AS 
-    SELECT 
+    `CREATE VIEW counterparties AS
+    SELECT
       t.id AS id,
       t.name AS name,
       cso.count AS sort_order
     FROM counterparty t
     LEFT JOIN counterparty_sort_order cso ON t.id = cso.counterparty_id
     ORDER BY sort_order DESC, name ASC;`
+  ],
+  11: [
+    // ============================================
+    // MIGRATION 11: Move trx_note from trx_base to trx
+    // Notes are now attached to transactions (headers) rather than individual lines
+    // ============================================
+
+    // Create new trx_note table with trx_id reference
+    `CREATE TABLE trx_note_new (
+      trx_id BLOB NOT NULL REFERENCES trx(id) ON DELETE CASCADE,
+      note TEXT NOT NULL
+    );`,
+
+    // Migrate existing notes - concatenate all notes per transaction with newline
+    `INSERT INTO trx_note_new (trx_id, note)
+    SELECT tb.trx_id, GROUP_CONCAT(tn.note, char(10))
+    FROM trx_note tn
+    JOIN trx_base tb ON tb.id = tn.trx_base_id
+    GROUP BY tb.trx_id;`,
+
+    // Drop old table
+    `DROP TABLE trx_note;`,
+
+    // Rename new table
+    `ALTER TABLE trx_note_new RENAME TO trx_note;`,
   ]
 }
 
