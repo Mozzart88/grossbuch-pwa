@@ -1,6 +1,6 @@
 name: Build Test & Deploy main
 on:
-  push:
+  pull_request:
     branches:
       - main
 
@@ -42,14 +42,6 @@ jobs:
           name: build-dev-${{ steps.build-version.outputs.current }}
           path: dist
 
-  smoke-test:
-    needs: build
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    steps:
-      - shell: bash
-        run: echo "Smoke tests passes"
-
   unit-test:
     needs: [build, smoke-test]
     timeout-minutes: 10
@@ -76,92 +68,3 @@ jobs:
           path: dist/
       - name: Run Unit tests
         run: npm run test:coverage
-
-  # e2e-test:
-  #   needs: [build, unit-test]
-  #   timeout-minutes: 60
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: lts/*
-  #     - name: Cache Project dependencies
-  #       id: cache-npm
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ${{ needs.build.outputs.npm-cache-dir }}
-  #         key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-node-
-  #     - name: Install dependencies
-  #       run: npm ci
-  #     - name: Cache Playwright dependencies
-  #       id: cache-playwright
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ~/.cache/ms-playwright
-  #         key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-playwright-
-  #     - if: ${{ steps.cache-playwright.outputs.cache-hit != 'true' }}
-  #       name: Install Playwright Browsers
-  #       run: npx playwright install --with-deps chromium
-  #     - name: Download currnet build
-  #       uses: actions/download-artifact@v5
-  #       with:
-  #         name: build-dev-${{ needs.build.outputs.build-version }}
-  #         path: dist/
-  #     - name: Run Playwright tests
-  #       env:
-  #         PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS: 1
-  #       run: npx playwright test --project chromium
-
-  # upload-pages-build:
-  #   needs: [build, unit-test]
-  #   timeout-minutes: 5
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: lts/*
-  #     - name: Cache Project dependencies
-  #       id: cache-npm
-  #       uses: actions/cache@v4
-  #       with:
-  #         path: ${{ needs.build.outputs.npm-cache-dir }}
-  #         key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-  #         restore-keys: |
-  #           ${{ runner.os }}-node-
-  #     - name: Install dependencies
-  #       run: npm ci
-  #     - name: Build project
-  #       env:
-  #         NODE_ENV: gh-preview
-  #       run: npm run build
-  #     - name: Upload pages build
-  #       uses: actions/upload-pages-artifact@v3
-  #       with:
-  #         path: dist/
-
-  deploy:
-    needs: [build, unit-test]
-    timeout-minutes: 5
-    runs-on: ubuntu-latest
-    env:
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-      - name: Install Vercel CLI
-        run: npm install --global vercel@latest
-      - name: Pull Vercel Env Information
-        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
-      - name: Build Project Artifacts
-        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
-      - name: Deploy Project Artifacts to Vercel
-        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
