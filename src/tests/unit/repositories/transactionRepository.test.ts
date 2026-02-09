@@ -72,7 +72,6 @@ const sampleLine: TransactionLine = {
   wallet: 'Cash',
   currency: 'USD',
   tag: 'food',
-  note: null,
 }
 
 const mockMonthlyTagSummary: MonthlyTagSummary[] = [
@@ -851,25 +850,25 @@ describe('transactionRepository', () => {
       )
     })
 
-    it('inserts note into trx_note when provided', async () => {
+    it('does not insert note (notes are at transaction level)', async () => {
       const line: TransactionLineInput = {
         account_id: 1,
         tag_id: 10,
         sign: '-',
         amount: 5000,
-        note: 'Test note',
         rate: 0
       }
 
       mockQueryOne
         .mockResolvedValueOnce({ id: mockId2() })
-        .mockResolvedValueOnce({ ...sampleLine, note: 'Test note' })
+        .mockResolvedValueOnce(sampleLine)
 
       await transactionRepository.addLine(mockId(), line)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      // Note insertion should not happen at line level
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_note'),
-        expect.arrayContaining(['Test note'])
+        expect.anything()
       )
     })
 
@@ -960,35 +959,20 @@ describe('transactionRepository', () => {
       )
     })
 
-    it('updates note by deleting and reinserting', async () => {
-      mockQueryOne.mockResolvedValue({ ...sampleLine, note: 'New note' })
+    it('does not handle notes (notes are at transaction level)', async () => {
+      mockQueryOne.mockResolvedValue(sampleLine)
 
-      await transactionRepository.updateLine(mockId(), { note: 'New note' })
+      await transactionRepository.updateLine(mockId(), { amount: 6000 })
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM trx_note'),
-        expect.anything()
+      // Note operations should not happen at line level
+      const noteDeleteCalls = mockExecSQL.mock.calls.filter(
+        call => call[0].includes('DELETE FROM trx_note')
       )
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO trx_note'),
-        expect.arrayContaining(['New note'])
+      const noteInsertCalls = mockExecSQL.mock.calls.filter(
+        call => call[0].includes('INSERT INTO trx_note')
       )
-    })
-
-    it('deletes note when set to empty string', async () => {
-      mockQueryOne.mockResolvedValue({ ...sampleLine, note: null })
-
-      await transactionRepository.updateLine(mockId(), { note: '' })
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('DELETE FROM trx_note'),
-        expect.anything()
-      )
-      // Should not insert new note
-      expect(mockExecSQL).not.toHaveBeenCalledWith(
-        expect.stringContaining('INSERT INTO trx_note'),
-        expect.anything()
-      )
+      expect(noteDeleteCalls.length).toBe(0)
+      expect(noteInsertCalls.length).toBe(0)
     })
 
     it('throws error if line not found', async () => {
@@ -1044,13 +1028,13 @@ describe('transactionRepository', () => {
     const input = {
       timestamp: 1705000000,
       counterparty_id: 2,
+      note: 'Updated note',
       lines: [
         {
           account_id: 1,
           tag_id: 10,
           sign: '-' as const,
           amount: 5000,
-          note: 'Updated note',
           rate: 0
         },
       ],
@@ -1096,6 +1080,20 @@ describe('transactionRepository', () => {
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([mockId(), 1, 10, '-', 5000])
+      )
+    })
+
+    it('updates note at transaction level', async () => {
+      await transactionRepository.update(mockId(), input)
+
+      // Should delete old note and insert new one
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM trx_note WHERE trx_id = ?'),
+        [mockId()]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_note (trx_id, note)'),
+        [mockId(), 'Updated note']
       )
     })
 

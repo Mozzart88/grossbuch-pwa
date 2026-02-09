@@ -917,9 +917,7 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             counterparty_id: 1,
-            lines: expect.arrayContaining([
-              expect.objectContaining({ note: 'Dinner note' }),
-            ]),
+            note: 'Dinner note',
           })
         )
       })

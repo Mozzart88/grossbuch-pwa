@@ -127,10 +127,12 @@ export const transactionRepository = {
       SELECT
         t.*,
         c.name as counterparty,
-        tc.counterparty_id
+        tc.counterparty_id,
+        tn.note
       FROM trx t
       LEFT JOIN trx_to_counterparty tc ON tc.trx_id = t.id
       LEFT JOIN counterparty c ON tc.counterparty_id = c.id
+      LEFT JOIN trx_note tn ON tn.trx_id = t.id
       WHERE t.id = ?
     `, [id])
 
@@ -142,12 +144,10 @@ export const transactionRepository = {
         tb.*,
         a.wallet,
         a.currency,
-        tag.name as tag,
-        tn.note
+        tag.name as tag
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
-      LEFT JOIN trx_note tn ON tn.trx_base_id = tb.id
       WHERE tb.trx_id = ?
     `, [id])
 
@@ -415,6 +415,15 @@ export const transactionRepository = {
         [trxId, input.counterparty_id]
       )
     }
+
+    // Insert note at transaction level if provided
+    if (input.note) {
+      await execSQL(
+        'INSERT INTO trx_note (trx_id, note) VALUES (?, ?)',
+        [trxId, input.note]
+      )
+    }
+
     // Insert transaction lines
     for (const line of input.lines) {
       await this.addLine(trxId, line)
@@ -448,26 +457,15 @@ export const transactionRepository = {
     )
     if (!lineResult) throw new Error('Failed to create transaction line')
 
-    // Add note if provided
-    if (line.note) {
-      // const hexLineId = blobToHex(lineResult.id)
-      await execSQL(
-        'INSERT INTO trx_note (trx_base_id, note) VALUES (?, ?)',
-        [lineResult.id, line.note]
-      )
-    }
-
     const result = await queryOne<TransactionLine>(`
       SELECT
         tb.*,
         a.wallet,
         a.currency,
-        tag.name as tag,
-        tn.note
+        tag.name as tag
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
-      LEFT JOIN trx_note tn ON tn.trx_base_id = tb.id
       WHERE tb.id = ?
     `, [lineResult.id])
 
@@ -512,28 +510,15 @@ export const transactionRepository = {
       )
     }
 
-    // Update note
-    if (input.note !== undefined) {
-      await execSQL('DELETE FROM trx_note WHERE trx_base_id = ?', [lineId])
-      if (input.note) {
-        await execSQL(
-          'INSERT INTO trx_note (trx_base_id, note) VALUES (?, ?)',
-          [lineId, input.note]
-        )
-      }
-    }
-
     const result = await queryOne<TransactionLine>(`
       SELECT
         tb.*,
         a.wallet,
         a.currency,
-        tag.name as tag,
-        tn.note
+        tag.name as tag
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
-      LEFT JOIN trx_note tn ON tn.trx_base_id = tb.id
       WHERE tb.id = ?
     `, [lineId])
 
@@ -582,6 +567,15 @@ export const transactionRepository = {
         INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
         VALUES (?, (SELECT id FROM counterparty WHERE name = ?))
       `, [id, input.counterparty_name])
+    }
+
+    // Update note at transaction level
+    await execSQL('DELETE FROM trx_note WHERE trx_id = ?', [id])
+    if (input.note) {
+      await execSQL(
+        'INSERT INTO trx_note (trx_id, note) VALUES (?, ?)',
+        [id, input.note]
+      )
     }
 
     // Wipe and recreate transaction lines

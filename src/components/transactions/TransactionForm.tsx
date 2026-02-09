@@ -140,7 +140,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setAmount((expenseLine.amount / Math.pow(10, targetDp)).toString())
 
       setTagId(expenseLine.tag_id.toString())
-      setNote(expenseLine.note || '')
+      setNote(initialData.note || '')
 
       if (initialData.counterparty_id) {
         setCounterpartyId(initialData.counterparty_id.toString())
@@ -163,7 +163,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     if (detectedMode === 'income' || detectedMode === 'expense') {
       setAccountId(firstLine.account_id.toString())
       setTagId(firstLine.tag_id.toString())
-      setNote(firstLine.note || '')
+      setNote(initialData.note || '')
 
       const acc = accounts.find(a => a.id === firstLine.account_id)
       const dp = acc?.decimalPlaces ?? 2
@@ -184,7 +184,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
       setAccountId(fromLine.account_id.toString())
       setToAccountId(toLine.account_id.toString())
-      setNote(fromLine.note || (initialData.lines as TransactionLine[]).find((l: TransactionLine) => l.note)?.note || '')
+      setNote(initialData.note || '')
 
       const fromAcc = accounts.find(a => a.id === fromLine.account_id)
       const fromDp = fromAcc?.decimalPlaces ?? 2
@@ -456,6 +456,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         counterparty_id: finalCounterpartyId ? finalCounterpartyId : undefined,
         counterparty_name: counterpartyName || undefined,
         timestamp: Math.floor(datetime / 1000),
+        note: note || undefined,
         lines: []
       }
       if (mode === 'income') {
@@ -465,7 +466,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           sign: '+' as const,
           amount: intAmount,
           rate: accountRate,
-          note: note || undefined,
         })
       } else if (mode === 'expense') {
         // Check if this is a multi-currency expense
@@ -508,7 +508,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             sign: '-' as const,
             amount: targetIntAmount,
             rate: targetRate,
-            note: note || undefined,
           })
         } else {
           // Normal single-currency expense
@@ -518,7 +517,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             sign: '-' as const,
             amount: intAmount,
             rate: accountRate,
-            note: note || undefined,
           })
         }
       } else if (mode === 'transfer') {
@@ -529,7 +527,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             sign: '-' as const,
             amount: intAmount,
             rate: accountRate,
-            note: note || undefined,
           })
         payload.lines.push({
           account_id: parseInt(toAccountId),
@@ -612,7 +609,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           sign: '-' as const,
           amount: intAmount,
           rate: fromRate,
-          note: note || undefined,
         })
         payload.lines.push({
           account_id: parseInt(toAccountId),

@@ -137,6 +137,7 @@ export interface Transaction {
   // Joined fields
   counterparty?: string | null
   counterparty_id?: number | null
+  note?: string | null // Joined from trx_note
   lines?: TransactionLine[]
 }
 
@@ -161,7 +162,6 @@ export interface TransactionLine {
   wallet?: string
   currency?: string
   tag?: string
-  note?: string | null
 }
 
 export interface TransactionLineInput {
@@ -170,12 +170,11 @@ export interface TransactionLineInput {
   sign: '+' | '-'
   amount: number
   rate: number // Defaults to 1 for default currency
-  note?: string
 }
 
 // Transaction note
 export interface TransactionNote {
-  trx_base_id: Uint8Array
+  trx_id: Uint8Array
   note: string
 }
 
