@@ -5,15 +5,7 @@ import { TransactionForm } from '../components/transactions'
 import { transactionRepository } from '../services/repositories'
 import { Button, Spinner, useToast } from '../components/ui'
 import type { Transaction } from '../types'
-
-// Helper to convert hex string to Uint8Array
-function hexToBlob(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
-  }
-  return bytes
-}
+import { hexToBlob } from '../utils/blobUtils'
 
 export function EditTransactionPage() {
   const navigate = useNavigate()

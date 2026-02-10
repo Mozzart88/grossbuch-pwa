@@ -631,6 +631,117 @@ export const transactionRepository = {
     return querySQL<TransactionLog>(sql, params)
   },
 
+  // Export all transactions with full detail columns and filters
+  async findAllForExportDetailed(filters: {
+    startDate?: string
+    endDate?: string
+    walletIds?: number[]
+    accountIds?: number[]
+    tagIds?: number[]
+    counterpartyIds?: number[]
+  }): Promise<{
+    date_time: string
+    trx_id: Uint8Array
+    account_id: number
+    wallet_name: string
+    currency_code: string
+    tag_id: number
+    tag_name: string
+    sign: '+' | '-'
+    amount: number
+    decimal_places: number
+    rate: number
+    counterparty_id: number | null
+    counterparty_name: string | null
+    note: string | null
+  }[]> {
+    const conditions: string[] = []
+    const params: unknown[] = []
+
+    if (filters.startDate) {
+      const startTs = Math.floor(new Date(filters.startDate + 'T00:00:00').getTime() / 1000)
+      conditions.push('t.timestamp >= ?')
+      params.push(startTs)
+    }
+    if (filters.endDate) {
+      const endTs = Math.floor(new Date(filters.endDate + 'T23:59:59').getTime() / 1000)
+      conditions.push('t.timestamp <= ?')
+      params.push(endTs)
+    }
+    if (filters.walletIds && filters.walletIds.length > 0) {
+      conditions.push(`w.id IN (${filters.walletIds.map(() => '?').join(',')})`)
+      params.push(...filters.walletIds)
+    }
+    if (filters.accountIds && filters.accountIds.length > 0) {
+      conditions.push(`tb.account_id IN (${filters.accountIds.map(() => '?').join(',')})`)
+      params.push(...filters.accountIds)
+    }
+    if (filters.tagIds && filters.tagIds.length > 0) {
+      conditions.push(`tb.tag_id IN (${filters.tagIds.map(() => '?').join(',')})`)
+      params.push(...filters.tagIds)
+    }
+    if (filters.counterpartyIds && filters.counterpartyIds.length > 0) {
+      conditions.push(`t2c.counterparty_id IN (${filters.counterpartyIds.map(() => '?').join(',')})`)
+      params.push(...filters.counterpartyIds)
+    }
+
+    const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : ''
+
+    return querySQL(`
+      SELECT
+        strftime('%Y-%m-%dT%H:%M:%S', t.timestamp, 'unixepoch', 'localtime') as date_time,
+        t.id as trx_id,
+        tb.account_id,
+        w.name as wallet_name,
+        c.code as currency_code,
+        tb.tag_id,
+        tag.name as tag_name,
+        tb.sign,
+        tb.amount,
+        c.decimal_places,
+        tb.rate,
+        t2c.counterparty_id,
+        cp.name as counterparty_name,
+        tn.note
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON tb.account_id = a.id
+      JOIN wallet w ON a.wallet_id = w.id
+      JOIN currency c ON a.currency_id = c.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty cp ON t2c.counterparty_id = cp.id
+      LEFT JOIN trx_note tn ON tn.trx_id = t.id
+      ${whereClause}
+      ORDER BY t.timestamp ASC
+    `, params)
+  },
+
+  // Check if a transaction exists by blob ID
+  async existsByTrxId(trxId: Uint8Array): Promise<boolean> {
+    const result = await queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM trx WHERE id = ?',
+      [trxId]
+    )
+    return (result?.count ?? 0) > 0
+  },
+
+  // Create a transaction with a specific blob ID (for import)
+  async createWithId(trxId: Uint8Array, timestamp: number): Promise<void> {
+    await execSQL(
+      'INSERT INTO trx (id, timestamp) VALUES (?, ?)',
+      [trxId, timestamp]
+    )
+  },
+
+  // Add a transaction line for import (uses exact rate from CSV, randomblob for trx_base.id)
+  async addImportLine(trxId: Uint8Array, line: TransactionLineInput): Promise<void> {
+    await execSQL(`
+      INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate)
+      VALUES (randomblob(8), ?, ?, ?, ?, ?, ?)
+    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount, line.rate ?? 0])
+  },
+
   // Get transactions for a specific account and month (includes ALL transaction types)
   // Returns all lines of each transaction for full display (transfers/exchanges show both sides)
   async findByAccountAndMonth(accountId: number, yearMonth: string): Promise<TransactionLog[]> {

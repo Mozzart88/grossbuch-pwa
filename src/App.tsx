@@ -18,6 +18,7 @@ import {
   CurrenciesPage,
   ExchangeRatesPage,
   ExportPage,
+  ImportPage,
   DownloadPage,
   TagsPage,
   BudgetsPage,
@@ -106,6 +107,7 @@ function AppContent() {
         <Route path="/settings/currencies" element={<CurrenciesPage />} />
         <Route path="/settings/exchange-rates" element={<ExchangeRatesPage />} />
         <Route path="/settings/export" element={<ExportPage />} />
+        <Route path="/settings/import" element={<ImportPage />} />
         <Route path="/settings/download" element={<DownloadPage />} />
         <Route path="/settings/tags" element={<TagsPage />} />
         <Route path="/settings/budgets" element={<BudgetsPage />} />

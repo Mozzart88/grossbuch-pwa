@@ -16,6 +16,7 @@ vi.mock('../../pages', () => ({
   CurrenciesPage: () => <div data-testid="currencies-page">Currencies</div>,
   ExchangeRatesPage: () => <div data-testid="exchange-rates-page">Exchange Rates</div>,
   ExportPage: () => <div data-testid="export-page">Export</div>,
+  ImportPage: () => <div data-testid="import-page">Import</div>,
   DownloadPage: () => <div data-testid="download-page">Export</div>,
   BudgetsPage: () => <div data-testid="budgets-page">Budgets</div>,
   SummariesPage: () => <div data-testid="summaries-page">Summaries</div>,

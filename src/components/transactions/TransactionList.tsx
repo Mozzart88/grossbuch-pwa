@@ -7,13 +7,7 @@ import { MonthSummary } from './MonthSummary'
 import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-
-// Helper to convert blob ID to string for navigation
-function blobToHex(blob: Uint8Array): string {
-  return Array.from(blob)
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+import { blobToHex } from '../../utils/blobUtils'
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
