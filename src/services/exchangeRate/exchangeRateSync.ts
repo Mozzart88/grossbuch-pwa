@@ -7,6 +7,54 @@ export interface SyncRatesResult {
   skippedReason?: 'offline' | 'no_currencies' | 'no_accounts' | 'no_default' | 'default_not_in_api'
 }
 
+export interface SyncSingleRateResult {
+  success: boolean
+  rate?: number
+}
+
+export async function syncSingleRate(currencyId: number): Promise<SyncSingleRateResult> {
+  if (!navigator.onLine) {
+    return { success: false }
+  }
+
+  const currency = await currencyRepository.findById(currencyId)
+  if (!currency) {
+    return { success: false }
+  }
+
+  const defaultCurrency = await currencyRepository.findDefault()
+  if (!defaultCurrency) {
+    return { success: false }
+  }
+
+  // No rate needed if this IS the default currency
+  if (currency.id === defaultCurrency.id) {
+    return { success: true }
+  }
+
+  try {
+    const response = await getLatestRates([currency.code, defaultCurrency.code])
+    const ratesMap = new Map(response.rates.map((r) => [r.code, r.value]))
+
+    const apiRate = ratesMap.get(currency.code)
+    const defaultCurrencyApiRate = ratesMap.get(defaultCurrency.code)
+
+    if (apiRate === undefined || defaultCurrencyApiRate === undefined) {
+      return { success: false }
+    }
+
+    const relativeRate = apiRate / defaultCurrencyApiRate
+    const storedRate = Math.round(relativeRate * Math.pow(10, currency.decimal_places))
+
+    await currencyRepository.setExchangeRate(currency.id, storedRate)
+
+    return { success: true, rate: storedRate }
+  } catch (error) {
+    console.warn('[ExchangeRateSync] Failed to fetch single rate:', error)
+    return { success: false }
+  }
+}
+
 export async function syncRates(): Promise<SyncRatesResult> {
   // Skip if offline
   if (!navigator.onLine) {

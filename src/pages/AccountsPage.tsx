@@ -4,6 +4,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
+import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
@@ -32,6 +33,12 @@ export function AccountsPage() {
   const [adjustBalanceModalOpen, setAdjustBalanceModalOpen] = useState(false)
   const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null)
   const [targetBalance, setTargetBalance] = useState('')
+
+  // Rate input modal state (shown when offline after creating account with new currency)
+  const [rateModalOpen, setRateModalOpen] = useState(false)
+  const [manualRate, setManualRate] = useState('')
+  const [rateCurrencyId, setRateCurrencyId] = useState<number | null>(null)
+  const [rateCurrencyCode, setRateCurrencyCode] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
 
@@ -170,6 +177,22 @@ export function AccountsPage() {
       showToast('Currency added to wallet', 'success')
       closeCurrencyModal()
       loadData()
+
+      // Check if this currency needs an exchange rate
+      const defaultCurrency = currencies.find(c => c.is_default)
+      if (defaultCurrency && currencyId !== defaultCurrency.id) {
+        const existingRate = await currencyRepository.getExchangeRate(currencyId)
+        if (!existingRate) {
+          const result = await syncSingleRate(currencyId)
+          if (!result.success) {
+            // Offline or API failed — prompt user for manual rate entry
+            setRateCurrencyId(currencyId)
+            setRateCurrencyCode(selectedCurrency?.code || '')
+            setManualRate('')
+            setRateModalOpen(true)
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to add currency:', error)
       showToast(error instanceof Error ? error.message : 'Failed to add currency', 'error')
@@ -257,6 +280,36 @@ export function AccountsPage() {
     } catch (error) {
       console.error('Failed to adjust balance:', error)
       showToast(error instanceof Error ? error.message : 'Failed to adjust balance', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Rate modal handlers
+  const closeRateModal = () => {
+    setRateModalOpen(false)
+    setRateCurrencyId(null)
+    setRateCurrencyCode('')
+    setManualRate('')
+  }
+
+  const handleManualRateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!rateCurrencyId || !manualRate.trim()) return
+
+    setSubmitting(true)
+    try {
+      const rateValue = parseFloat(manualRate)
+      const currency = currencies.find(c => c.id === rateCurrencyId)
+      const decimalPlaces = currency?.decimal_places ?? 2
+      const storedRate = Math.round(rateValue * Math.pow(10, decimalPlaces))
+
+      await currencyRepository.setExchangeRate(rateCurrencyId, storedRate)
+      showToast('Exchange rate saved', 'success')
+      closeRateModal()
+    } catch (error) {
+      console.error('Failed to save exchange rate:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to save rate', 'error')
     } finally {
       setSubmitting(false)
     }
@@ -472,6 +525,36 @@ export function AccountsPage() {
             </Button>
             <Button type="submit" disabled={submitting || !targetBalance.trim()} className="flex-1">
               {submitting ? 'Adjusting...' : 'Adjust'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Manual Exchange Rate Modal */}
+      <Modal isOpen={rateModalOpen} onClose={closeRateModal} title="Enter Exchange Rate">
+        <form onSubmit={handleManualRateSubmit} className="space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Enter exchange rate for <strong>{rateCurrencyCode}</strong> (in <strong>{currencies.find(c => c.is_default)?.code || 'default currency'}</strong>)
+          </p>
+          <Input
+            label="Exchange Rate"
+            type="number"
+            step="0.0001"
+            min="0.0001"
+            placeholder="1.0000"
+            value={manualRate}
+            onChange={(e) => setManualRate(e.target.value)}
+            required
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            You can update this later from the Exchange Rates page.
+          </p>
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={closeRateModal} className="flex-1">
+              Skip
+            </Button>
+            <Button type="submit" disabled={submitting || !manualRate.trim()} className="flex-1">
+              {submitting ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </form>
