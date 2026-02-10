@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('../../../../services/repositories/currencyRepository', () => ({
   currencyRepository: {
     findUsedInAccounts: vi.fn(),
+    findById: vi.fn(),
+    findDefault: vi.fn(),
     setExchangeRate: vi.fn(),
   },
 }))
@@ -12,12 +14,14 @@ vi.mock('../../../../services/exchangeRate/exchangeRateApi', () => ({
   getLatestRates: vi.fn(),
 }))
 
-import { syncRates } from '../../../../services/exchangeRate/exchangeRateSync'
+import { syncRates, syncSingleRate } from '../../../../services/exchangeRate/exchangeRateSync'
 import { currencyRepository } from '../../../../services/repositories/currencyRepository'
 import { getLatestRates } from '../../../../services/exchangeRate/exchangeRateApi'
 import type { Currency } from '../../../../types'
 
 const mockFindUsedInAccounts = vi.mocked(currencyRepository.findUsedInAccounts)
+const mockFindById = vi.mocked(currencyRepository.findById)
+const mockFindDefault = vi.mocked(currencyRepository.findDefault)
 const mockSetExchangeRate = vi.mocked(currencyRepository.setExchangeRate)
 const mockGetLatestRates = vi.mocked(getLatestRates)
 
@@ -274,6 +278,123 @@ describe('exchangeRateSync', () => {
         skippedReason: 'default_not_in_api',
       })
       expect(mockSetExchangeRate).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('syncSingleRate', () => {
+    it('returns success: false when offline', async () => {
+      Object.defineProperty(global.navigator, 'onLine', { value: false })
+
+      const result = await syncSingleRate(2)
+
+      expect(result).toEqual({ success: false })
+      expect(mockFindById).not.toHaveBeenCalled()
+    })
+
+    it('returns success: false when currency not found', async () => {
+      mockFindById.mockResolvedValue(null)
+
+      const result = await syncSingleRate(999)
+
+      expect(result).toEqual({ success: false })
+    })
+
+    it('returns success: false when no default currency', async () => {
+      mockFindById.mockResolvedValue(createCurrency({ id: 2, code: 'EUR' }))
+      mockFindDefault.mockResolvedValue(null)
+
+      const result = await syncSingleRate(2)
+
+      expect(result).toEqual({ success: false })
+    })
+
+    it('returns success: true without fetching when currency is default', async () => {
+      const defaultCurrency = createCurrency({ id: 1, code: 'USD', is_default: true })
+      mockFindById.mockResolvedValue(defaultCurrency)
+      mockFindDefault.mockResolvedValue(defaultCurrency)
+
+      const result = await syncSingleRate(1)
+
+      expect(result).toEqual({ success: true })
+      expect(mockGetLatestRates).not.toHaveBeenCalled()
+    })
+
+    it('fetches and saves rate for a single currency', async () => {
+      const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_default: true, decimal_places: 2 })
+      mockFindById.mockResolvedValue(eur)
+      mockFindDefault.mockResolvedValue(usd)
+      mockGetLatestRates.mockResolvedValue({
+        rates: [createApiRate('EUR', 0.92), createApiRate('USD', 1.0)],
+      })
+
+      const result = await syncSingleRate(2)
+
+      expect(mockGetLatestRates).toHaveBeenCalledWith(['EUR', 'USD'])
+      // relativeRate = 0.92 / 1.0 = 0.92, storedRate = round(0.92 * 100) = 92
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 92)
+      expect(result).toEqual({ success: true, rate: 92 })
+    })
+
+    it('handles different decimal places', async () => {
+      const btc = createCurrency({ id: 3, code: 'BTC', decimal_places: 8 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_default: true, decimal_places: 2 })
+      mockFindById.mockResolvedValue(btc)
+      mockFindDefault.mockResolvedValue(usd)
+      mockGetLatestRates.mockResolvedValue({
+        rates: [createApiRate('BTC', 0.00001234), createApiRate('USD', 1.0)],
+      })
+
+      const result = await syncSingleRate(3)
+
+      // storedRate = round(0.00001234 * 10^8) = 1234
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(3, 1234)
+      expect(result).toEqual({ success: true, rate: 1234 })
+    })
+
+    it('returns success: false when currency not in API response', async () => {
+      const xyz = createCurrency({ id: 4, code: 'XYZ', decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_default: true })
+      mockFindById.mockResolvedValue(xyz)
+      mockFindDefault.mockResolvedValue(usd)
+      mockGetLatestRates.mockResolvedValue({
+        rates: [createApiRate('USD', 1.0)], // No XYZ
+      })
+
+      const result = await syncSingleRate(4)
+
+      expect(result).toEqual({ success: false })
+      expect(mockSetExchangeRate).not.toHaveBeenCalled()
+    })
+
+    it('returns success: false when default currency not in API response', async () => {
+      const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
+      const xyz = createCurrency({ id: 1, code: 'XYZ', is_default: true })
+      mockFindById.mockResolvedValue(eur)
+      mockFindDefault.mockResolvedValue(xyz)
+      mockGetLatestRates.mockResolvedValue({
+        rates: [createApiRate('EUR', 0.92)], // No XYZ
+      })
+
+      const result = await syncSingleRate(2)
+
+      expect(result).toEqual({ success: false })
+      expect(mockSetExchangeRate).not.toHaveBeenCalled()
+    })
+
+    it('returns success: false when API call throws', async () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_default: true })
+      mockFindById.mockResolvedValue(eur)
+      mockFindDefault.mockResolvedValue(usd)
+      mockGetLatestRates.mockRejectedValue(new Error('Network error'))
+
+      const result = await syncSingleRate(2)
+
+      expect(result).toEqual({ success: false })
+      expect(mockSetExchangeRate).not.toHaveBeenCalled()
+      consoleSpy.mockRestore()
     })
   })
 })

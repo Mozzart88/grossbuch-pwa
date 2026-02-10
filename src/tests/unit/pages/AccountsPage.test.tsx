@@ -18,6 +18,8 @@ vi.mock('../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
+    getExchangeRate: vi.fn(),
+    setExchangeRate: vi.fn(),
   },
   accountRepository: {
     delete: vi.fn(),
@@ -26,6 +28,10 @@ vi.mock('../../../services/repositories', () => ({
   transactionRepository: {
     createBalanceAdjustment: vi.fn(),
   },
+}))
+
+vi.mock('../../../services/exchangeRate/exchangeRateSync', () => ({
+  syncSingleRate: vi.fn(),
 }))
 
 const mockShowToast = vi.fn()
@@ -38,11 +44,13 @@ vi.mock('../../../components/ui', async () => {
 })
 
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../../../services/repositories'
+import { syncSingleRate } from '../../../services/exchangeRate/exchangeRateSync'
 
 const mockWalletRepository = vi.mocked(walletRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
+const mockSyncSingleRate = vi.mocked(syncSingleRate)
 
 const mockAccount: Account = {
   id: 1,
@@ -1175,6 +1183,199 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText(/adjustment transaction will be created/i)).toBeInTheDocument()
       })
+    })
+  })
+
+  describe('Exchange rate on add currency', () => {
+    beforeEach(() => {
+      mockWalletRepository.addAccount.mockResolvedValue({
+        id: 0,
+        wallet_id: 1,
+        currency_id: 2,
+        balance: 0,
+        updated_at: 0,
+      })
+    })
+
+    // Helper to open currency modal and submit EUR
+    const addEurCurrency = async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      // EUR is pre-selected as it's the only available currency not in the wallet
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(addButton)
+    }
+
+    it('auto-fetches rate when adding non-default currency with no existing rate', async () => {
+      mockCurrencyRepository.getExchangeRate.mockResolvedValue(null)
+      mockSyncSingleRate.mockResolvedValue({ success: true, rate: 92 })
+
+      await addEurCurrency()
+
+      await waitFor(() => {
+        expect(mockCurrencyRepository.getExchangeRate).toHaveBeenCalledWith(2)
+      })
+
+      await waitFor(() => {
+        expect(mockSyncSingleRate).toHaveBeenCalledWith(2)
+      })
+
+      // Rate modal should NOT appear since sync succeeded
+      expect(screen.queryByText('Enter Exchange Rate')).not.toBeInTheDocument()
+    })
+
+    it('skips rate check when adding default currency', async () => {
+      // Make the wallet have no USD account so USD is available
+      mockWalletRepository.findAll.mockResolvedValue([
+        { id: 1, name: 'Cash', color: '#3B82F6', is_default: true, accounts: [] },
+      ])
+      // Put USD first in available currencies
+      mockCurrencyRepository.findAll.mockResolvedValue([
+        { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true, is_fiat: true },
+        { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_fiat: true },
+      ])
+      mockWalletRepository.addAccount.mockResolvedValue({
+        id: 0, wallet_id: 1, currency_id: 1, balance: 0, updated_at: 0,
+      })
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      await openDropdownAndClick(0, '+ Currency')
+
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+
+      // Select USD (default currency)
+      const select = screen.getByLabelText('Currency')
+      fireEvent.change(select, { target: { value: '1' } })
+
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(addButton)
+
+      await waitFor(() => {
+        expect(mockWalletRepository.addAccount).toHaveBeenCalled()
+      })
+
+      // Should NOT check for exchange rate since it's the default currency
+      expect(mockCurrencyRepository.getExchangeRate).not.toHaveBeenCalled()
+      expect(mockSyncSingleRate).not.toHaveBeenCalled()
+    })
+
+    it('skips rate fetch when exchange rate already exists', async () => {
+      mockCurrencyRepository.getExchangeRate.mockResolvedValue({
+        id: 1, currency_id: 2, rate: 92, updated_at: '2025-01-01',
+      })
+
+      await addEurCurrency()
+
+      await waitFor(() => {
+        expect(mockCurrencyRepository.getExchangeRate).toHaveBeenCalledWith(2)
+      })
+
+      // Should NOT try to sync since rate already exists
+      expect(mockSyncSingleRate).not.toHaveBeenCalled()
+    })
+
+    it('shows rate modal when sync fails (offline)', async () => {
+      mockCurrencyRepository.getExchangeRate.mockResolvedValue(null)
+      mockSyncSingleRate.mockResolvedValue({ success: false })
+
+      await addEurCurrency()
+
+      await waitFor(() => {
+        expect(screen.getByText('Enter Exchange Rate')).toBeInTheDocument()
+      })
+
+      // Should show currency codes in the modal text
+      expect(screen.getByText(/Enter exchange rate for/)).toBeInTheDocument()
+      expect(screen.getByText('EUR', { selector: 'strong' })).toBeInTheDocument()
+    })
+
+    it('saves manual rate from rate modal', async () => {
+      mockCurrencyRepository.getExchangeRate.mockResolvedValue(null)
+      mockSyncSingleRate.mockResolvedValue({ success: false })
+      mockCurrencyRepository.setExchangeRate.mockResolvedValue(undefined)
+
+      await addEurCurrency()
+
+      await waitFor(() => {
+        expect(screen.getByText('Enter Exchange Rate')).toBeInTheDocument()
+      })
+
+      const rateInput = screen.getByLabelText('Exchange Rate')
+      fireEvent.change(rateInput, { target: { value: '0.92' } })
+
+      const saveButton = screen.getByRole('button', { name: 'Save' })
+      fireEvent.click(saveButton)
+
+      await waitFor(() => {
+        // 0.92 * 10^2 = 92
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 92)
+      })
+
+      expect(mockShowToast).toHaveBeenCalledWith('Exchange rate saved', 'success')
+    })
+
+    it('closes rate modal on Skip without saving', async () => {
+      mockCurrencyRepository.getExchangeRate.mockResolvedValue(null)
+      mockSyncSingleRate.mockResolvedValue({ success: false })
+
+      await addEurCurrency()
+
+      await waitFor(() => {
+        expect(screen.getByText('Enter Exchange Rate')).toBeInTheDocument()
+      })
+
+      const skipButton = screen.getByRole('button', { name: 'Skip' })
+      fireEvent.click(skipButton)
+
+      await waitFor(() => {
+        expect(screen.queryByText('Enter Exchange Rate')).not.toBeInTheDocument()
+      })
+
+      expect(mockCurrencyRepository.setExchangeRate).not.toHaveBeenCalled()
+    })
+
+    it('shows error toast when manual rate save fails', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockCurrencyRepository.getExchangeRate.mockResolvedValue(null)
+      mockSyncSingleRate.mockResolvedValue({ success: false })
+      mockCurrencyRepository.setExchangeRate.mockRejectedValue(new Error('DB error'))
+
+      await addEurCurrency()
+
+      await waitFor(() => {
+        expect(screen.getByText('Enter Exchange Rate')).toBeInTheDocument()
+      })
+
+      const rateInput = screen.getByLabelText('Exchange Rate')
+      fireEvent.change(rateInput, { target: { value: '0.92' } })
+
+      const saveButton = screen.getByRole('button', { name: 'Save' })
+      fireEvent.click(saveButton)
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
+      })
+
+      consoleSpy.mockRestore()
     })
   })
 })
