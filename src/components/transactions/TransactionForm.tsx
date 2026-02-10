@@ -928,7 +928,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
       {/* New Tag Type Modal */}
       <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="New Category">
-        <div className="pb-10 space-y-4">
+        <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Create "{newTagName}" as:
           </p>

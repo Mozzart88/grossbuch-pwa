@@ -32,7 +32,9 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 flex items-end sm:items-center justify-center"
+      style={{ zIndex: 100 }}
+    >
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 transition-opacity"

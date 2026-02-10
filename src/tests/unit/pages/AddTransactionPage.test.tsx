@@ -107,12 +107,14 @@ describe('AddTransactionPage', () => {
       {
         id: 12,
         name: 'food',
+        sort_order: 10
       },
     ])
     mockTagRepository.findIncomeTags.mockResolvedValue([
       {
         id: 11,
         name: 'sale',
+        sort_order: 11
       },
     ])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
@@ -223,7 +225,7 @@ describe('AddTransactionPage', () => {
       )
     })
 
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
   it('navigates back on cancel', async () => {

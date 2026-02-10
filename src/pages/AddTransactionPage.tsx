@@ -16,7 +16,7 @@ export function AddTransactionPage() {
     : undefined)
 
   const handleSubmit = () => {
-    navigate('/')
+    navigate(-1)
   }
 
   const handleCancel = useCallback(() => {
