@@ -765,6 +765,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               setNewTagType(mode === 'income' ? 'income' : 'expense')
               setShowTagModal(true)
             }}
+            pendingNewValue={newTagName}
           />
           {newTagName && (
             <p className="text-sm text-primary-600 dark:text-primary-400">
@@ -789,6 +790,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             setCounterpartyName(name)
           }}
           placeholder="Search or create..."
+          pendingNewValue={counterpartyName}
         />
       )}
 
@@ -926,7 +928,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
       {/* New Tag Type Modal */}
       <Modal isOpen={showTagModal} onClose={() => setShowTagModal(false)} title="New Category">
-        <div className="space-y-4">
+        <div className="pb-10 space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Create "{newTagName}" as:
           </p>

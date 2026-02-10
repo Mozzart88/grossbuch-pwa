@@ -483,6 +483,111 @@ describe('LiveSearch', () => {
     })
   })
 
+  describe('pendingNewValue', () => {
+    it('shows pending value in input when value is empty', () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+          pendingNewValue="New Item"
+        />
+      )
+
+      expect(screen.getByRole('combobox')).toHaveValue('New Item')
+    })
+
+    it('shows "New" badge when input matches pendingNewValue', () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+          pendingNewValue="New Item"
+        />
+      )
+
+      expect(screen.getByText('New')).toBeInTheDocument()
+    })
+
+    it('hides badge when user edits the input', async () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+          pendingNewValue="New Item"
+        />
+      )
+
+      expect(screen.getByText('New')).toBeInTheDocument()
+
+      const input = screen.getByRole('combobox')
+      fireEvent.change(input, { target: { value: 'New Item edited' } })
+
+      await waitFor(() => {
+        expect(screen.queryByText('New')).not.toBeInTheDocument()
+      })
+    })
+
+    it('clears pending state when input is cleared and blurred', async () => {
+      const onChange = vi.fn()
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={onChange}
+          pendingNewValue="New Item"
+        />
+      )
+
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: '' } })
+      fireEvent.keyDown(input, { key: 'Tab' })
+
+      expect(onChange).toHaveBeenCalledWith('', '')
+    })
+
+    it('selected option value takes precedence over pendingNewValue', () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value="2"
+          onChange={vi.fn()}
+          pendingNewValue="New Item"
+        />
+      )
+
+      expect(screen.getByRole('combobox')).toHaveValue('Option Two')
+      expect(screen.queryByText('New')).not.toBeInTheDocument()
+    })
+
+    it('restores pending value on Escape when no value is selected', async () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+          pendingNewValue="New Item"
+        />
+      )
+
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'something else' } })
+
+      expect(screen.queryByText('New')).not.toBeInTheDocument()
+
+      fireEvent.keyDown(input, { key: 'Escape' })
+
+      await waitFor(() => {
+        expect(input).toHaveValue('New Item')
+        expect(screen.getByText('New')).toBeInTheDocument()
+      })
+    })
+  })
+
   describe('value syncing', () => {
     it('displays selected option label in input', () => {
       render(
