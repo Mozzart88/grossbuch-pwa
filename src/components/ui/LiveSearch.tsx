@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { Badge } from './Badge'
 
 export interface LiveSearchOption {
   value: string | number
@@ -20,6 +21,8 @@ interface LiveSearchProps {
   renderOption?: (option: LiveSearchOption) => React.ReactNode
   /** Function to get display value for input (defaults to label) */
   getDisplayValue?: (option: LiveSearchOption) => string
+  /** When set, shows this value in the input with a "New" badge when value is empty */
+  pendingNewValue?: string
 }
 
 export function LiveSearch({
@@ -36,6 +39,7 @@ export function LiveSearch({
   dropdownClassName = '',
   renderOption,
   getDisplayValue,
+  pendingNewValue,
 }: LiveSearchProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -63,10 +67,12 @@ export function LiveSearch({
         // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing controlled input from props is valid
         setInputValue(getDisplayValue ? getDisplayValue(opt) : opt.label)
       }
+    } else if (pendingNewValue) {
+      setInputValue(pendingNewValue)
     } else {
       setInputValue('')
     }
-  }, [value, options, getDisplayValue])
+  }, [value, options, getDisplayValue, pendingNewValue])
 
   // Filter options based on input
   // If input matches the selected display value, show all options (user just focused)
@@ -84,6 +90,9 @@ export function LiveSearch({
 
   // Show "create new" option when there's input, no exact match, and onCreateNew is provided
   const showCreateNew = onCreateNew && inputValue.trim() && !exactMatch
+
+  // Show "New" badge when pending value matches current input
+  const showNewBadge = !!pendingNewValue && inputValue === pendingNewValue
 
   // Reset highlighted index when filtered options change
   useEffect(() => {
@@ -190,6 +199,8 @@ export function LiveSearch({
           if (opt) {
             setInputValue(getDisplayValue ? getDisplayValue(opt) : opt.label)
           }
+        } else if (pendingNewValue) {
+          setInputValue(pendingNewValue)
         } else {
           setInputValue('')
         }
@@ -249,10 +260,20 @@ export function LiveSearch({
             focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
             disabled:bg-gray-100 disabled:dark:bg-gray-900 disabled:cursor-not-allowed
             ${error ? 'border-red-500 focus:ring-red-500' : ''}
+            ${showNewBadge ? 'pr-14' : ''}
             ${className}
             ${inputClassName}
           `}
         />
+
+        {showNewBadge && (
+          <Badge
+            variant="primary"
+            className="ml-0 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"
+          >
+            New
+          </Badge>
+        )}
 
         {/* Dropdown */}
         {isOpen && (filteredOptions.length > 0 || showCreateNew) && (
