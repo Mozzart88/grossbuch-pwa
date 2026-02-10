@@ -2,9 +2,7 @@ const API_URL = import.meta.env.VITE_EXCHANGE_API_URL
 const TIMEOUT_MS = 5000
 
 export interface InstallationResponse {
-  token: string
-  issued_at: string
-  expires_at: string
+  jwt: string
 }
 
 async function fetchWithTimeout(

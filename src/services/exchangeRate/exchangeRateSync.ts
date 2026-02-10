@@ -1,10 +1,11 @@
 import { currencyRepository } from '../repositories/currencyRepository'
+import { settingsRepository } from '../repositories/settingsRepository'
 import { getLatestRates } from './exchangeRateApi'
 
 export interface SyncRatesResult {
   success: boolean
   syncedCount: number
-  skippedReason?: 'offline' | 'no_currencies' | 'no_accounts' | 'no_default' | 'default_not_in_api'
+  skippedReason?: 'offline' | 'no_currencies' | 'no_accounts' | 'no_default' | 'default_not_in_api' | 'no_auth_token'
 }
 
 export interface SyncSingleRateResult {
@@ -16,6 +17,15 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
   if (!navigator.onLine) {
     return { success: false }
   }
+
+  const installationRaw = await settingsRepository.get('installation_id')
+  const installation = installationRaw
+    ? typeof installationRaw === 'string' ? JSON.parse(installationRaw) : installationRaw
+    : null
+  if (!installation?.jwt) {
+    return { success: false }
+  }
+  const token: string = installation.jwt
 
   const currency = await currencyRepository.findById(currencyId)
   if (!currency) {
@@ -33,7 +43,7 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
   }
 
   try {
-    const response = await getLatestRates([currency.code, defaultCurrency.code])
+    const response = await getLatestRates([currency.code, defaultCurrency.code], token)
     const ratesMap = new Map(response.rates.map((r) => [r.code, r.value]))
 
     const apiRate = ratesMap.get(currency.code)
@@ -62,6 +72,17 @@ export async function syncRates(): Promise<SyncRatesResult> {
     return { success: false, syncedCount: 0, skippedReason: 'offline' }
   }
 
+  // Read JWT from installation settings
+  const installationRaw = await settingsRepository.get('installation_id')
+  const installation = installationRaw
+    ? typeof installationRaw === 'string' ? JSON.parse(installationRaw) : installationRaw
+    : null
+  if (!installation?.jwt) {
+    console.warn('[ExchangeRateSync] No auth token, skipping sync')
+    return { success: false, syncedCount: 0, skippedReason: 'no_auth_token' }
+  }
+  const token: string = installation.jwt
+
   // Get only currencies that are linked to accounts (active or virtual)
   const currencies = await currencyRepository.findUsedInAccounts()
   if (currencies.length === 0) {
@@ -80,7 +101,7 @@ export async function syncRates(): Promise<SyncRatesResult> {
   const currencyCodes = currencies.map((c) => c.code)
 
   // Fetch rates from API
-  const response = await getLatestRates(currencyCodes)
+  const response = await getLatestRates(currencyCodes, token)
 
   // Convert rates array to map for easier lookup
   const ratesMap = new Map(response.rates.map((r) => [r.code, r.value]))

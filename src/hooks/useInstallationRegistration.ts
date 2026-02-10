@@ -34,9 +34,7 @@ export function useInstallationRegistration({
             const result = await registerInstallation(parsed.id)
             const fullData = JSON.stringify({
               id: parsed.id,
-              jwt: result.token,
-              issued_at: result.issued_at,
-              expires_at: result.expires_at,
+              jwt: result.jwt,
             })
             await settingsRepository.set('installation_id', fullData)
             if (import.meta.env.DEV) {
@@ -61,9 +59,7 @@ export function useInstallationRegistration({
           const result = await registerInstallation(id)
           const fullData = JSON.stringify({
             id,
-            jwt: result.token,
-            issued_at: result.issued_at,
-            expires_at: result.expires_at,
+            jwt: result.jwt,
           })
           await settingsRepository.set('installation_id', fullData)
           if (import.meta.env.DEV) {

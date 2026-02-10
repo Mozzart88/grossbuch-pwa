@@ -38,9 +38,7 @@ describe('useInstallationRegistration', () => {
     mockSettingsGet.mockResolvedValue(null)
     mockSettingsSet.mockResolvedValue(undefined)
     mockRegister.mockResolvedValue({
-      token: 'jwt-token-123',
-      issued_at: '2026-02-10T00:00:00Z',
-      expires_at: '2027-02-10T00:00:00Z',
+      jwt: 'jwt-token-123',
     })
     // Mock crypto.randomUUID
     vi.stubGlobal('crypto', {
@@ -68,8 +66,6 @@ describe('useInstallationRegistration', () => {
     mockSettingsGet.mockResolvedValue(JSON.stringify({
       id: 'existing-uuid',
       jwt: 'existing-token',
-      issued_at: '2026-01-01T00:00:00Z',
-      expires_at: '2027-01-01T00:00:00Z',
     }) as never)
 
     renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
@@ -97,8 +93,6 @@ describe('useInstallationRegistration', () => {
       JSON.stringify({
         id: 'existing-uuid',
         jwt: 'jwt-token-123',
-        issued_at: '2026-02-10T00:00:00Z',
-        expires_at: '2027-02-10T00:00:00Z',
       })
     )
   })
@@ -116,8 +110,6 @@ describe('useInstallationRegistration', () => {
       JSON.stringify({
         id: 'mock-uuid-1234',
         jwt: 'jwt-token-123',
-        issued_at: '2026-02-10T00:00:00Z',
-        expires_at: '2027-02-10T00:00:00Z',
       })
     )
   })

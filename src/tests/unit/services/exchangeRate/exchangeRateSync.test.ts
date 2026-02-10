@@ -10,12 +10,20 @@ vi.mock('../../../../services/repositories/currencyRepository', () => ({
   },
 }))
 
+vi.mock('../../../../services/repositories/settingsRepository', () => ({
+  settingsRepository: {
+    get: vi.fn(),
+    set: vi.fn(),
+  },
+}))
+
 vi.mock('../../../../services/exchangeRate/exchangeRateApi', () => ({
   getLatestRates: vi.fn(),
 }))
 
 import { syncRates, syncSingleRate } from '../../../../services/exchangeRate/exchangeRateSync'
 import { currencyRepository } from '../../../../services/repositories/currencyRepository'
+import { settingsRepository } from '../../../../services/repositories/settingsRepository'
 import { getLatestRates } from '../../../../services/exchangeRate/exchangeRateApi'
 import type { Currency } from '../../../../types'
 
@@ -24,6 +32,7 @@ const mockFindById = vi.mocked(currencyRepository.findById)
 const mockFindDefault = vi.mocked(currencyRepository.findDefault)
 const mockSetExchangeRate = vi.mocked(currencyRepository.setExchangeRate)
 const mockGetLatestRates = vi.mocked(getLatestRates)
+const mockSettingsGet = vi.mocked(settingsRepository.get)
 
 describe('exchangeRateSync', () => {
   const originalNavigator = global.navigator
@@ -35,6 +44,8 @@ describe('exchangeRateSync', () => {
       value: { onLine: true },
       writable: true,
     })
+    // Default to having a valid JWT
+    mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'test-id', jwt: 'test-jwt-token' }))
   })
 
   afterEach(() => {
@@ -122,7 +133,7 @@ describe('exchangeRateSync', () => {
 
       await syncRates()
 
-      expect(mockGetLatestRates).toHaveBeenCalledWith(['USD', 'EUR', 'GBP'])
+      expect(mockGetLatestRates).toHaveBeenCalledWith(['USD', 'EUR', 'GBP'], 'test-jwt-token')
     })
 
     it('converts and saves rates relative to default currency', async () => {
@@ -279,6 +290,36 @@ describe('exchangeRateSync', () => {
       })
       expect(mockSetExchangeRate).not.toHaveBeenCalled()
     })
+
+    it('returns no_auth_token result when no JWT available', async () => {
+      mockSettingsGet.mockResolvedValue(null)
+
+      const result = await syncRates()
+
+      expect(result).toEqual({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'no_auth_token',
+      })
+      expect(mockGetLatestRates).not.toHaveBeenCalled()
+    })
+
+    it('handles installation setting returned as object (not string)', async () => {
+      mockSettingsGet.mockResolvedValue({ id: 'test-id', jwt: 'obj-jwt-token' } as never)
+      const currencies = [
+        createCurrency({ id: 1, code: 'USD', is_default: true }),
+        createCurrency({ id: 2, code: 'EUR', is_default: false }),
+      ]
+      mockFindUsedInAccounts.mockResolvedValue(currencies)
+      mockGetLatestRates.mockResolvedValue({
+        rates: [createApiRate('USD', 1.0), createApiRate('EUR', 0.92)],
+      })
+
+      const result = await syncRates()
+
+      expect(mockGetLatestRates).toHaveBeenCalledWith(['USD', 'EUR'], 'obj-jwt-token')
+      expect(result).toEqual({ success: true, syncedCount: 1 })
+    })
   })
 
   describe('syncSingleRate', () => {
@@ -289,6 +330,31 @@ describe('exchangeRateSync', () => {
 
       expect(result).toEqual({ success: false })
       expect(mockFindById).not.toHaveBeenCalled()
+    })
+
+    it('returns success: false when no JWT available', async () => {
+      mockSettingsGet.mockResolvedValue(null)
+
+      const result = await syncSingleRate(2)
+
+      expect(result).toEqual({ success: false })
+      expect(mockGetLatestRates).not.toHaveBeenCalled()
+    })
+
+    it('handles installation setting returned as object (not string)', async () => {
+      mockSettingsGet.mockResolvedValue({ id: 'test-id', jwt: 'obj-jwt-token' } as never)
+      const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_default: true, decimal_places: 2 })
+      mockFindById.mockResolvedValue(eur)
+      mockFindDefault.mockResolvedValue(usd)
+      mockGetLatestRates.mockResolvedValue({
+        rates: [createApiRate('EUR', 0.92), createApiRate('USD', 1.0)],
+      })
+
+      const result = await syncSingleRate(2)
+
+      expect(mockGetLatestRates).toHaveBeenCalledWith(['EUR', 'USD'], 'obj-jwt-token')
+      expect(result).toEqual({ success: true, rate: 92 })
     })
 
     it('returns success: false when currency not found', async () => {
@@ -330,7 +396,7 @@ describe('exchangeRateSync', () => {
 
       const result = await syncSingleRate(2)
 
-      expect(mockGetLatestRates).toHaveBeenCalledWith(['EUR', 'USD'])
+      expect(mockGetLatestRates).toHaveBeenCalledWith(['EUR', 'USD'], 'test-jwt-token')
       // relativeRate = 0.92 / 1.0 = 0.92, storedRate = round(0.92 * 100) = 92
       expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 92)
       expect(result).toEqual({ success: true, rate: 92 })

@@ -32,9 +32,7 @@ describe('installationApi', () => {
   describe('registerInstallation', () => {
     it('posts to /register endpoint with id', async () => {
       const responseData = {
-        token: 'jwt-token-123',
-        issued_at: '2026-02-10T00:00:00Z',
-        expires_at: '2027-02-10T00:00:00Z',
+        jwt: 'jwt-token-123',
       }
       mockFetch.mockReturnValue(mockResponse(responseData))
 
@@ -60,7 +58,7 @@ describe('installationApi', () => {
     })
 
     it('passes abort signal to fetch', async () => {
-      mockFetch.mockReturnValue(mockResponse({ token: 'x', issued_at: '', expires_at: '' }))
+      mockFetch.mockReturnValue(mockResponse({ jwt: 'x' }))
 
       await registerInstallation('test-uuid')
 
