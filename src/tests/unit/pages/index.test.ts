@@ -41,4 +41,8 @@ describe('pages index', () => {
   it('exports DownloadPage', () => {
     expect(pages.DownloadPage).toBeDefined()
   })
+
+  it('exports InstallPage', () => {
+    expect(pages.InstallPage).toBeDefined()
+  })
 })

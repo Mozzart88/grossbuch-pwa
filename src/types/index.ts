@@ -286,6 +286,7 @@ export interface Settings {
   default_currency_id: number
   default_payment_currency_id?: number
   theme: 'light' | 'dark' | 'system'
+  installation_id: string
 }
 
 // System tag IDs (for reference)

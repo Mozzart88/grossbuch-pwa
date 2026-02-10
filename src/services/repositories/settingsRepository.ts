@@ -10,6 +10,13 @@ export const settingsRepository = {
     if (key === 'default_currency_id' || key === 'default_payment_currency_id') {
       return parseInt(result.value, 10) as Settings[K]
     }
+    if (key === 'installation_id') {
+      try {
+        return JSON.parse(result.value) as Settings[K]
+      } catch {
+        return result.value as Settings[K]
+      }
+    }
     return result.value as Settings[K]
   },
 

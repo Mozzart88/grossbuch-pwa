@@ -5,6 +5,8 @@ import { ThemeProvider } from './store/ThemeContext'
 import { LayoutProvider } from './store/LayoutContext'
 import { ToastProvider, Spinner } from './components/ui'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
+import { useInstallation } from './hooks/useInstallation'
+import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
 import {
   TransactionsPage,
@@ -27,7 +29,18 @@ import {
   PinLoginPage,
   ChangePinPage,
   MigrationPage,
+  InstallPage,
 } from './pages'
+
+function InstallGate({ children }: { children: React.ReactNode }) {
+  const { isInstalled } = useInstallation()
+
+  if (!isInstalled) {
+    return <InstallPage />
+  }
+
+  return <>{children}</>
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { status } = useAuth()
@@ -66,6 +79,9 @@ function AppContent() {
 
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
+
+  // Register installation with backend API
+  useInstallationRegistration({ enabled: isReady })
 
   if (error) {
     return (
@@ -122,15 +138,17 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <ToastProvider>
-          <DatabaseProvider>
-            <AuthProvider>
-              <AuthGate>
-                <LayoutProvider>
-                  <AppContent />
-                </LayoutProvider>
-              </AuthGate>
-            </AuthProvider>
-          </DatabaseProvider>
+          <InstallGate>
+            <DatabaseProvider>
+              <AuthProvider>
+                <AuthGate>
+                  <LayoutProvider>
+                    <AppContent />
+                  </LayoutProvider>
+                </AuthGate>
+              </AuthProvider>
+            </DatabaseProvider>
+          </InstallGate>
         </ToastProvider>
       </ThemeProvider>
     </BrowserRouter>

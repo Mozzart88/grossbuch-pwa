@@ -72,6 +72,23 @@ describe('settingsRepository', () => {
 
       expect(result).toBe('system')
     })
+
+    it('parses installation_id as JSON', async () => {
+      const jsonValue = JSON.stringify({ id: 'uuid-123', jwt: 'token-456' })
+      mockQueryOne.mockResolvedValue({ value: jsonValue })
+
+      const result = await settingsRepository.get('installation_id')
+
+      expect(result).toEqual({ id: 'uuid-123', jwt: 'token-456' })
+    })
+
+    it('returns raw string for installation_id when JSON parse fails', async () => {
+      mockQueryOne.mockResolvedValue({ value: 'not-valid-json' })
+
+      const result = await settingsRepository.get('installation_id')
+
+      expect(result).toBe('not-valid-json')
+    })
   })
 
   describe('set', () => {
