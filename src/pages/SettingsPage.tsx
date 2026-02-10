@@ -13,6 +13,7 @@ const settingsLinks = [
   { to: '/settings/currencies', label: 'Currencies', icon: '💱', description: 'Manage currency options' },
   { to: '/settings/exchange-rates', label: 'Exchange Rates', icon: '📈', description: 'Set currency exchange rates' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
+  { to: '/settings/import', label: 'Import Data', icon: '📥', description: 'Import transactions from CSV' },
   { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
   { to: '/settings/security', label: 'Security', icon: '🔒', description: 'Change PIN and security settings' },
 ]

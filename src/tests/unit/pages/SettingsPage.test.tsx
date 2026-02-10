@@ -150,6 +150,13 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Export transactions to CSV')).toBeInTheDocument()
     })
 
+    it('renders Import Data link', () => {
+      renderPage()
+
+      expect(screen.getByText('Import Data')).toBeInTheDocument()
+      expect(screen.getByText('Import transactions from CSV')).toBeInTheDocument()
+    })
+
     it('renders Download DB link', () => {
       renderPage()
 
@@ -200,6 +207,13 @@ describe('SettingsPage', () => {
       expect(exportLink).toHaveAttribute('href', '/settings/export')
     })
 
+    it('links to import page', () => {
+      renderPage()
+
+      const importLink = screen.getByRole('link', { name: /Import Data/i })
+      expect(importLink).toHaveAttribute('href', '/settings/import')
+    })
+
     it('links to download page', () => {
       renderPage()
 
@@ -237,6 +251,12 @@ describe('SettingsPage', () => {
       renderPage()
 
       expect(screen.getByText('📤')).toBeInTheDocument()
+    })
+
+    it('renders import icon', () => {
+      renderPage()
+
+      expect(screen.getByText('📥')).toBeInTheDocument()
     })
 
     it('renders download icon', () => {

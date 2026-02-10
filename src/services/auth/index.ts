@@ -29,3 +29,5 @@ export {
   hasValidSession as hasValidSessionToken,
   refreshSessionToken,
 } from './sessionToken'
+
+export { verifyPin } from './verifyPin'
