@@ -8,6 +8,9 @@ import {
   generateJwtSalt,
   createHmacSignature,
   verifyHmacSignature,
+  arrayBufferToBase64Url,
+  base64UrlToArrayBuffer,
+  generateRSAKeyPair,
 } from '../../../../services/auth/crypto'
 
 // Mock crypto.subtle for tests
@@ -15,6 +18,8 @@ const mockDeriveBits = vi.fn()
 const mockImportKey = vi.fn()
 const mockSign = vi.fn()
 const mockVerify = vi.fn()
+const mockGenerateKey = vi.fn()
+const mockExportKey = vi.fn()
 
 vi.stubGlobal('crypto', {
   getRandomValues: vi.fn((array: Uint8Array) => {
@@ -28,6 +33,8 @@ vi.stubGlobal('crypto', {
     deriveBits: mockDeriveBits,
     sign: mockSign,
     verify: mockVerify,
+    generateKey: mockGenerateKey,
+    exportKey: mockExportKey,
   },
 })
 
@@ -229,6 +236,102 @@ describe('crypto', () => {
       await verifyHmacSignature('data', '0123456789abcdef', '0123456789abcdef0123456789abcdef')
 
       expect(mockVerify).toHaveBeenCalled()
+    })
+  })
+
+  describe('arrayBufferToBase64Url', () => {
+    it('converts ArrayBuffer to base64url string', () => {
+      const buffer = new Uint8Array([72, 101, 108, 108, 111]).buffer // "Hello"
+      const result = arrayBufferToBase64Url(buffer)
+      expect(result).toBe('SGVsbG8')
+    })
+
+    it('handles empty buffer', () => {
+      const buffer = new ArrayBuffer(0)
+      const result = arrayBufferToBase64Url(buffer)
+      expect(result).toBe('')
+    })
+
+    it('replaces + with - and / with _', () => {
+      // Bytes that produce + and / in standard base64
+      const buffer = new Uint8Array([251, 239, 190]).buffer // produces ++++ in base64
+      const result = arrayBufferToBase64Url(buffer)
+      expect(result).not.toContain('+')
+      expect(result).not.toContain('/')
+      expect(result).not.toContain('=')
+    })
+  })
+
+  describe('base64UrlToArrayBuffer', () => {
+    it('converts base64url string to ArrayBuffer', () => {
+      const result = base64UrlToArrayBuffer('SGVsbG8') // "Hello"
+      const bytes = new Uint8Array(result)
+      expect(bytes).toEqual(new Uint8Array([72, 101, 108, 108, 111]))
+    })
+
+    it('handles empty string', () => {
+      const result = base64UrlToArrayBuffer('')
+      expect(new Uint8Array(result).length).toBe(0)
+    })
+
+    it('handles base64url with - and _ characters', () => {
+      // First encode, then decode and verify roundtrip
+      const original = new Uint8Array([251, 239, 190]).buffer
+      const encoded = arrayBufferToBase64Url(original)
+      const decoded = base64UrlToArrayBuffer(encoded)
+      expect(new Uint8Array(decoded)).toEqual(new Uint8Array(original))
+    })
+
+    it('roundtrips with arrayBufferToBase64Url', () => {
+      const original = new Uint8Array([0, 127, 255, 42, 100, 200]).buffer
+      const encoded = arrayBufferToBase64Url(original)
+      const decoded = base64UrlToArrayBuffer(encoded)
+      expect(new Uint8Array(decoded)).toEqual(new Uint8Array(original))
+    })
+  })
+
+  describe('generateRSAKeyPair', () => {
+    beforeEach(() => {
+      const mockKeyPair = {
+        publicKey: { type: 'public' },
+        privateKey: { type: 'private' },
+      }
+      mockGenerateKey.mockResolvedValue(mockKeyPair)
+      mockExportKey.mockImplementation((format: string) => {
+        if (format === 'spki') return Promise.resolve(new Uint8Array([1, 2, 3]).buffer)
+        if (format === 'pkcs8') return Promise.resolve(new Uint8Array([4, 5, 6]).buffer)
+        return Promise.reject(new Error('Unknown format'))
+      })
+    })
+
+    it('returns public and private keys as base64url strings', async () => {
+      const result = await generateRSAKeyPair()
+
+      expect(result.publicKey).toBeDefined()
+      expect(typeof result.publicKey).toBe('string')
+      expect(result.privateKey).toBeDefined()
+      expect(typeof result.privateKey).toBe('string')
+    })
+
+    it('calls crypto.subtle.generateKey with RSA-OAEP params', async () => {
+      await generateRSAKeyPair()
+
+      expect(mockGenerateKey).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'RSA-OAEP',
+          modulusLength: 2048,
+          hash: 'SHA-256',
+        }),
+        true,
+        ['encrypt', 'decrypt']
+      )
+    })
+
+    it('exports keys in SPKI and PKCS8 formats', async () => {
+      await generateRSAKeyPair()
+
+      expect(mockExportKey).toHaveBeenCalledWith('spki', expect.anything())
+      expect(mockExportKey).toHaveBeenCalledWith('pkcs8', expect.anything())
     })
   })
 })

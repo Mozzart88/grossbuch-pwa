@@ -4,17 +4,22 @@ import { settingsRepository } from '../services/repositories/settingsRepository'
 import { useToast } from '../components/ui'
 import { AUTH_STORAGE_KEYS } from '../types/auth'
 
-async function saveLinkedInstallation(sharedUuid: string): Promise<void> {
+async function saveLinkedInstallation(sharedUuid: string, publicKey: string): Promise<void> {
   try {
     const existing = await settingsRepository.get('linked_installations')
-    let installations: string[] = []
+    let installations: Record<string, string> = {}
     if (existing) {
       const raw = typeof existing === 'string' ? existing : JSON.stringify(existing)
-      installations = JSON.parse(raw)
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        for (const uuid of parsed) {
+          installations[uuid] = ''
+        }
+      } else {
+        installations = parsed
+      }
     }
-    if (!installations.includes(sharedUuid)) {
-      installations.push(sharedUuid)
-    }
+    installations[sharedUuid] = publicKey
     await settingsRepository.set('linked_installations', JSON.stringify(installations))
   } catch (error) {
     console.warn('[useInstallationRegistration] Failed to save linked installation:', error)
@@ -57,8 +62,10 @@ export function useInstallationRegistration({
             })
             await settingsRepository.set('installation_id', fullData)
             if (sharedUuid) {
+              const sharedPublicKey = localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY) || ''
               localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
-              await saveLinkedInstallation(sharedUuid)
+              localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)
+              await saveLinkedInstallation(sharedUuid, sharedPublicKey)
             }
             if (import.meta.env.DEV) {
               showToast('Installation registered (retry)', 'success')
@@ -87,8 +94,10 @@ export function useInstallationRegistration({
           })
           await settingsRepository.set('installation_id', fullData)
           if (sharedUuid) {
+            const sharedPublicKey = localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY) || ''
             localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
-            await saveLinkedInstallation(sharedUuid)
+            localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)
+            await saveLinkedInstallation(sharedUuid, sharedPublicKey)
           }
           if (import.meta.env.DEV) {
             showToast('Installation registered', 'success')

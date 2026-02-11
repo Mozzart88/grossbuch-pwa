@@ -44,6 +44,16 @@ describe('ShareLinkCapture', () => {
     expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('test-uuid-123')
   })
 
+  it('saves public key to localStorage when on /share path with pub param', () => {
+    renderWithRouter('/share?uuid=test-uuid-123&pub=test-pub-key')
+    expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBe('test-pub-key')
+  })
+
+  it('does not save public key when pub param is missing', () => {
+    renderWithRouter('/share?uuid=test-uuid-123')
+    expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBeNull()
+  })
+
   it('does not save to localStorage when uuid param is missing', () => {
     renderWithRouter('/share')
     expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBeNull()

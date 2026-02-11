@@ -10,9 +10,16 @@ vi.mock('../../../services/repositories', () => ({
   },
 }))
 
+// Mock authService
+vi.mock('../../../services/auth/authService', () => ({
+  getPublicKey: vi.fn(),
+}))
+
 import { settingsRepository } from '../../../services/repositories'
+import { getPublicKey } from '../../../services/auth/authService'
 
 const mockSettingsGet = vi.mocked(settingsRepository.get)
+const mockGetPublicKey = vi.mocked(getPublicKey)
 
 // Mock QRCodeSVG
 vi.mock('qrcode.react', () => ({
@@ -79,6 +86,7 @@ describe('SharePage', () => {
 
     beforeEach(() => {
       mockSettingsGet.mockResolvedValue(installationData as never)
+      mockGetPublicKey.mockResolvedValue('test-public-key-base64url')
     })
 
     it('renders QR code with correct share URL', async () => {
@@ -87,6 +95,18 @@ describe('SharePage', () => {
       await waitFor(() => {
         const qr = screen.getByTestId('qr-code')
         expect(qr).toBeInTheDocument()
+        expect(qr.getAttribute('data-value')).toBe(
+          `${window.location.origin}/share?uuid=test-uuid-123&pub=test-public-key-base64url`
+        )
+      })
+    })
+
+    it('renders share URL without pub param when no public key', async () => {
+      mockGetPublicKey.mockResolvedValue(null)
+      renderPage()
+
+      await waitFor(() => {
+        const qr = screen.getByTestId('qr-code')
         expect(qr.getAttribute('data-value')).toBe(
           `${window.location.origin}/share?uuid=test-uuid-123`
         )
@@ -98,7 +118,7 @@ describe('SharePage', () => {
 
       await waitFor(() => {
         expect(
-          screen.getByText(`${window.location.origin}/share?uuid=test-uuid-123`)
+          screen.getByText(`${window.location.origin}/share?uuid=test-uuid-123&pub=test-public-key-base64url`)
         ).toBeInTheDocument()
       })
     })
@@ -122,7 +142,7 @@ describe('SharePage', () => {
 
       await waitFor(() => {
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-          `${window.location.origin}/share?uuid=test-uuid-123`
+          `${window.location.origin}/share?uuid=test-uuid-123&pub=test-public-key-base64url`
         )
         expect(screen.getByText('Copied!')).toBeInTheDocument()
       })
@@ -184,7 +204,7 @@ describe('SharePage', () => {
         expect(mockShare).toHaveBeenCalledWith({
           title: 'GrossBuch',
           text: 'Install GrossBuch on your device',
-          url: `${window.location.origin}/share?uuid=test-uuid-123`,
+          url: `${window.location.origin}/share?uuid=test-uuid-123&pub=test-public-key-base64url`,
         })
       })
     })

@@ -1,4 +1,4 @@
-import type { DerivedKey } from '../../types/auth'
+import type { DerivedKey, KeyPair } from '../../types/auth'
 
 // PBKDF2 parameters
 const PBKDF2_ITERATIONS = 100000
@@ -133,6 +133,59 @@ export async function createHmacSignature(
   )
 
   return bytesToHex(new Uint8Array(signature))
+}
+
+/**
+ * Convert ArrayBuffer to base64url string
+ */
+export function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+/**
+ * Convert base64url string to ArrayBuffer
+ */
+export function base64UrlToArrayBuffer(b64url: string): ArrayBuffer {
+  const base64 = b64url.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+  const binary = atob(padded)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
+/**
+ * Generate RSA-OAEP 2048-bit key pair for asymmetric encryption
+ */
+export async function generateRSAKeyPair(): Promise<KeyPair> {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['encrypt', 'decrypt']
+  )
+
+  const publicKeyBuffer = await crypto.subtle.exportKey('spki', keyPair.publicKey)
+  const privateKeyBuffer = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
+
+  return {
+    publicKey: arrayBufferToBase64Url(publicKeyBuffer),
+    privateKey: arrayBufferToBase64Url(privateKeyBuffer),
+  }
 }
 
 /**

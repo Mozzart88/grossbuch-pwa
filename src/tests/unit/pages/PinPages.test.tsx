@@ -278,6 +278,29 @@ describe('PinSetupPage', () => {
       expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('test-123')
     })
 
+    it('saves public key to localStorage when share link contains pub param', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'https://example.com/share?uuid=test-123&pub=test-pub-key' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('test-123')
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBe('test-pub-key')
+    })
+
+    it('does not save public key when share link has no pub param', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'https://example.com/share?uuid=test-123' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBeNull()
+    })
+
     it('shows success message after saving share link', () => {
       render(<PinSetupPage />)
 

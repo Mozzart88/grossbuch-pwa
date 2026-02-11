@@ -16,6 +16,10 @@ export function ShareLinkCapture({ children }: { children: React.ReactNode }) {
 
     if (uuid) {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, uuid)
+      const pub = params.get('pub')
+      if (pub) {
+        localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, pub)
+      }
     }
 
     navigate('/', { replace: true })

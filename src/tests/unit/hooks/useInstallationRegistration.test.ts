@@ -201,8 +201,9 @@ describe('useInstallationRegistration', () => {
       expect(mockRegister).toHaveBeenCalledWith('mock-uuid-1234', 'sharer-uuid-abc')
     })
 
-    it('clears shared UUID from localStorage on successful new install', async () => {
+    it('clears shared UUID and public key from localStorage on successful new install', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'shared-pub-key')
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -211,10 +212,12 @@ describe('useInstallationRegistration', () => {
       })
 
       expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBeNull()
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBeNull()
     })
 
     it('saves linked installation on successful new install with shared UUID', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'shared-pub-key')
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -224,7 +227,7 @@ describe('useInstallationRegistration', () => {
 
       expect(mockSettingsSet).toHaveBeenCalledWith(
         'linked_installations',
-        JSON.stringify(['sharer-uuid-abc'])
+        JSON.stringify({'sharer-uuid-abc': 'shared-pub-key'})
       )
     })
 
@@ -258,6 +261,7 @@ describe('useInstallationRegistration', () => {
 
     it('clears shared UUID and saves linked installation on successful retry', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'retry-pub-key')
       // First get returns the installation_id (no JWT), second get returns linked_installations
       mockSettingsGet
         .mockResolvedValueOnce(JSON.stringify({ id: 'existing-uuid' }) as never)
@@ -270,9 +274,10 @@ describe('useInstallationRegistration', () => {
       })
 
       expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBeNull()
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBeNull()
       expect(mockSettingsSet).toHaveBeenCalledWith(
         'linked_installations',
-        JSON.stringify(['sharer-uuid-retry'])
+        JSON.stringify({'sharer-uuid-retry': 'retry-pub-key'})
       )
     })
 
@@ -292,12 +297,13 @@ describe('useInstallationRegistration', () => {
       vi.mocked(console.warn).mockRestore()
     })
 
-    it('appends to existing linked installations without duplicates', async () => {
+    it('appends to existing linked installations (dict format)', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'new-pub-key')
       // First call returns null (installation_id check), second returns existing linked_installations
       mockSettingsGet
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(JSON.stringify(['existing-uuid-1']) as never)
+        .mockResolvedValueOnce(JSON.stringify({'existing-uuid-1': 'existing-pub-key'}) as never)
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -307,15 +313,16 @@ describe('useInstallationRegistration', () => {
 
       expect(mockSettingsSet).toHaveBeenCalledWith(
         'linked_installations',
-        JSON.stringify(['existing-uuid-1', 'sharer-uuid-abc'])
+        JSON.stringify({'existing-uuid-1': 'existing-pub-key', 'sharer-uuid-abc': 'new-pub-key'})
       )
     })
 
-    it('deduplicates when shared UUID already in linked installations', async () => {
+    it('converts old array format to dict on new link', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'new-pub-key')
       mockSettingsGet
         .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(JSON.stringify(['sharer-uuid-abc']) as never)
+        .mockResolvedValueOnce(JSON.stringify(['old-uuid-1']) as never)
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -325,7 +332,26 @@ describe('useInstallationRegistration', () => {
 
       expect(mockSettingsSet).toHaveBeenCalledWith(
         'linked_installations',
-        JSON.stringify(['sharer-uuid-abc'])
+        JSON.stringify({'old-uuid-1': '', 'sharer-uuid-abc': 'new-pub-key'})
+      )
+    })
+
+    it('overwrites existing UUID entry with new public key', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'updated-pub-key')
+      mockSettingsGet
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(JSON.stringify({'sharer-uuid-abc': 'old-pub-key'}) as never)
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockSettingsSet).toHaveBeenCalledWith(
+        'linked_installations',
+        JSON.stringify({'sharer-uuid-abc': 'updated-pub-key'})
       )
     })
   })
