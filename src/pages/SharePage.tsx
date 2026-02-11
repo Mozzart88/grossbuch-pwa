@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Spinner } from '../components/ui'
 import { settingsRepository } from '../services/repositories'
+import { getPublicKey } from '../services/auth/authService'
 
 export function SharePage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
@@ -19,7 +20,12 @@ export function SharePage() {
       if (existing) {
         const parsed = typeof existing === 'string' ? JSON.parse(existing) : existing
         if (parsed.id) {
-          setShareUrl(`${window.location.origin}/share?uuid=${parsed.id}`)
+          const pubKey = await getPublicKey()
+          let url = `${window.location.origin}/share?uuid=${parsed.id}`
+          if (pubKey) {
+            url += `&pub=${pubKey}`
+          }
+          setShareUrl(url)
         }
       }
     } catch (error) {
@@ -85,7 +91,7 @@ export function SharePage() {
       <div className="p-4 space-y-4">
         <Card className="p-6 flex flex-col items-center gap-4">
           <div className="bg-white p-4 rounded-lg">
-            <QRCodeSVG value={shareUrl} size={200} level="M" />
+            <QRCodeSVG value={shareUrl} size={220} level="M" />
           </div>
           <p className="text-xs font-mono text-gray-500 dark:text-gray-400 break-all text-center">
             {shareUrl}

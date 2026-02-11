@@ -20,6 +20,7 @@ export function PinSetupPage() {
 
   const handleShareSubmit = () => {
     let uuid: string | null = null
+    let pub: string | null = null
     try {
       const url = new URL(shareLink)
       if (url.pathname !== '/share') {
@@ -31,12 +32,16 @@ export function PinSetupPage() {
         setShareError('Please enter a valid share link containing /share?uuid=...')
         return
       }
+      pub = url.searchParams.get('pub')
     } catch {
       setShareError('Please enter a valid share link containing /share?uuid=...')
       return
     }
 
     localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, uuid)
+    if (pub) {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, pub)
+    }
     setShareError('')
     setShareSaved(true)
   }

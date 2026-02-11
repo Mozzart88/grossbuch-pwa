@@ -4,6 +4,7 @@ import {
   deriveEncryptionKey,
   hashPin,
   generateJwtSalt,
+  generateRSAKeyPair,
 } from './crypto'
 import {
   createSessionToken,
@@ -92,6 +93,35 @@ async function saveAuthSettings(settings: AuthSettings): Promise<void> {
     `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('pbkdf2_salt', ?, ?)`,
     [settings.pbkdf2_salt, now]
   )
+}
+
+/**
+ * Save RSA key pair to auth_settings
+ */
+async function saveKeyPair(publicKey: string, privateKey: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  await execSQL(
+    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('public_key', ?, ?)`,
+    [publicKey, now]
+  )
+  await execSQL(
+    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('private_key', ?, ?)`,
+    [privateKey, now]
+  )
+}
+
+/**
+ * Get public key from auth_settings
+ */
+export async function getPublicKey(): Promise<string | null> {
+  try {
+    const row = await queryOne<{ value: string }>(
+      `SELECT value FROM auth_settings WHERE key = 'public_key'`
+    )
+    return row?.value ?? null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -208,6 +238,10 @@ export async function setupPin(pin: string): Promise<void> {
     pbkdf2_salt: pbkdf2Salt,
   })
 
+  // Generate and save RSA key pair
+  const keyPair = await generateRSAKeyPair()
+  await saveKeyPair(keyPair.publicKey, keyPair.privateKey)
+
   // Create session token
   const sessionToken = await createSessionToken(jwtSalt)
   storeSessionToken(sessionToken)
@@ -244,6 +278,13 @@ export async function login(pin: string): Promise<boolean> {
     const { key: pinHash } = await hashPin(pin, storedSalt)
     if (pinHash !== settings.pin_hash) {
       throw new Error('PIN verification failed')
+    }
+
+    // Generate key pair if not present (for existing installations)
+    const existingPublicKey = await getPublicKey()
+    if (!existingPublicKey) {
+      const keyPair = await generateRSAKeyPair()
+      await saveKeyPair(keyPair.publicKey, keyPair.privateKey)
     }
 
     // Create session token
