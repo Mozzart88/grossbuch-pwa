@@ -24,9 +24,13 @@ async function fetchWithTimeout(
 }
 
 export async function registerInstallation(
-  id: string
+  id: string,
+  sharedUuid?: string
 ): Promise<InstallationResponse> {
-  const url = `${API_URL}/register`
+  let url = `${API_URL}/register`
+  if (sharedUuid) {
+    url += `?uuid=${encodeURIComponent(sharedUuid)}`
+  }
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {

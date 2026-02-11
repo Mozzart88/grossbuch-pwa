@@ -25,6 +25,7 @@ vi.mock('../../pages', () => ({
   ChangePinPage: () => <div data-testid="change-pin-page">Change PIN</div>,
   MigrationPage: () => <div data-testid="migration-page">Migration</div>,
   InstallPage: () => <div data-testid="install-page">Install</div>,
+  SharePage: () => <div data-testid="share-page">Share</div>,
 }))
 
 // Mock TabBar

@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { PinSetupPage } from '../../../pages/PinSetupPage'
 import { PinLoginPage } from '../../../pages/PinLoginPage'
 import { ChangePinPage } from '../../../pages/ChangePinPage'
+import { AUTH_STORAGE_KEYS } from '../../../types/auth'
 
 // Mock AuthContext
 const mockSetupPin = vi.fn().mockResolvedValue(true)
@@ -51,6 +52,7 @@ vi.mock('react-router-dom', async () => {
 describe('PinSetupPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mockSetupPin.mockResolvedValue(true)
   })
 
@@ -225,6 +227,103 @@ describe('PinSetupPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed to setup PIN')).toBeInTheDocument()
+    })
+  })
+
+  describe('share link input', () => {
+    it('renders "Have a share link?" toggle', () => {
+      render(<PinSetupPage />)
+
+      expect(screen.getByText('Have a share link?')).toBeInTheDocument()
+    })
+
+    it('shows input and button when toggle is clicked', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+
+      expect(screen.getByPlaceholderText('Paste share link here')).toBeInTheDocument()
+      expect(screen.getByText('Go')).toBeInTheDocument()
+    })
+
+    it('hides input when toggle is clicked again', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      expect(screen.getByPlaceholderText('Paste share link here')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      expect(screen.queryByPlaceholderText('Paste share link here')).not.toBeInTheDocument()
+    })
+
+    it('updates input value on change', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'https://example.com/share?uuid=abc' } })
+
+      expect(input).toHaveValue('https://example.com/share?uuid=abc')
+    })
+
+    it('saves UUID to localStorage on valid submit', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'https://example.com/share?uuid=test-123' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('test-123')
+    })
+
+    it('shows success message after saving share link', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'https://example.com/share?uuid=test-123' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(screen.getByText('Share link saved. Continue with PIN setup above.')).toBeInTheDocument()
+      expect(screen.queryByPlaceholderText('Paste share link here')).not.toBeInTheDocument()
+    })
+
+    it('shows error for invalid URL', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'not-a-url' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(screen.getByText('Please enter a valid share link containing /share?uuid=...')).toBeInTheDocument()
+    })
+
+    it('shows error for URL without uuid param', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'https://example.com/share' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(screen.getByText('Please enter a valid share link containing /share?uuid=...')).toBeInTheDocument()
+    })
+
+    it('clears error when input changes', () => {
+      render(<PinSetupPage />)
+
+      fireEvent.click(screen.getByText('Have a share link?'))
+      const input = screen.getByPlaceholderText('Paste share link here')
+      fireEvent.change(input, { target: { value: 'bad' } })
+      fireEvent.click(screen.getByText('Go'))
+
+      expect(screen.getByText('Please enter a valid share link containing /share?uuid=...')).toBeInTheDocument()
+
+      fireEvent.change(input, { target: { value: 'https://example.com/share?uuid=abc' } })
+      expect(screen.queryByText('Please enter a valid share link containing /share?uuid=...')).not.toBeInTheDocument()
     })
   })
 

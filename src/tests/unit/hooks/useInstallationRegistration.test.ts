@@ -24,6 +24,7 @@ vi.mock('../../../components/ui', () => ({
 import { useInstallationRegistration } from '../../../hooks/useInstallationRegistration'
 import { registerInstallation } from '../../../services/installation'
 import { settingsRepository } from '../../../services/repositories/settingsRepository'
+import { AUTH_STORAGE_KEYS } from '../../../types/auth'
 
 const mockRegister = vi.mocked(registerInstallation)
 const mockSettingsGet = vi.mocked(settingsRepository.get)
@@ -50,6 +51,7 @@ describe('useInstallationRegistration', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    localStorage.clear()
   })
 
   it('does not run when disabled', async () => {
@@ -87,7 +89,7 @@ describe('useInstallationRegistration', () => {
       vi.advanceTimersByTime(3000)
     })
 
-    expect(mockRegister).toHaveBeenCalledWith('existing-uuid')
+    expect(mockRegister).toHaveBeenCalledWith('existing-uuid', undefined)
     expect(mockSettingsSet).toHaveBeenCalledWith(
       'installation_id',
       JSON.stringify({
@@ -104,7 +106,7 @@ describe('useInstallationRegistration', () => {
       vi.advanceTimersByTime(3000)
     })
 
-    expect(mockRegister).toHaveBeenCalledWith('mock-uuid-1234')
+    expect(mockRegister).toHaveBeenCalledWith('mock-uuid-1234', undefined)
     expect(mockSettingsSet).toHaveBeenCalledWith(
       'installation_id',
       JSON.stringify({
@@ -143,7 +145,7 @@ describe('useInstallationRegistration', () => {
       vi.advanceTimersByTime(3000)
     })
 
-    expect(mockRegister).toHaveBeenCalledWith('existing-uuid')
+    expect(mockRegister).toHaveBeenCalledWith('existing-uuid', undefined)
     // Should NOT overwrite the existing setting on retry failure
     expect(mockSettingsSet).not.toHaveBeenCalled()
 
@@ -184,6 +186,148 @@ describe('useInstallationRegistration', () => {
     })
 
     expect(mockSettingsGet).not.toHaveBeenCalled()
+  })
+
+  describe('shared UUID handling', () => {
+    it('passes shared UUID from localStorage on new install', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockRegister).toHaveBeenCalledWith('mock-uuid-1234', 'sharer-uuid-abc')
+    })
+
+    it('clears shared UUID from localStorage on successful new install', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBeNull()
+    })
+
+    it('saves linked installation on successful new install with shared UUID', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockSettingsSet).toHaveBeenCalledWith(
+        'linked_installations',
+        JSON.stringify(['sharer-uuid-abc'])
+      )
+    })
+
+    it('does not clear shared UUID on failed new install', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      mockRegister.mockRejectedValue(new Error('Network error'))
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('sharer-uuid-abc')
+      vi.mocked(console.warn).mockRestore()
+    })
+
+    it('passes shared UUID on retry registration', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
+      mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockRegister).toHaveBeenCalledWith('existing-uuid', 'sharer-uuid-retry')
+    })
+
+    it('clears shared UUID and saves linked installation on successful retry', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
+      // First get returns the installation_id (no JWT), second get returns linked_installations
+      mockSettingsGet
+        .mockResolvedValueOnce(JSON.stringify({ id: 'existing-uuid' }) as never)
+        .mockResolvedValueOnce(null)
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBeNull()
+      expect(mockSettingsSet).toHaveBeenCalledWith(
+        'linked_installations',
+        JSON.stringify(['sharer-uuid-retry'])
+      )
+    })
+
+    it('does not clear shared UUID on failed retry', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
+      mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+      mockRegister.mockRejectedValue(new Error('Server down'))
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('sharer-uuid-retry')
+      vi.mocked(console.warn).mockRestore()
+    })
+
+    it('appends to existing linked installations without duplicates', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      // First call returns null (installation_id check), second returns existing linked_installations
+      mockSettingsGet
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(JSON.stringify(['existing-uuid-1']) as never)
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockSettingsSet).toHaveBeenCalledWith(
+        'linked_installations',
+        JSON.stringify(['existing-uuid-1', 'sharer-uuid-abc'])
+      )
+    })
+
+    it('deduplicates when shared UUID already in linked installations', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
+      mockSettingsGet
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(JSON.stringify(['sharer-uuid-abc']) as never)
+
+      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(mockSettingsSet).toHaveBeenCalledWith(
+        'linked_installations',
+        JSON.stringify(['sharer-uuid-abc'])
+      )
+    })
   })
 
   describe('toast notifications in dev mode', () => {
