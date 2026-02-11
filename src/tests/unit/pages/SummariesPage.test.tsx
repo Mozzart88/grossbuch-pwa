@@ -61,7 +61,7 @@ const renderWithRouter = (initialEntries = ['/summaries']) => {
 describe('SummariesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockCurrencyRepository.findDefault.mockResolvedValue({
+    mockCurrencyRepository.findSystem.mockResolvedValue({
       id: 1,
       code: 'USD',
       symbol: '$',
@@ -107,8 +107,8 @@ describe('SummariesPage', () => {
     })
     mockBudgetRepository.delete.mockResolvedValue(undefined)
     mockTagRepository.findExpenseTags.mockResolvedValue([
-      { id: 12, name: 'Food' },
-      { id: 13, name: 'Transport' },
+      { id: 12, name: 'Food', sort_order: 10 },
+      { id: 13, name: 'Transport', sort_order: 10 },
     ])
   })
 
@@ -153,7 +153,7 @@ describe('SummariesPage', () => {
   describe('Loading state', () => {
     it('shows loading spinner while fetching data', () => {
       // Make the promise hang to see loading state
-      mockCurrencyRepository.findDefault.mockImplementation(() => new Promise(() => { }))
+      mockCurrencyRepository.findSystem.mockImplementation(() => new Promise(() => { }))
 
       const { container } = renderWithRouter()
 

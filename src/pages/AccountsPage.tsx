@@ -179,7 +179,7 @@ export function AccountsPage() {
       loadData()
 
       // Check if this currency needs an exchange rate
-      const defaultCurrency = currencies.find(c => c.is_default)
+      const defaultCurrency = currencies.find(c => c.is_system)
       if (defaultCurrency && currencyId !== defaultCurrency.id) {
         const existingRate = await currencyRepository.getExchangeRate(currencyId)
         if (!existingRate) {
@@ -534,7 +534,7 @@ export function AccountsPage() {
       <Modal isOpen={rateModalOpen} onClose={closeRateModal} title="Enter Exchange Rate">
         <form onSubmit={handleManualRateSubmit} className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Enter exchange rate for <strong>{rateCurrencyCode}</strong> (in <strong>{currencies.find(c => c.is_default)?.code || 'default currency'}</strong>)
+            Enter exchange rate for <strong>{rateCurrencyCode}</strong> (in <strong>{currencies.find(c => c.is_system)?.code || 'default currency'}</strong>)
           </p>
           <Input
             label="Exchange Rate"

@@ -16,33 +16,26 @@ vi.mock('../../../store/ThemeContext', () => ({
 vi.mock('../../../services/repositories', () => ({
   currencyRepository: {
     findAll: vi.fn(),
-    setDefault: vi.fn(),
-  },
-  settingsRepository: {
-    get: vi.fn(),
-    set: vi.fn(),
-    delete: vi.fn(),
-    getAll: vi.fn(),
+    setSystem: vi.fn(),
+    setPaymentDefault: vi.fn(),
+    clearPaymentDefault: vi.fn(),
   },
 }))
 
-import { currencyRepository, settingsRepository } from '../../../services/repositories'
+import { currencyRepository } from '../../../services/repositories'
 
 const mockCurrencyRepository = vi.mocked(currencyRepository)
-const mockSettingsRepository = vi.mocked(settingsRepository)
 
 describe('SettingsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCurrencyRepository.findAll.mockResolvedValue([
-      { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true },
+      { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_system: true, is_payment_default: true },
       { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2 },
     ])
-    mockCurrencyRepository.setDefault.mockResolvedValue(undefined)
-    mockSettingsRepository.get.mockResolvedValue(null)
-    mockSettingsRepository.set.mockResolvedValue(undefined)
-    mockSettingsRepository.delete.mockResolvedValue(undefined)
-    mockSettingsRepository.getAll.mockResolvedValue({})
+    mockCurrencyRepository.setSystem.mockResolvedValue(undefined)
+    mockCurrencyRepository.setPaymentDefault.mockResolvedValue(undefined)
+    mockCurrencyRepository.clearPaymentDefault.mockResolvedValue(undefined)
   })
 
   const renderPage = () => {
@@ -136,13 +129,6 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Track who you transact with')).toBeInTheDocument()
     })
 
-    it('renders Currencies link', () => {
-      renderPage()
-
-      expect(screen.getByText('Currencies')).toBeInTheDocument()
-      expect(screen.getByText('Manage currency options')).toBeInTheDocument()
-    })
-
     it('renders Export Data link', () => {
       renderPage()
 
@@ -193,13 +179,6 @@ describe('SettingsPage', () => {
       expect(counterpartiesLink).toHaveAttribute('href', '/settings/counterparties')
     })
 
-    it('links to currencies page', () => {
-      renderPage()
-
-      const currenciesLink = screen.getByRole('link', { name: /Currencies/i })
-      expect(currenciesLink).toHaveAttribute('href', '/settings/currencies')
-    })
-
     it('links to export page', () => {
       renderPage()
 
@@ -239,12 +218,6 @@ describe('SettingsPage', () => {
       renderPage()
 
       expect(screen.getByText('👥')).toBeInTheDocument()
-    })
-
-    it('renders currencies icon', () => {
-      renderPage()
-
-      expect(screen.getByText('💱')).toBeInTheDocument()
     })
 
     it('renders export icon', () => {
@@ -326,7 +299,7 @@ describe('SettingsPage', () => {
       fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
 
       await waitFor(() => {
-        expect(mockCurrencyRepository.setDefault).toHaveBeenCalledWith(2)
+        expect(mockCurrencyRepository.setSystem).toHaveBeenCalledWith(2)
       })
     })
 
@@ -341,12 +314,15 @@ describe('SettingsPage', () => {
       fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
 
       await waitFor(() => {
-        expect(mockSettingsRepository.set).toHaveBeenCalledWith('default_payment_currency_id', 2)
+        expect(mockCurrencyRepository.setPaymentDefault).toHaveBeenCalledWith(2)
       })
     })
 
-    it('deletes payment currency when "Same as account" selected', async () => {
-      mockSettingsRepository.getAll.mockResolvedValueOnce({ default_payment_currency_id: 2 })
+    it('clears payment currency when "Same as account" selected', async () => {
+      mockCurrencyRepository.findAll.mockResolvedValueOnce([
+        { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_system: true },
+        { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_payment_default: true },
+      ])
 
       renderPage()
 
@@ -358,7 +334,7 @@ describe('SettingsPage', () => {
       fireEvent.change(paymentCurrencySelect, { target: { value: '' } })
 
       await waitFor(() => {
-        expect(mockSettingsRepository.delete).toHaveBeenCalledWith('default_payment_currency_id')
+        expect(mockCurrencyRepository.clearPaymentDefault).toHaveBeenCalled()
       })
     })
 
@@ -385,7 +361,7 @@ describe('SettingsPage', () => {
 
     it('handles error when setting display currency', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockCurrencyRepository.setDefault.mockRejectedValueOnce(new Error('Set failed'))
+      mockCurrencyRepository.setSystem.mockRejectedValueOnce(new Error('Set failed'))
 
       renderPage()
 
@@ -397,7 +373,7 @@ describe('SettingsPage', () => {
       fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
 
       await waitFor(() => {
-        expect(consoleSpy).toHaveBeenCalledWith('Failed to set default currency:', expect.any(Error))
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to set system currency:', expect.any(Error))
       })
 
       consoleSpy.mockRestore()
@@ -405,7 +381,7 @@ describe('SettingsPage', () => {
 
     it('handles error when setting payment currency', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockSettingsRepository.set.mockRejectedValueOnce(new Error('Set failed'))
+      mockCurrencyRepository.setPaymentDefault.mockRejectedValueOnce(new Error('Set failed'))
 
       renderPage()
 

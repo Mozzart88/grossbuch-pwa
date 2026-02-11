@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import type { Account, Tag, Counterparty, Transaction, TransactionLine, TransactionInput, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
-import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository, settingsRepository } from '../../services/repositories'
+import { walletRepository, tagRepository, counterpartyRepository, transactionRepository, currencyRepository } from '../../services/repositories'
 import { Button, Input, Select, LiveSearch, DateTimeUI, Modal, Badge } from '../ui'
 import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
@@ -208,13 +208,12 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
   const loadData = async () => {
     try {
-      const [wallets, incomeTags, expenseTags, cps, currencyList, defaultPaymentCurrencyId, usedCurrencies] = await Promise.all([
+      const [wallets, incomeTags, expenseTags, cps, currencyList, usedCurrencies] = await Promise.all([
         walletRepository.findActive(),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
         counterpartyRepository.findAll(),
         currencyRepository.findAll(),
-        settingsRepository.get('default_payment_currency_id'),
         currencyRepository.findUsedInAccounts(),
       ])
 
@@ -246,8 +245,9 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setCounterparties(cps)
 
       // Set default payment currency if configured and not editing
-      if (!initialData && defaultPaymentCurrencyId) {
-        setPaymentCurrencyId(defaultPaymentCurrencyId)
+      const paymentDefault = currencyList.find(c => c.is_payment_default)
+      if (!initialData && paymentDefault) {
+        setPaymentCurrencyId(paymentDefault.id)
       }
 
       // Set default account only if not editing
@@ -586,7 +586,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           // Rate semantics: rate=100 means 1.00 to the default currency
           // If from is default currency, set rate for 'to' currency
           // If to is default currency, set rate for 'from' currency
-          const defaultCurrency = await currencyRepository.findDefault()
+          const defaultCurrency = await currencyRepository.findSystem()
 
           if (defaultCurrency) {
             if (fromCurrency.currency_id === defaultCurrency.id) {

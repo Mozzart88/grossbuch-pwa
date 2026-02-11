@@ -21,7 +21,7 @@ vi.mock('../../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
     findUsedInAccounts: vi.fn(),
@@ -44,7 +44,6 @@ import {
   counterpartyRepository,
   currencyRepository,
   transactionRepository,
-  settingsRepository,
 } from '../../../../services/repositories'
 
 const mockWalletRepository = vi.mocked(walletRepository)
@@ -52,7 +51,6 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
-const mockSettingsRepository = vi.mocked(settingsRepository)
 
 const mockAccount: Account = {
   id: 1,
@@ -108,7 +106,7 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: true,
+    is_system: true,
     is_fiat: true,
   },
   {
@@ -125,21 +123,21 @@ const mockCurrencies: Currency[] = [
     name: 'Bitcoin',
     symbol: 'B',
     decimal_places: 2,
-    is_default: false,
+    is_system: false,
     is_fiat: false
   }
 ]
 
 const mockExpenseTags: Tag[] = [
-  { id: 10, name: 'food' },
-  { id: 11, name: 'transport' },
-  { id: 23, name: 'Gifts' },
+  { id: 10, name: 'food', sort_order: 10 },
+  { id: 11, name: 'transport', sort_order: 9 },
+  { id: 23, name: 'Gifts', sort_order: 8 },
 ]
 
 const mockIncomeTags: Tag[] = [
-  { id: 20, name: 'salary' },
-  { id: 21, name: 'freelance' },
-  { id: 23, name: 'Gifts' },
+  { id: 20, name: 'salary', sort_order: 7 },
+  { id: 21, name: 'freelance', sort_order: 6 },
+  { id: 23, name: 'Gifts', sort_order: 5 },
 ]
 
 const mockCounterparties: Counterparty[] = [
@@ -148,12 +146,14 @@ const mockCounterparties: Counterparty[] = [
     name: 'Restaurant ABC',
     note: null,
     tag_ids: [10],
+    sort_order: 10
   },
   {
     id: 2,
     name: 'Company XYZ',
     note: null,
     tag_ids: [20],
+    sort_order: 10
   },
 ]
 
@@ -171,12 +171,11 @@ describe('TransactionForm', () => {
     mockCounterpartyRepository.create.mockResolvedValue({ id: 256 } as any)
     mockCounterpartyRepository.update.mockResolvedValue({} as any)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
-    mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
+    mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
     mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
-    mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency
   })
 
   const renderForm = () => {
@@ -1442,10 +1441,11 @@ describe('TransactionForm', () => {
 
     it('shows default payment currency first in dropdown', async () => {
       // Set EUR as default payment currency
-      mockSettingsRepository.get.mockImplementation((key) => {
-        if (key === 'default_payment_currency_id') return Promise.resolve(2) // EUR
-        return Promise.resolve(null)
-      })
+      mockCurrencyRepository.findAll.mockResolvedValue([
+        { ...mockCurrencies[0] },
+        { ...mockCurrencies[1], is_payment_default: true },
+        { ...mockCurrencies[2] },
+      ])
 
       renderForm()
 
@@ -1467,9 +1467,6 @@ describe('TransactionForm', () => {
     })
 
     it('shows account currency first when no default payment currency', async () => {
-      // No default payment currency set
-      mockSettingsRepository.get.mockResolvedValue(null)
-
       renderForm()
 
       await waitFor(() => {
@@ -1524,10 +1521,11 @@ describe('TransactionForm', () => {
 
     it('does not duplicate currencies across priority groups', async () => {
       // USD appears in: default payment currency, account currency, active currencies, fiat
-      mockSettingsRepository.get.mockImplementation((key) => {
-        if (key === 'default_payment_currency_id') return Promise.resolve(1) // USD
-        return Promise.resolve(null)
-      })
+      mockCurrencyRepository.findAll.mockResolvedValue([
+        { ...mockCurrencies[0], is_payment_default: true },
+        { ...mockCurrencies[1] },
+        { ...mockCurrencies[2] },
+      ])
 
       renderForm()
 

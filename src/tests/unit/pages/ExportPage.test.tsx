@@ -40,17 +40,75 @@ vi.mock('../../../components/ui', async () => {
 import { exportTransactionsToCSV, downloadCSV } from '../../../services/export/csvExport'
 import { verifyPin } from '../../../services/auth'
 import { walletRepository, tagRepository, counterpartyRepository } from '../../../services/repositories'
+import { Account, Wallet } from '../../../types'
 
 const mockExportTransactionsToCSV = vi.mocked(exportTransactionsToCSV)
 const mockDownloadCSV = vi.mocked(downloadCSV)
 const mockVerifyPin = vi.mocked(verifyPin)
+
+const mockAccounts: Account[] = [
+  {
+    id: 1,
+    wallet_id: 1,
+    currency_id: 1,
+    balance: 100,
+    updated_at: 0,
+    currency: 'USD',
+  },
+  {
+    id: 2,
+    wallet_id: 1,
+    currency_id: 2,
+    balance: 100,
+    updated_at: 0,
+    currency: 'EUR',
+  },
+  {
+    id: 3,
+    wallet_id: 2,
+    currency_id: 1,
+    balance: 100,
+    updated_at: 0,
+    currency: 'USD',
+  },
+  {
+    id: 4,
+    wallet_id: 3,
+    currency_id: 2,
+    balance: 100,
+    updated_at: 0,
+    currency: 'EUR',
+  },
+]
+
+const mockWallets: Wallet[] = [
+  {
+    id: 1,
+    name: 'Cash',
+    color: '#fff',
+    accounts: mockAccounts.filter(a => a.wallet_id == 1)
+  },
+  {
+    id: 2,
+    name: 'Bank',
+    color: '#fff',
+    accounts: mockAccounts.filter(a => a.wallet_id == 2)
+  },
+  {
+    id: 3,
+    name: 'Savings',
+    color: '#fff',
+    accounts: mockAccounts.filter(a => a.wallet_id == 3)
+  },
+]
+
 
 describe('ExportPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockExportTransactionsToCSV.mockResolvedValue('header\ndata')
     mockVerifyPin.mockResolvedValue(undefined)
-    vi.mocked(walletRepository.findAll).mockResolvedValue([])
+    vi.mocked(walletRepository.findAll).mockResolvedValue(mockWallets)
     vi.mocked(tagRepository.findAll).mockResolvedValue([])
     vi.mocked(counterpartyRepository.findAll).mockResolvedValue([])
   })
@@ -110,6 +168,26 @@ describe('ExportPage', () => {
       expect(screen.getByText('Accounts')).toBeInTheDocument()
       expect(screen.getByText('Tags')).toBeInTheDocument()
       expect(screen.getByText('Counterparties')).toBeInTheDocument()
+    })
+
+    it('should filter accounts by selected wallet', async () => {
+      renderPage()
+
+      const wallet = screen.getByText('Wallets')
+      fireEvent.click(wallet)
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+      const trigger = screen.getByText('Cash')
+      fireEvent.click(trigger)
+      const accounts = screen.getByText('Accounts')
+      fireEvent.click(accounts)
+      await waitFor(() => {
+        expect(screen.getByText('Cash - USD')).toBeInTheDocument()
+
+      })
+
     })
   })
 
@@ -233,7 +311,7 @@ describe('ExportPage', () => {
 
   describe('Error handling', () => {
     it('shows error toast on export failure', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
       mockExportTransactionsToCSV.mockRejectedValue(new Error('Export failed'))
 
       renderPage()

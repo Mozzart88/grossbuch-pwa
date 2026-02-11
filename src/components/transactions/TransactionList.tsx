@@ -119,7 +119,7 @@ export function TransactionList() {
     setLoading(true)
     try {
       // Get default currency for display
-      const defaultCurrency = await currencyRepository.findDefault()
+      const defaultCurrency = await currencyRepository.findSystem()
       const displayCurrencySymbol = defaultCurrency?.symbol ?? '$'
       const decimals = defaultCurrency?.decimal_places ?? 2
 

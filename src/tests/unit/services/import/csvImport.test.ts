@@ -128,7 +128,7 @@ function setupDefaultMocks() {
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: true,
+    is_system: true,
   } as any)
 
   mockTagFindById.mockResolvedValue({ id: 12, name: 'food' } as any)
@@ -1006,7 +1006,7 @@ describe('csvImport', () => {
         name: 'Bitcoin',
         symbol: 'B',
         decimal_places: 8,
-        is_default: false,
+        is_system: false,
       } as any)
       // Need a fresh account lookup for this currency
       mockAccountFindById.mockResolvedValue({
@@ -1032,7 +1032,7 @@ describe('csvImport', () => {
         name: 'USD Coin',
         symbol: '$C',
         decimal_places: 6,
-        is_default: false,
+        is_system: false,
       } as any)
       mockAccountFindById.mockResolvedValue({
         id: 2,
@@ -1073,8 +1073,8 @@ describe('csvImport', () => {
     it('inserts rates for multiple currencies', async () => {
       setupDefaultMocks()
       mockCurrencyFindByCode.mockImplementation(async (code: string) => {
-        if (code === 'USD') return { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: false } as any
-        if (code === 'EUR') return { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_default: false } as any
+        if (code === 'USD') return { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_system: false } as any
+        if (code === 'EUR') return { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_system: false } as any
         return null
       })
       mockAccountFindById.mockImplementation(async (id: number) => {

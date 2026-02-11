@@ -102,7 +102,7 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: true,
+    is_system: true,
     is_fiat: true,
   },
   {
@@ -1242,7 +1242,7 @@ describe('AccountsPage', () => {
       ])
       // Put USD first in available currencies
       mockCurrencyRepository.findAll.mockResolvedValue([
-        { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true, is_fiat: true },
+        { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_system: true, is_fiat: true },
         { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_fiat: true },
       ])
       mockWalletRepository.addAccount.mockResolvedValue({
