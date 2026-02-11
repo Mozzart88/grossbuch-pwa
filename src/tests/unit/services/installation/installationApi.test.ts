@@ -51,6 +51,27 @@ describe('installationApi', () => {
       expect(result).toEqual(responseData)
     })
 
+    it('posts to /register endpoint with id shared uuid', async () => {
+      const responseData = {
+        jwt: 'jwt-token-123',
+      }
+      mockFetch.mockReturnValue(mockResponse(responseData))
+
+      const result = await registerInstallation('test-uuid-123', 'shared-test-uuid-123')
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://api.example.com/register?uuid=shared-test-uuid-123',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({ id: 'test-uuid-123' }),
+        })
+      )
+      expect(result).toEqual(responseData)
+    })
+
     it('throws error on non-ok response', async () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 500))
 

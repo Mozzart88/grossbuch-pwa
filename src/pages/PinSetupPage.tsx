@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Button, Card, Spinner } from '../components/ui'
+import { Button, Card, Input, Spinner } from '../components/ui'
 import { PinInput } from '../components/auth'
 import { useAuth } from '../store/AuthContext'
+import { AUTH_STORAGE_KEYS } from '../types/auth'
 
 const MIN_PIN_LENGTH = 6
 
@@ -11,7 +12,34 @@ export function PinSetupPage() {
   const [confirmPin, setConfirmPin] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [showShareInput, setShowShareInput] = useState(false)
+  const [shareLink, setShareLink] = useState('')
+  const [shareError, setShareError] = useState('')
+  const [shareSaved, setShareSaved] = useState(false)
   const { setupPin, error: authError } = useAuth()
+
+  const handleShareSubmit = () => {
+    let uuid: string | null = null
+    try {
+      const url = new URL(shareLink)
+      if (url.pathname !== '/share') {
+        setShareError('Please enter a valid share link containing /share?uuid=...')
+        return
+      }
+      uuid = url.searchParams.get('uuid')
+      if (!uuid) {
+        setShareError('Please enter a valid share link containing /share?uuid=...')
+        return
+      }
+    } catch {
+      setShareError('Please enter a valid share link containing /share?uuid=...')
+      return
+    }
+
+    localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, uuid)
+    setShareError('')
+    setShareSaved(true)
+  }
 
   const handleCreatePin = () => {
     if (pin.length < MIN_PIN_LENGTH) {
@@ -158,6 +186,39 @@ export function PinSetupPage() {
             </div>
           )}
         </Card>
+
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={() => setShowShareInput(!showShareInput)}
+            className="text-sm text-primary-600 dark:text-primary-400 hover:underline"
+          >
+            Have a share link?
+          </button>
+
+          {showShareInput && !shareSaved && (
+            <div className="mt-3 space-y-2">
+              <Input
+                placeholder="Paste share link here"
+                value={shareLink}
+                onChange={(e) => {
+                  setShareLink(e.target.value)
+                  setShareError('')
+                }}
+                error={shareError}
+              />
+              <Button onClick={handleShareSubmit} className="w-full">
+                Go
+              </Button>
+            </div>
+          )}
+
+          {shareSaved && (
+            <p className="mt-3 text-sm text-green-600 dark:text-green-400">
+              Share link saved. Continue with PIN setup above.
+            </p>
+          )}
+        </div>
 
         <p className="mt-6 text-center text-xs text-gray-500 dark:text-gray-400">
           All data is stored locally and encrypted on your device

@@ -43,4 +43,5 @@ export interface AuthSettings {
 export const AUTH_STORAGE_KEYS = {
   PBKDF2_SALT: 'gb_pbkdf2_salt',
   SESSION_TOKEN: 'gb_session_token',
+  SHARED_UUID: 'gb_shared_uuid',
 } as const

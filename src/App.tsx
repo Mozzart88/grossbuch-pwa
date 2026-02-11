@@ -8,6 +8,7 @@ import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
+import { ShareLinkCapture } from './components/ShareLinkCapture'
 import {
   TransactionsPage,
   AddTransactionPage,
@@ -30,6 +31,7 @@ import {
   ChangePinPage,
   MigrationPage,
   InstallPage,
+  SharePage,
 } from './pages'
 
 function InstallGate({ children }: { children: React.ReactNode }) {
@@ -128,6 +130,7 @@ function AppContent() {
         <Route path="/settings/tags" element={<TagsPage />} />
         <Route path="/settings/budgets" element={<BudgetsPage />} />
         <Route path="/settings/security" element={<ChangePinPage />} />
+        <Route path="/settings/share" element={<SharePage />} />
       </Routes>
     </AppLayout>
   )
@@ -138,6 +141,7 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <ToastProvider>
+          <ShareLinkCapture>
           <InstallGate>
             <DatabaseProvider>
               <AuthProvider>
@@ -149,6 +153,7 @@ export default function App() {
               </AuthProvider>
             </DatabaseProvider>
           </InstallGate>
+          </ShareLinkCapture>
         </ToastProvider>
       </ThemeProvider>
     </BrowserRouter>

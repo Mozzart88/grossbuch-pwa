@@ -2,6 +2,24 @@ import { useEffect, useRef } from 'react'
 import { registerInstallation } from '../services/installation'
 import { settingsRepository } from '../services/repositories/settingsRepository'
 import { useToast } from '../components/ui'
+import { AUTH_STORAGE_KEYS } from '../types/auth'
+
+async function saveLinkedInstallation(sharedUuid: string): Promise<void> {
+  try {
+    const existing = await settingsRepository.get('linked_installations')
+    let installations: string[] = []
+    if (existing) {
+      const raw = typeof existing === 'string' ? existing : JSON.stringify(existing)
+      installations = JSON.parse(raw)
+    }
+    if (!installations.includes(sharedUuid)) {
+      installations.push(sharedUuid)
+    }
+    await settingsRepository.set('linked_installations', JSON.stringify(installations))
+  } catch (error) {
+    console.warn('[useInstallationRegistration] Failed to save linked installation:', error)
+  }
+}
 
 interface UseInstallationRegistrationOptions {
   enabled?: boolean
@@ -31,12 +49,17 @@ export function useInstallationRegistration({
           }
           // Has ID but no JWT — retry registration
           try {
-            const result = await registerInstallation(parsed.id)
+            const sharedUuid = localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID) || undefined
+            const result = await registerInstallation(parsed.id, sharedUuid)
             const fullData = JSON.stringify({
               id: parsed.id,
               jwt: result.jwt,
             })
             await settingsRepository.set('installation_id', fullData)
+            if (sharedUuid) {
+              localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
+              await saveLinkedInstallation(sharedUuid)
+            }
             if (import.meta.env.DEV) {
               showToast('Installation registered (retry)', 'success')
             }
@@ -56,12 +79,17 @@ export function useInstallationRegistration({
         const id = crypto.randomUUID()
 
         try {
-          const result = await registerInstallation(id)
+          const sharedUuid = localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID) || undefined
+          const result = await registerInstallation(id, sharedUuid)
           const fullData = JSON.stringify({
             id,
             jwt: result.jwt,
           })
           await settingsRepository.set('installation_id', fullData)
+          if (sharedUuid) {
+            localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
+            await saveLinkedInstallation(sharedUuid)
+          }
           if (import.meta.env.DEV) {
             showToast('Installation registered', 'success')
           }
