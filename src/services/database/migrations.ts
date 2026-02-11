@@ -1,7 +1,8 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
+import { v12 } from './versions'
 
-export const CURRENT_VERSION = 11
+export const CURRENT_VERSION = 12
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1376,7 +1377,8 @@ ORDER BY id
 
     // Rename new table
     `ALTER TABLE trx_note_new RENAME TO trx_note;`,
-  ]
+  ],
+  12: [v12]
 }
 
 export async function runMigrations(): Promise<void> {
