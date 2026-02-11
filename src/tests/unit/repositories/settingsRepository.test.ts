@@ -21,18 +21,6 @@ describe('settingsRepository', () => {
   })
 
   describe('get', () => {
-    it('returns default_currency_id as number', async () => {
-      mockQueryOne.mockResolvedValue({ value: '1' })
-
-      const result = await settingsRepository.get('default_currency_id')
-
-      expect(mockQueryOne).toHaveBeenCalledWith(
-        'SELECT value FROM settings WHERE key = ?',
-        ['default_currency_id']
-      )
-      expect(result).toBe(1)
-    })
-
     it('returns theme as string', async () => {
       mockQueryOne.mockResolvedValue({ value: 'dark' })
 
@@ -44,17 +32,9 @@ describe('settingsRepository', () => {
     it('returns null when setting not found', async () => {
       mockQueryOne.mockResolvedValue(null)
 
-      const result = await settingsRepository.get('default_currency_id')
+      const result = await settingsRepository.get('theme')
 
       expect(result).toBeNull()
-    })
-
-    it('parses different currency ids correctly', async () => {
-      mockQueryOne.mockResolvedValue({ value: '42' })
-
-      const result = await settingsRepository.get('default_currency_id')
-
-      expect(result).toBe(42)
     })
 
     it('handles light theme', async () => {
@@ -92,15 +72,6 @@ describe('settingsRepository', () => {
   })
 
   describe('set', () => {
-    it('saves default_currency_id as string', async () => {
-      await settingsRepository.set('default_currency_id', 2)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT OR REPLACE INTO settings'),
-        ['default_currency_id', '2']
-      )
-    })
-
     it('saves theme as string', async () => {
       await settingsRepository.set('theme', 'dark')
 
@@ -118,43 +89,17 @@ describe('settingsRepository', () => {
         expect.anything()
       )
     })
-
-    it('saves different currency ids', async () => {
-      await settingsRepository.set('default_currency_id', 5)
-
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.anything(),
-        ['default_currency_id', '5']
-      )
-    })
   })
 
   describe('getAll', () => {
     it('returns all settings', async () => {
       mockQueryOne
-        .mockResolvedValueOnce({ value: '1' }) // default_currency_id
-        .mockResolvedValueOnce({ value: '2' }) // default_payment_currency_id
         .mockResolvedValueOnce({ value: 'dark' }) // theme
 
       const result = await settingsRepository.getAll()
 
       expect(result).toEqual({
-        default_currency_id: 1,
-        default_payment_currency_id: 2,
         theme: 'dark',
-      })
-    })
-
-    it('returns partial settings when some are missing', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ value: '1' }) // default_currency_id
-        .mockResolvedValueOnce(null) // default_payment_currency_id not set
-        .mockResolvedValueOnce(null) // theme not set
-
-      const result = await settingsRepository.getAll()
-
-      expect(result).toEqual({
-        default_currency_id: 1,
       })
     })
 
@@ -166,19 +111,11 @@ describe('settingsRepository', () => {
       expect(result).toEqual({})
     })
 
-    it('calls get for each setting key', async () => {
+    it('calls get for theme key', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       await settingsRepository.getAll()
 
-      expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.anything(),
-        ['default_currency_id']
-      )
-      expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.anything(),
-        ['default_payment_currency_id']
-      )
       expect(mockQueryOne).toHaveBeenCalledWith(
         expect.anything(),
         ['theme']

@@ -74,7 +74,7 @@ export function SummariesPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const defaultCurrency = await currencyRepository.findDefault()
+      const defaultCurrency = await currencyRepository.findSystem()
       const symbol = defaultCurrency?.symbol ?? '$'
       const decimals = defaultCurrency?.decimal_places ?? 2
 

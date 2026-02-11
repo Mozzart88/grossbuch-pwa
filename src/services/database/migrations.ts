@@ -1,7 +1,7 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
 
-export const CURRENT_VERSION = 11
+export const CURRENT_VERSION = 12
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1376,6 +1376,62 @@ ORDER BY id
 
     // Rename new table
     `ALTER TABLE trx_note_new RENAME TO trx_note;`,
+  ],
+  12: [
+    // ============================================
+    // MIGRATION 12: Unify currency defaults into tag system
+    // tag_id=1 (SYSTEM) = system/base currency
+    // tag_id=2 (DEFAULT) = default payment currency
+    // ============================================
+
+    // Add trigger to ensure only one system currency (same pattern as trg_default_currency)
+    `CREATE TRIGGER IF NOT EXISTS trg_system_currency
+    BEFORE INSERT ON currency_to_tags
+    WHEN NEW.tag_id = 1
+    BEGIN
+      DELETE FROM currency_to_tags
+      WHERE tag_id = 1 AND currency_id != NEW.currency_id;
+    END;`,
+
+    // Move existing tag_id=2 rows to tag_id=1 (current "default" becomes "system")
+    `INSERT INTO currency_to_tags (currency_id, tag_id)
+    SELECT currency_id, 1 FROM currency_to_tags WHERE tag_id = 2;`,
+
+    // Remove old tag_id=2 rows (will be re-added below)
+    `DELETE FROM currency_to_tags WHERE tag_id = 2;`,
+
+    // If default_payment_currency_id exists in settings, use it for tag_id=2;
+    // otherwise use the system currency (tag_id=1)
+    `INSERT INTO currency_to_tags (currency_id, tag_id)
+    SELECT
+      COALESCE(
+        (SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'default_payment_currency_id'),
+        (SELECT currency_id FROM currency_to_tags WHERE tag_id = 1)
+      ),
+      2;`,
+
+    // Cleanup settings
+    `DELETE FROM settings WHERE key IN ('default_payment_currency_id', 'default_currency_id');`,
+
+    // Drop and recreate currencies view with new fields
+    `DROP VIEW IF EXISTS currencies;`,
+    `CREATE VIEW currencies AS
+    SELECT
+      c.id,
+      c.code,
+      c.name,
+      c.symbol,
+      c.decimal_places,
+      iif(sys.tag_id = 1, 1, 0) AS is_system,
+      iif(def.tag_id = 2, 1, 0) AS is_payment_default,
+      iif(fiat.tag_id = 4, 1, 0) AS is_fiat,
+      iif(crypto.tag_id = 5, 1, 0) AS is_crypto
+    FROM currency c
+    LEFT JOIN currency_to_tags sys ON sys.currency_id = c.id AND sys.tag_id = 1
+    LEFT JOIN currency_to_tags def ON def.currency_id = c.id AND def.tag_id = 2
+    LEFT JOIN currency_to_tags fiat ON fiat.currency_id = c.id AND fiat.tag_id = 4
+    LEFT JOIN currency_to_tags crypto ON crypto.currency_id = c.id AND crypto.tag_id = 5
+    ORDER BY c.id;`,
   ]
 }
 

@@ -7,7 +7,7 @@ import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
 
 interface CurrencyWithRate extends Currency {
-  currentRate: number | null
+  currentRate: number
   lastUpdated: number | null
 }
 
@@ -67,16 +67,17 @@ export function ExchangeRatesPage() {
   }
 
   const openModal = (currency: CurrencyWithRate) => {
-    if (currency.is_default) {
+    if (currency.is_system) {
       showToast('Cannot edit rate for default currency', 'error')
       return
     }
     setEditingCurrency(currency)
     // Display rate as decimal (rate stored as value * 10^decimal_places)
     const divisor = Math.pow(10, currency.decimal_places)
-    const displayRate = currency.currentRate !== null
-      ? (currency.currentRate / divisor).toFixed(4)
-      : '1.00'
+    // const displayRate = currency.currentRate !== null
+    //   ? (currency.currentRate / divisor).toFixed(4)
+    //   : '1.00'
+    const displayRate = (currency.currentRate / divisor).toFixed(4)
     setRate(displayRate)
     setModalOpen(true)
   }
@@ -115,12 +116,12 @@ export function ExchangeRatesPage() {
   }
 
   const formatRate = (currency: CurrencyWithRate): string => {
-    if (currency.is_default) {
+    if (currency.is_system) {
       return '1.0000'
     }
-    if (currency.currentRate === null) {
-      return 'Not set'
-    }
+    // if (currency.currentRate === null) {
+    //   return 'Not set'
+    // }
     // Rate stored as value * 10^decimal_places
     const divisor = Math.pow(10, currency.decimal_places)
     return (currency.currentRate / divisor).toFixed(4)
@@ -140,7 +141,7 @@ export function ExchangeRatesPage() {
     )
   }
 
-  const defaultCurrency = currencies.find((c) => c.is_default)
+  const defaultCurrency = currencies.find((c) => c.is_system)
 
   return (
     <div>
@@ -167,7 +168,7 @@ export function ExchangeRatesPage() {
                 <div>
                   <p className="font-medium text-gray-900 dark:text-gray-100">
                     {currency.code}
-                    {currency.is_default ? (
+                    {currency.is_system ? (
                       <Badge>Default</Badge>
                     ) : ''}
                     {currency.is_crypto ? (
@@ -178,10 +179,10 @@ export function ExchangeRatesPage() {
                 </div>
               </div>
               <div className="text-right">
-                <p className={`font-mono ${currency.is_default ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                <p className={`font-mono ${currency.is_system ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
                   {formatRate(currency)}
                 </p>
-                {!currency.is_default && currency.lastUpdated && (
+                {!currency.is_system && currency.lastUpdated && (
                   <p className="text-xs text-gray-400 dark:text-gray-500">
                     {formatLastUpdated(currency.lastUpdated)}
                   </p>

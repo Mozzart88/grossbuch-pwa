@@ -20,7 +20,7 @@ vi.mock('../../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
     findUsedInAccounts: vi.fn(),
@@ -47,7 +47,6 @@ import {
   counterpartyRepository,
   currencyRepository,
   transactionRepository,
-  settingsRepository,
 } from '../../../../services/repositories'
 
 const mockWalletRepository = vi.mocked(walletRepository)
@@ -55,7 +54,6 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
-const mockSettingsRepository = vi.mocked(settingsRepository)
 
 const mockAccount: Account = {
   id: 1,
@@ -117,15 +115,15 @@ const mockWallets: Wallet[] = [
 ]
 
 const mockExpenseTags: Tag[] = [
-  { id: 10, name: 'Food' },
+  { id: 10, name: 'Food', sort_order: 10 },
 ]
 
 const mockIncomeTags: Tag[] = [
-  { id: 20, name: 'Salary' },
+  { id: 20, name: 'Salary', sort_order: 8 },
 ]
 
 const mockCurrencies: Currency[] = [
-  { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true },
+  { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_system: true },
   { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2 },
 ]
 
@@ -141,12 +139,11 @@ describe('TransactionForm Editing mode', () => {
     mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
     mockCounterpartyRepository.findAll.mockResolvedValue([])
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
-    mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
+    mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0]) // USD is default
     mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
     mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
-    mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency
   })
 
   const renderForm = (initialData?: Transaction) => {

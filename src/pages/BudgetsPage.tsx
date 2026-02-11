@@ -34,7 +34,7 @@ export function BudgetsPage() {
       const [budgetsData, tags, currency] = await Promise.all([
         budgetRepository.findByMonth(currentMonth),
         tagRepository.findExpenseTags(),
-        currencyRepository.findDefault(),
+        currencyRepository.findSystem(),
       ])
       setBudgets(budgetsData)
       setExpenseTags(tags.filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))

@@ -16,7 +16,7 @@ vi.mock('../../../../services/repositories', () => ({
     getTotalBalance: vi.fn(),
   },
   currencyRepository: {
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
   },
   tagRepository: {
     findById: vi.fn(),
@@ -61,19 +61,20 @@ const sampleTransaction: TransactionLog = {
   amount: -5000, // -50.00
   rate: 0,
   symbol: '$',
-  decimal_places: 2
+  decimal_places: 2,
+  wallet_color: ''
 }
 
 describe('TransactionList', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockCurrencyRepository.findDefault.mockResolvedValue({
+    mockCurrencyRepository.findSystem.mockResolvedValue({
       id: 1,
       code: 'USD',
       name: 'US Dollar',
       symbol: '$',
       decimal_places: 2,
-      is_default: true,
+      is_system: true,
       is_fiat: true,
     })
     mockTransactionRepository.findByMonthFiltered.mockResolvedValue([sampleTransaction])
@@ -81,8 +82,8 @@ describe('TransactionList', () => {
     mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000, expenses: 50000 })
     mockTransactionRepository.getDaySummary.mockResolvedValue(-5000) // -50.00 in cents
     mockAccountRepository.getTotalBalance.mockResolvedValue(150000)
-    mockTagRepository.findById.mockResolvedValue({ id: 10, name: 'Food' })
-    mockCounterpartyRepository.findById.mockResolvedValue({ id: 1, name: 'Supermarket' })
+    mockTagRepository.findById.mockResolvedValue({ id: 10, name: 'Food', sort_order: 10 })
+    mockCounterpartyRepository.findById.mockResolvedValue({ id: 1, name: 'Supermarket', sort_order: 10 })
   })
 
   const renderWithRouter = (initialEntries = ['/']) => {
@@ -156,7 +157,7 @@ describe('TransactionList', () => {
   })
 
   it('handles currency not found', async () => {
-    mockCurrencyRepository.findDefault.mockResolvedValue(null)
+    mockCurrencyRepository.findSystem.mockResolvedValue(null)
 
     renderWithRouter()
 
@@ -176,13 +177,13 @@ describe('TransactionList', () => {
   })
 
   it('uses currency decimal places for formatting', async () => {
-    mockCurrencyRepository.findDefault.mockResolvedValue({
+    mockCurrencyRepository.findSystem.mockResolvedValue({
       id: 1,
       code: 'BTC',
       name: 'Bitcoin',
       symbol: '₿',
       decimal_places: 8,
-      is_default: true,
+      is_system: true,
       is_crypto: true,
     })
     mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000000, expenses: 50000000 })

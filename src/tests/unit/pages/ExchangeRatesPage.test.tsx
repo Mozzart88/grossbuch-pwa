@@ -29,7 +29,7 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: true,
+    is_system: true,
     is_fiat: true,
   },
   {
@@ -38,7 +38,7 @@ const mockCurrencies: Currency[] = [
     name: 'Euro',
     symbol: '€',
     decimal_places: 2,
-    is_default: false,
+    is_system: false,
     is_fiat: true,
   },
   {
@@ -47,7 +47,7 @@ const mockCurrencies: Currency[] = [
     name: 'Russian Ruble',
     symbol: '₽',
     decimal_places: 2,
-    is_default: false,
+    is_system: false,
     is_fiat: true,
   },
 ]

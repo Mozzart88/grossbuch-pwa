@@ -47,7 +47,8 @@ export interface Currency {
   decimal_places: number
   // Joined fields
   tags?: string[]
-  is_default?: boolean
+  is_system?: boolean
+  is_payment_default?: boolean
   is_fiat?: boolean
   is_crypto?: boolean
 }
@@ -283,8 +284,6 @@ export interface TagGraph {
 
 // Settings
 export interface Settings {
-  default_currency_id: number
-  default_payment_currency_id?: number
   theme: 'light' | 'dark' | 'system'
   installation_id: string
   linked_installations: string

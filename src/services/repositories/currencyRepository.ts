@@ -8,7 +8,7 @@ export const currencyRepository = {
       SELECT
         *
       FROM currencies
-      ORDER BY is_default DESC, name ASC
+      ORDER BY is_system DESC, name ASC
     `)
     return currencies
   },
@@ -20,7 +20,7 @@ export const currencyRepository = {
         c.*
       FROM currencies c
       INNER JOIN account a ON a.currency_id = c.id
-      ORDER BY is_default DESC, name ASC
+      ORDER BY is_system DESC, name ASC
     `)
     return currencies
   },
@@ -43,11 +43,19 @@ export const currencyRepository = {
     `, [code])
   },
 
-  async findDefault(): Promise<Currency | null> {
+  async findSystem(): Promise<Currency | null> {
     return queryOne<Currency>(`
       SELECT *
-      FROM currencies 
-      WHERE is_default = 1
+      FROM currencies
+      WHERE is_system = 1
+    `)
+  },
+
+  async findPaymentDefault(): Promise<Currency | null> {
+    return queryOne<Currency>(`
+      SELECT *
+      FROM currencies
+      WHERE is_payment_default = 1
     `)
   },
 
@@ -113,9 +121,25 @@ export const currencyRepository = {
     return currency
   },
 
-  async setDefault(id: number): Promise<void> {
-    // The trigger will remove default from other currencies
+  async setSystem(id: number): Promise<void> {
+    // The trigger will remove system tag from other currencies
+    await execSQL('INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.SYSTEM])
+    // System currency also gets the default payment tag
     await execSQL('INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
+  },
+
+  async setPaymentDefault(id: number): Promise<void> {
+    // The trigger will remove default tag from other currencies
+    await execSQL('INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
+  },
+
+  async clearPaymentDefault(): Promise<void> {
+    // Remove tag_id=2 from all currencies, then re-add to system currency
+    await execSQL('DELETE FROM currency_to_tags WHERE tag_id = ?', [SYSTEM_TAGS.DEFAULT])
+    await execSQL(
+      'INSERT INTO currency_to_tags (currency_id, tag_id) SELECT currency_id, ? FROM currency_to_tags WHERE tag_id = ?',
+      [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.SYSTEM]
+    )
   },
 
   async delete(id: number): Promise<void> {
@@ -175,8 +199,8 @@ export const currencyRepository = {
 
     const defaultRate = Math.pow(10, currency.decimal_places)
 
-    // Check if this is the default currency
-    if (currency.is_default) {
+    // Check if this is the system currency
+    if (currency.is_system) {
       return defaultRate
     }
 

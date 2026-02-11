@@ -32,7 +32,7 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
     return { success: false }
   }
 
-  const defaultCurrency = await currencyRepository.findDefault()
+  const defaultCurrency = await currencyRepository.findSystem()
   if (!defaultCurrency) {
     return { success: false }
   }
@@ -91,7 +91,7 @@ export async function syncRates(): Promise<SyncRatesResult> {
   }
 
   // Find default currency
-  const defaultCurrency = currencies.find((c) => c.is_default)
+  const defaultCurrency = currencies.find((c) => c.is_system)
   if (!defaultCurrency) {
     console.warn('[ExchangeRateSync] No default currency set')
     return { success: false, syncedCount: 0, skippedReason: 'no_default' }
@@ -119,7 +119,7 @@ export async function syncRates(): Promise<SyncRatesResult> {
   let syncedCount = 0
   for (const currency of currencies) {
     // Skip default currency (rate is always 1)
-    if (currency.is_default) {
+    if (currency.is_system) {
       continue
     }
 

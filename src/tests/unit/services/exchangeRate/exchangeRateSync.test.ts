@@ -5,7 +5,7 @@ vi.mock('../../../../services/repositories/currencyRepository', () => ({
   currencyRepository: {
     findUsedInAccounts: vi.fn(),
     findById: vi.fn(),
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
   },
 }))
@@ -29,7 +29,7 @@ import type { Currency } from '../../../../types'
 
 const mockFindUsedInAccounts = vi.mocked(currencyRepository.findUsedInAccounts)
 const mockFindById = vi.mocked(currencyRepository.findById)
-const mockFindDefault = vi.mocked(currencyRepository.findDefault)
+const mockFindSystem = vi.mocked(currencyRepository.findSystem)
 const mockSetExchangeRate = vi.mocked(currencyRepository.setExchangeRate)
 const mockGetLatestRates = vi.mocked(getLatestRates)
 const mockSettingsGet = vi.mocked(settingsRepository.get)
@@ -61,7 +61,7 @@ describe('exchangeRateSync', () => {
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: false,
+    is_system: false,
     ...overrides,
   })
 
@@ -102,8 +102,8 @@ describe('exchangeRateSync', () => {
 
     it('returns no_default result when no default currency set', async () => {
       mockFindUsedInAccounts.mockResolvedValue([
-        createCurrency({ id: 1, code: 'USD', is_default: false }),
-        createCurrency({ id: 2, code: 'EUR', is_default: false }),
+        createCurrency({ id: 1, code: 'USD', is_system: false }),
+        createCurrency({ id: 2, code: 'EUR', is_system: false }),
       ])
 
       const result = await syncRates()
@@ -118,9 +118,9 @@ describe('exchangeRateSync', () => {
 
     it('fetches rates only for currencies linked to accounts', async () => {
       const currencies = [
-        createCurrency({ id: 1, code: 'USD', is_default: true }),
-        createCurrency({ id: 2, code: 'EUR', is_default: false }),
-        createCurrency({ id: 3, code: 'GBP', is_default: false }),
+        createCurrency({ id: 1, code: 'USD', is_system: true }),
+        createCurrency({ id: 2, code: 'EUR', is_system: false }),
+        createCurrency({ id: 3, code: 'GBP', is_system: false }),
       ]
       mockFindUsedInAccounts.mockResolvedValue(currencies)
       mockGetLatestRates.mockResolvedValue({
@@ -141,13 +141,13 @@ describe('exchangeRateSync', () => {
         createCurrency({
           id: 1,
           code: 'USD',
-          is_default: true,
+          is_system: true,
           decimal_places: 2,
         }),
         createCurrency({
           id: 2,
           code: 'EUR',
-          is_default: false,
+          is_system: false,
           decimal_places: 2,
         }),
       ]
@@ -169,13 +169,13 @@ describe('exchangeRateSync', () => {
         createCurrency({
           id: 1,
           code: 'USD',
-          is_default: true,
+          is_system: true,
           decimal_places: 2,
         }),
         createCurrency({
           id: 2,
           code: 'BTC',
-          is_default: false,
+          is_system: false,
           decimal_places: 8,
         }),
       ]
@@ -194,8 +194,8 @@ describe('exchangeRateSync', () => {
 
     it('skips default currency when saving rates', async () => {
       const currencies = [
-        createCurrency({ id: 1, code: 'USD', is_default: true }),
-        createCurrency({ id: 2, code: 'EUR', is_default: false }),
+        createCurrency({ id: 1, code: 'USD', is_system: true }),
+        createCurrency({ id: 2, code: 'EUR', is_system: false }),
       ]
       mockFindUsedInAccounts.mockResolvedValue(currencies)
       mockGetLatestRates.mockResolvedValue({
@@ -212,9 +212,9 @@ describe('exchangeRateSync', () => {
 
     it('skips currency not found in API response', async () => {
       const currencies = [
-        createCurrency({ id: 1, code: 'USD', is_default: true }),
-        createCurrency({ id: 2, code: 'EUR', is_default: false }),
-        createCurrency({ id: 3, code: 'XYZ', is_default: false }), // Not in API
+        createCurrency({ id: 1, code: 'USD', is_system: true }),
+        createCurrency({ id: 2, code: 'EUR', is_system: false }),
+        createCurrency({ id: 3, code: 'XYZ', is_system: false }), // Not in API
       ]
       mockFindUsedInAccounts.mockResolvedValue(currencies)
       mockGetLatestRates.mockResolvedValue({
@@ -235,19 +235,19 @@ describe('exchangeRateSync', () => {
         createCurrency({
           id: 1,
           code: 'EUR',
-          is_default: true,
+          is_system: true,
           decimal_places: 2,
         }),
         createCurrency({
           id: 2,
           code: 'USD',
-          is_default: false,
+          is_system: false,
           decimal_places: 2,
         }),
         createCurrency({
           id: 3,
           code: 'GBP',
-          is_default: false,
+          is_system: false,
           decimal_places: 2,
         }),
       ]
@@ -273,8 +273,8 @@ describe('exchangeRateSync', () => {
 
     it('returns default_not_in_api when default currency not in API response', async () => {
       const currencies = [
-        createCurrency({ id: 1, code: 'XYZ', is_default: true }), // Not in API
-        createCurrency({ id: 2, code: 'EUR', is_default: false }),
+        createCurrency({ id: 1, code: 'XYZ', is_system: true }), // Not in API
+        createCurrency({ id: 2, code: 'EUR', is_system: false }),
       ]
       mockFindUsedInAccounts.mockResolvedValue(currencies)
       mockGetLatestRates.mockResolvedValue({
@@ -307,8 +307,8 @@ describe('exchangeRateSync', () => {
     it('handles installation setting returned as object (not string)', async () => {
       mockSettingsGet.mockResolvedValue({ id: 'test-id', jwt: 'obj-jwt-token' } as never)
       const currencies = [
-        createCurrency({ id: 1, code: 'USD', is_default: true }),
-        createCurrency({ id: 2, code: 'EUR', is_default: false }),
+        createCurrency({ id: 1, code: 'USD', is_system: true }),
+        createCurrency({ id: 2, code: 'EUR', is_system: false }),
       ]
       mockFindUsedInAccounts.mockResolvedValue(currencies)
       mockGetLatestRates.mockResolvedValue({
@@ -344,9 +344,9 @@ describe('exchangeRateSync', () => {
     it('handles installation setting returned as object (not string)', async () => {
       mockSettingsGet.mockResolvedValue({ id: 'test-id', jwt: 'obj-jwt-token' } as never)
       const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
-      const usd = createCurrency({ id: 1, code: 'USD', is_default: true, decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_system: true, decimal_places: 2 })
       mockFindById.mockResolvedValue(eur)
-      mockFindDefault.mockResolvedValue(usd)
+      mockFindSystem.mockResolvedValue(usd)
       mockGetLatestRates.mockResolvedValue({
         rates: [createApiRate('EUR', 0.92), createApiRate('USD', 1.0)],
       })
@@ -367,7 +367,7 @@ describe('exchangeRateSync', () => {
 
     it('returns success: false when no default currency', async () => {
       mockFindById.mockResolvedValue(createCurrency({ id: 2, code: 'EUR' }))
-      mockFindDefault.mockResolvedValue(null)
+      mockFindSystem.mockResolvedValue(null)
 
       const result = await syncSingleRate(2)
 
@@ -375,9 +375,9 @@ describe('exchangeRateSync', () => {
     })
 
     it('returns success: true without fetching when currency is default', async () => {
-      const defaultCurrency = createCurrency({ id: 1, code: 'USD', is_default: true })
+      const defaultCurrency = createCurrency({ id: 1, code: 'USD', is_system: true })
       mockFindById.mockResolvedValue(defaultCurrency)
-      mockFindDefault.mockResolvedValue(defaultCurrency)
+      mockFindSystem.mockResolvedValue(defaultCurrency)
 
       const result = await syncSingleRate(1)
 
@@ -387,9 +387,9 @@ describe('exchangeRateSync', () => {
 
     it('fetches and saves rate for a single currency', async () => {
       const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
-      const usd = createCurrency({ id: 1, code: 'USD', is_default: true, decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_system: true, decimal_places: 2 })
       mockFindById.mockResolvedValue(eur)
-      mockFindDefault.mockResolvedValue(usd)
+      mockFindSystem.mockResolvedValue(usd)
       mockGetLatestRates.mockResolvedValue({
         rates: [createApiRate('EUR', 0.92), createApiRate('USD', 1.0)],
       })
@@ -404,9 +404,9 @@ describe('exchangeRateSync', () => {
 
     it('handles different decimal places', async () => {
       const btc = createCurrency({ id: 3, code: 'BTC', decimal_places: 8 })
-      const usd = createCurrency({ id: 1, code: 'USD', is_default: true, decimal_places: 2 })
+      const usd = createCurrency({ id: 1, code: 'USD', is_system: true, decimal_places: 2 })
       mockFindById.mockResolvedValue(btc)
-      mockFindDefault.mockResolvedValue(usd)
+      mockFindSystem.mockResolvedValue(usd)
       mockGetLatestRates.mockResolvedValue({
         rates: [createApiRate('BTC', 0.00001234), createApiRate('USD', 1.0)],
       })
@@ -420,9 +420,9 @@ describe('exchangeRateSync', () => {
 
     it('returns success: false when currency not in API response', async () => {
       const xyz = createCurrency({ id: 4, code: 'XYZ', decimal_places: 2 })
-      const usd = createCurrency({ id: 1, code: 'USD', is_default: true })
+      const usd = createCurrency({ id: 1, code: 'USD', is_system: true })
       mockFindById.mockResolvedValue(xyz)
-      mockFindDefault.mockResolvedValue(usd)
+      mockFindSystem.mockResolvedValue(usd)
       mockGetLatestRates.mockResolvedValue({
         rates: [createApiRate('USD', 1.0)], // No XYZ
       })
@@ -435,9 +435,9 @@ describe('exchangeRateSync', () => {
 
     it('returns success: false when default currency not in API response', async () => {
       const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
-      const xyz = createCurrency({ id: 1, code: 'XYZ', is_default: true })
+      const xyz = createCurrency({ id: 1, code: 'XYZ', is_system: true })
       mockFindById.mockResolvedValue(eur)
-      mockFindDefault.mockResolvedValue(xyz)
+      mockFindSystem.mockResolvedValue(xyz)
       mockGetLatestRates.mockResolvedValue({
         rates: [createApiRate('EUR', 0.92)], // No XYZ
       })
@@ -451,9 +451,9 @@ describe('exchangeRateSync', () => {
     it('returns success: false when API call throws', async () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
-      const usd = createCurrency({ id: 1, code: 'USD', is_default: true })
+      const usd = createCurrency({ id: 1, code: 'USD', is_system: true })
       mockFindById.mockResolvedValue(eur)
-      mockFindDefault.mockResolvedValue(usd)
+      mockFindSystem.mockResolvedValue(usd)
       mockGetLatestRates.mockRejectedValue(new Error('Network error'))
 
       const result = await syncSingleRate(2)
