@@ -31,6 +31,8 @@ export async function setupTestDatabase(): Promise<Database> {
     if (statements) {
       // Join all statements and execute
       // sql.js can handle multiple statements in one run() call
+      statements.unshift('BEGIN TRANSACTION')
+      statements.push('COMMIT')
       for (const sql of statements) {
         try {
           db.run(sql)
@@ -40,8 +42,8 @@ export async function setupTestDatabase(): Promise<Database> {
           const errorMessage = error instanceof Error ? error.message : String(error)
           // Only suppress errors related to missing tables/columns from migration data transfer
           if (!errorMessage.includes('no such table') &&
-              !errorMessage.includes('no such column') &&
-              !errorMessage.includes('UNIQUE constraint failed')) {
+            !errorMessage.includes('no such column') &&
+            !errorMessage.includes('UNIQUE constraint failed')) {
             throw error
           }
         }
