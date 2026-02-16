@@ -15,6 +15,20 @@ let messageId = 0
 const pendingRequests = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
 let initPromise: Promise<void> | null = null
 
+type DbWriteListener = () => void
+const writeListeners = new Set<DbWriteListener>()
+
+export function onDbWrite(listener: DbWriteListener): () => void {
+  writeListeners.add(listener)
+  return () => { writeListeners.delete(listener) }
+}
+
+function notifyWriteListeners() {
+  for (const listener of writeListeners) {
+    listener()
+  }
+}
+
 function getWorker(): Worker {
   if (!worker) {
     worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
@@ -104,6 +118,7 @@ export async function exportDecryptedDatabase(filename: string, key: string): Pr
 
 export async function execSQL(sql: string, bind?: unknown[]): Promise<void> {
   await sendMessage('exec', { sql, bind })
+  notifyWriteListeners()
 }
 
 export async function querySQL<T>(sql: string, bind?: unknown[]): Promise<T[]> {
@@ -118,6 +133,7 @@ export async function queryOne<T>(sql: string, bind?: unknown[]): Promise<T | nu
 
 export async function runSQL(sql: string, bind?: unknown[]): Promise<ExecResult> {
   const result = await sendMessage('exec', { sql, bind })
+  notifyWriteListeners()
   return result as ExecResult
 }
 

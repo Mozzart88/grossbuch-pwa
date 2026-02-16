@@ -84,11 +84,14 @@ export function resetTestDatabase(): void {
     db.run('DELETE FROM counterparty_to_tags')
     db.run('DELETE FROM counterparty_note')
     db.run('DELETE FROM counterparty')
-    // Clear account/wallet data
+    // Clear account/wallet data (accounts before wallets so triggers can resolve names)
     db.run('DELETE FROM account_to_tags')
-    db.run('DELETE FROM account')
     db.run('DELETE FROM wallet_to_tags')
+    db.run('DELETE FROM account')
     db.run('DELETE FROM wallet')
+    // Clear sync data
+    db.run('DELETE FROM sync_deletions')
+    db.run('DELETE FROM sync_state')
     // Keep currencies, tags, and settings
   }
 }

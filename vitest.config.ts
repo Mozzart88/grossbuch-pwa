@@ -20,6 +20,7 @@ export default defineConfig({
         'src/services/database/worker.ts',
         'src/services/database/connection.ts',
         'src/types/**',
+        'src/services/sync/syncTypes.ts',
       ],
       thresholds: {
         statements: 96,

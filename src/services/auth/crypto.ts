@@ -189,6 +189,42 @@ export async function generateRSAKeyPair(): Promise<KeyPair> {
 }
 
 /**
+ * Encrypt data with an RSA-OAEP public key
+ */
+export async function rsaEncrypt(
+  data: ArrayBuffer,
+  publicKeyBase64Url: string
+): Promise<ArrayBuffer> {
+  const keyBuffer = base64UrlToArrayBuffer(publicKeyBase64Url)
+  const publicKey = await crypto.subtle.importKey(
+    'spki',
+    keyBuffer,
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    false,
+    ['encrypt']
+  )
+  return crypto.subtle.encrypt({ name: 'RSA-OAEP' }, publicKey, data)
+}
+
+/**
+ * Decrypt data with an RSA-OAEP private key
+ */
+export async function rsaDecrypt(
+  data: ArrayBuffer,
+  privateKeyBase64Url: string
+): Promise<ArrayBuffer> {
+  const keyBuffer = base64UrlToArrayBuffer(privateKeyBase64Url)
+  const privateKey = await crypto.subtle.importKey(
+    'pkcs8',
+    keyBuffer,
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    false,
+    ['decrypt']
+  )
+  return crypto.subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, data)
+}
+
+/**
  * Verify HMAC-SHA256 signature
  */
 export async function verifyHmacSignature(

@@ -227,7 +227,7 @@ describe('migrations', () => {
 
     it('parses db_version correctly', async () => {
       // Already at current version
-      mockQueryOne.mockResolvedValue({ value: '13' })
+      mockQueryOne.mockResolvedValue({ value: '14' })
 
       await runMigrations()
 
@@ -240,9 +240,9 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      // Full migration (v1-v12): each migration joins statements into one execSQL call
-      // v1 = 1 call, v2-v13 = 2 calls each (migration + version update) = 1 + 12*2 = 25
-      expect(mockExecSQL.mock.calls.length).toEqual(25)
+      // Full migration (v1-v14): each migration joins statements into one execSQL call
+      // v1 = 1 call, v2-v14 = 2 calls each (migration + version update) = 1 + 13*2 = 27
+      expect(mockExecSQL.mock.calls.length).toEqual(27)
     })
 
     it('updates db_version to 4 after migration', async () => {

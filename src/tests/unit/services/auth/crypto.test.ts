@@ -11,6 +11,8 @@ import {
   arrayBufferToBase64Url,
   base64UrlToArrayBuffer,
   generateRSAKeyPair,
+  rsaEncrypt,
+  rsaDecrypt,
 } from '../../../../services/auth/crypto'
 
 // Mock crypto.subtle for tests
@@ -20,6 +22,8 @@ const mockSign = vi.fn()
 const mockVerify = vi.fn()
 const mockGenerateKey = vi.fn()
 const mockExportKey = vi.fn()
+const mockEncrypt = vi.fn()
+const mockDecrypt = vi.fn()
 
 vi.stubGlobal('crypto', {
   getRandomValues: vi.fn((array: Uint8Array) => {
@@ -35,6 +39,8 @@ vi.stubGlobal('crypto', {
     verify: mockVerify,
     generateKey: mockGenerateKey,
     exportKey: mockExportKey,
+    encrypt: mockEncrypt,
+    decrypt: mockDecrypt,
   },
 })
 
@@ -332,6 +338,62 @@ describe('crypto', () => {
 
       expect(mockExportKey).toHaveBeenCalledWith('spki', expect.anything())
       expect(mockExportKey).toHaveBeenCalledWith('pkcs8', expect.anything())
+    })
+  })
+
+  describe('rsaEncrypt', () => {
+    beforeEach(() => {
+      mockImportKey.mockResolvedValue({ type: 'public' })
+      mockEncrypt.mockResolvedValue(new ArrayBuffer(256))
+    })
+
+    it('imports SPKI public key and encrypts data', async () => {
+      const data = new ArrayBuffer(32)
+      const publicKeyB64 = arrayBufferToBase64Url(new Uint8Array([1, 2, 3]).buffer)
+
+      const result = await rsaEncrypt(data, publicKeyB64)
+
+      expect(mockImportKey).toHaveBeenCalledWith(
+        'spki',
+        expect.any(ArrayBuffer),
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        false,
+        ['encrypt']
+      )
+      expect(mockEncrypt).toHaveBeenCalledWith(
+        { name: 'RSA-OAEP' },
+        expect.anything(),
+        data
+      )
+      expect(result).toBeInstanceOf(ArrayBuffer)
+    })
+  })
+
+  describe('rsaDecrypt', () => {
+    beforeEach(() => {
+      mockImportKey.mockResolvedValue({ type: 'private' })
+      mockDecrypt.mockResolvedValue(new ArrayBuffer(32))
+    })
+
+    it('imports PKCS8 private key and decrypts data', async () => {
+      const data = new ArrayBuffer(256)
+      const privateKeyB64 = arrayBufferToBase64Url(new Uint8Array([4, 5, 6]).buffer)
+
+      const result = await rsaDecrypt(data, privateKeyB64)
+
+      expect(mockImportKey).toHaveBeenCalledWith(
+        'pkcs8',
+        expect.any(ArrayBuffer),
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        false,
+        ['decrypt']
+      )
+      expect(mockDecrypt).toHaveBeenCalledWith(
+        { name: 'RSA-OAEP' },
+        expect.anything(),
+        data
+      )
+      expect(result).toBeInstanceOf(ArrayBuffer)
     })
   })
 })

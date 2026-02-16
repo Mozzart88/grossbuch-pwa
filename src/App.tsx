@@ -5,6 +5,9 @@ import { ThemeProvider } from './store/ThemeContext'
 import { LayoutProvider } from './store/LayoutContext'
 import { ToastProvider, Spinner } from './components/ui'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
+import { useSyncPull } from './hooks/useSyncPull'
+import { useSyncInit } from './hooks/useSyncInit'
+import { SyncProvider } from './contexts/SyncContext'
 import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
@@ -85,6 +88,12 @@ function AppContent() {
   // Register installation with backend API
   useInstallationRegistration({ enabled: isReady })
 
+  // Pull sync data on route changes
+  useSyncPull({ enabled: isReady })
+
+  // Poll for init handshake packages on route changes
+  useSyncInit({ enabled: isReady })
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8 text-center">
@@ -147,7 +156,9 @@ export default function App() {
               <AuthProvider>
                 <AuthGate>
                   <LayoutProvider>
-                    <AppContent />
+                    <SyncProvider>
+                      <AppContent />
+                    </SyncProvider>
                   </LayoutProvider>
                 </AuthGate>
               </AuthProvider>

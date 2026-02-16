@@ -4,11 +4,13 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Spinner } from '../components/ui'
 import { settingsRepository } from '../services/repositories'
 import { getPublicKey } from '../services/auth/authService'
+import { useSharePageInitPolling } from '../hooks/useSyncInit'
 
 export function SharePage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
+  const { newDeviceFound } = useSharePageInitPolling()
 
   useEffect(() => {
     loadInstallationId()
@@ -97,6 +99,14 @@ export function SharePage() {
             {shareUrl}
           </p>
         </Card>
+
+        {newDeviceFound && (
+          <Card className="p-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+            <p className="text-green-700 dark:text-green-300 text-center font-medium">
+              New device linked!
+            </p>
+          </Card>
+        )}
 
         <div className="space-y-3">
           <Button

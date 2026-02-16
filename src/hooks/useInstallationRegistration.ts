@@ -1,30 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { registerInstallation } from '../services/installation'
 import { settingsRepository } from '../services/repositories/settingsRepository'
+import { saveLinkedInstallation } from '../services/installation/installationStore'
+import { sendInit } from '../services/sync/syncInit'
 import { useToast } from '../components/ui'
 import { AUTH_STORAGE_KEYS } from '../types/auth'
-
-async function saveLinkedInstallation(sharedUuid: string, publicKey: string): Promise<void> {
-  try {
-    const existing = await settingsRepository.get('linked_installations')
-    let installations: Record<string, string> = {}
-    if (existing) {
-      const raw = typeof existing === 'string' ? existing : JSON.stringify(existing)
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        for (const uuid of parsed) {
-          installations[uuid] = ''
-        }
-      } else {
-        installations = parsed
-      }
-    }
-    installations[sharedUuid] = publicKey
-    await settingsRepository.set('linked_installations', JSON.stringify(installations))
-  } catch (error) {
-    console.warn('[useInstallationRegistration] Failed to save linked installation:', error)
-  }
-}
 
 interface UseInstallationRegistrationOptions {
   enabled?: boolean
@@ -66,6 +46,11 @@ export function useInstallationRegistration({
               localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
               localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)
               await saveLinkedInstallation(sharedUuid, sharedPublicKey)
+              try {
+                await sendInit(sharedUuid, sharedPublicKey)
+              } catch (err) {
+                console.warn('[useInstallationRegistration] sendInit failed:', err)
+              }
             }
             if (import.meta.env.DEV) {
               showToast('Installation registered (retry)', 'success')
@@ -98,6 +83,11 @@ export function useInstallationRegistration({
             localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
             localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)
             await saveLinkedInstallation(sharedUuid, sharedPublicKey)
+            try {
+              await sendInit(sharedUuid, sharedPublicKey)
+            } catch (err) {
+              console.warn('[useInstallationRegistration] sendInit failed:', err)
+            }
           }
           if (import.meta.env.DEV) {
             showToast('Installation registered', 'success')
