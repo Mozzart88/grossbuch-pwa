@@ -5,10 +5,12 @@ import { AccountTransactionList } from '../components/transactions/AccountTransa
 import { Spinner } from '../components/ui'
 import { accountRepository } from '../services/repositories'
 import type { Account } from '../types'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function AccountTransactionsPage() {
   const { accountId } = useParams<{ accountId: string }>()
   const navigate = useNavigate()
+  const dataVersion = useDataRefresh()
   const [searchParams, setSearchParams] = useSearchParams()
   const [account, setAccount] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
@@ -27,7 +29,7 @@ export function AccountTransactionsPage() {
 
   useEffect(() => {
     loadAccount()
-  }, [accountId])
+  }, [accountId, dataVersion])
 
   const loadAccount = async () => {
     if (!accountId) {

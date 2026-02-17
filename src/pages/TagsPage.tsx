@@ -5,12 +5,14 @@ import { tagRepository } from '../services/repositories'
 import { SYSTEM_TAGS } from '../types'
 import type { Tag, TagInput } from '../types'
 import { useLayoutContextSafe } from '../store/LayoutContext'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 type TagType = 'expense' | 'income' | 'both'
 
 export function TagsPage() {
   const { showToast } = useToast()
   const layoutContext = useLayoutContextSafe()
+  const dataVersion = useDataRefresh()
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
@@ -24,7 +26,7 @@ export function TagsPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   const loadData = async () => {
     try {

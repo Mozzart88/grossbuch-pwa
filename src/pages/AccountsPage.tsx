@@ -8,10 +8,12 @@ import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function AccountsPage() {
   const navigate = useNavigate()
   const layoutContext = useLayoutContextSafe()
+  const dataVersion = useDataRefresh()
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -46,7 +48,7 @@ export function AccountsPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   const loadData = async () => {
     try {

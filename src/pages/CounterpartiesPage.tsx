@@ -4,10 +4,12 @@ import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { counterpartyRepository, tagRepository } from '../services/repositories'
 import type { Counterparty, CounterpartyInput, Tag } from '../types'
 import { useLayoutContextSafe } from '../store/LayoutContext'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function CounterpartiesPage() {
   const { showToast } = useToast()
   const layoutContext = useLayoutContextSafe()
+  const dataVersion = useDataRefresh()
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [loading, setLoading] = useState(true)
@@ -22,7 +24,7 @@ export function CounterpartiesPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   const loadData = async () => {
     try {

@@ -17,6 +17,11 @@ let initPromise: Promise<void> | null = null
 
 type DbWriteListener = () => void
 const writeListeners = new Set<DbWriteListener>()
+let suppressWriteNotifications = false
+
+export function setSuppressWriteNotifications(suppress: boolean): void {
+  suppressWriteNotifications = suppress
+}
 
 export function onDbWrite(listener: DbWriteListener): () => void {
   writeListeners.add(listener)
@@ -24,6 +29,7 @@ export function onDbWrite(listener: DbWriteListener): () => void {
 }
 
 function notifyWriteListeners() {
+  if (suppressWriteNotifications) return
   for (const listener of writeListeners) {
     listener()
   }

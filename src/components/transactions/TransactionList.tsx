@@ -8,6 +8,7 @@ import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { blobToHex } from '../../utils/blobUtils'
+import { useDataRefresh } from '../../hooks/useDataRefresh'
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -52,6 +53,7 @@ export function TransactionList() {
   const tagParam = searchParams.get('tag')
   const counterpartyParam = searchParams.get('counterparty')
   const typeParam = searchParams.get('type') as 'income' | 'expense' | null
+  const dataVersion = useDataRefresh()
 
   const [month, setMonth] = useState(monthParam)
   const [transactions, setTransactions] = useState<TransactionLog[]>([])
@@ -113,7 +115,7 @@ export function TransactionList() {
 
   useEffect(() => {
     loadData()
-  }, [month, tagParam, counterpartyParam, typeParam])
+  }, [month, tagParam, counterpartyParam, typeParam, dataVersion])
 
   const loadData = async () => {
     setLoading(true)

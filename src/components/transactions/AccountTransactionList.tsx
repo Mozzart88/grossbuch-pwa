@@ -8,6 +8,7 @@ import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
 import { useNavigate } from 'react-router-dom'
 import { blobToHex } from '../../utils/blobUtils'
+import { useDataRefresh } from '../../hooks/useDataRefresh'
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -50,6 +51,7 @@ interface AccountTransactionListProps {
 
 export function AccountTransactionList({ account, initialMonth, onMonthChange }: AccountTransactionListProps) {
   const navigate = useNavigate()
+  const dataVersion = useDataRefresh()
   const [month, setMonth] = useState(initialMonth || getCurrentMonth())
   const [transactions, setTransactions] = useState<TransactionLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -93,7 +95,7 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
 
   useEffect(() => {
     loadData()
-  }, [month, account.id])
+  }, [month, account.id, dataVersion])
 
   const loadData = async () => {
     setLoading(true)

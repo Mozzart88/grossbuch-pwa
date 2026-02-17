@@ -76,12 +76,13 @@ describe('syncRepository', () => {
   })
 
   describe('updatePushTimestamp', () => {
-    it('updates last_push_at for installation', async () => {
-      await updatePushTimestamp('inst-1')
+    it('updates last_push_at for installation with explicit timestamp', async () => {
+      const timestamp = 1700000000
+      await updatePushTimestamp('inst-1', timestamp)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE sync_state SET last_push_at'),
-        ['inst-1']
+        [timestamp, 'inst-1']
       )
     })
   })
@@ -105,7 +106,7 @@ describe('syncRepository', () => {
       const result = await getDeletionsSince(100)
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('sync_deletions WHERE deleted_at > ?'),
+        expect.stringContaining('sync_deletions WHERE deleted_at >= ?'),
         [100]
       )
       expect(result).toEqual(deletions)

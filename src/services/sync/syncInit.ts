@@ -19,14 +19,18 @@ export async function sendInit(targetUuid: string, targetPublicKey: string): Pro
     throw new Error('No public key available')
   }
 
-  const payload = JSON.stringify({ uuid: installData.id, publicKey })
+  const toEncrypt = JSON.stringify({ uuid: installData.id })
   const encrypted = await rsaEncrypt(
-    new TextEncoder().encode(payload).buffer as ArrayBuffer,
+    new TextEncoder().encode(toEncrypt).buffer as ArrayBuffer,
     targetPublicKey
   )
+  const payload = {
+    msg: arrayBufferToBase64Url(encrypted),
+    publicKey
+  }
 
   await syncApi.postInit(
-    { target_uuid: targetUuid, encrypted_payload: arrayBufferToBase64Url(encrypted) },
+    { uuid: targetUuid, payload: JSON.stringify(payload), },
     installData.jwt
   )
 }
@@ -35,33 +39,52 @@ export async function sendInit(targetUuid: string, targetPublicKey: string): Pro
  * Poll for init packages, process them (save linked installations, push full history,
  * introduce new devices to existing linked devices), and acknowledge.
  */
-export async function pollAndProcessInit(): Promise<{ newDevices: string[] }> {
+export async function pollAndProcessInit(): Promise<{ newDevices: string[], done: boolean }> {
   const installData = await getInstallationData()
-  if (!installData?.jwt || !installData.id) return { newDevices: [] }
+  if (!installData?.jwt || !installData.id) return { newDevices: [], done: false }
 
   const privateKey = await getPrivateKey()
-  if (!privateKey) return { newDevices: [] }
+  if (!privateKey) return { newDevices: [], done: false }
 
-  const packages = await syncApi.getInit(installData.jwt)
-  if (packages.length === 0) return { newDevices: [] }
+  const packages = await syncApi.getInit(installData.jwt, installData.id)
+  if (packages.length === 0) {
+    // No pending packages — if we already have linked devices, handshake is complete
+    const linked = await getLinkedInstallations()
+    return { newDevices: [], done: linked.length > 0 }
+  }
 
   const processedIds: number[] = []
   const newDevices: string[] = []
 
+  // Check which devices are already linked to skip re-introductions
+  const alreadyLinked = new Set(
+    (await getLinkedInstallations()).map(d => d.installation_id)
+  )
+
   for (const pkg of packages) {
     try {
       // Decrypt the payload with our private key
+      const { msg, publicKey } = JSON.parse(pkg.payload) as {
+        msg: string
+        publicKey: string
+      }
       const decrypted = await rsaDecrypt(
-        base64UrlToArrayBuffer(pkg.encrypted_payload),
+        base64UrlToArrayBuffer(msg),
         privateKey
       )
-      const { uuid, publicKey } = JSON.parse(new TextDecoder().decode(decrypted)) as {
+      const { uuid } = JSON.parse(new TextDecoder().decode(decrypted)) as {
         uuid: string
-        publicKey: string
+      }
+
+      // Skip if already linked — just ack the package
+      if (alreadyLinked.has(uuid)) {
+        processedIds.push(pkg.id)
+        continue
       }
 
       // Save as linked installation
       await saveLinkedInstallation(uuid, publicKey)
+      alreadyLinked.add(uuid)
       newDevices.push(uuid)
 
       // Push full history to the new device
@@ -81,24 +104,22 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[] }> {
 
         try {
           // Tell existing device about the new device
-          const newDevicePayload = JSON.stringify({ uuid, publicKey })
           const encForExisting = await rsaEncrypt(
-            new TextEncoder().encode(newDevicePayload).buffer as ArrayBuffer,
+            new TextEncoder().encode(JSON.stringify({ uuid })).buffer as ArrayBuffer,
             device.public_key
           )
           await syncApi.postInit(
-            { target_uuid: device.installation_id, encrypted_payload: arrayBufferToBase64Url(encForExisting) },
+            { uuid: device.installation_id, payload: JSON.stringify({ msg: arrayBufferToBase64Url(encForExisting), publicKey }) },
             installData.jwt
           )
 
           // Tell new device about the existing device
-          const existingPayload = JSON.stringify({ uuid: device.installation_id, publicKey: device.public_key })
           const encForNew = await rsaEncrypt(
-            new TextEncoder().encode(existingPayload).buffer as ArrayBuffer,
+            new TextEncoder().encode(JSON.stringify({ uuid: device.installation_id })).buffer as ArrayBuffer,
             publicKey
           )
           await syncApi.postInit(
-            { target_uuid: uuid, encrypted_payload: arrayBufferToBase64Url(encForNew) },
+            { uuid: uuid, payload: JSON.stringify({ msg: arrayBufferToBase64Url(encForNew), publicKey: device.public_key }) },
             installData.jwt
           )
         } catch (err) {
@@ -113,8 +134,8 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[] }> {
   }
 
   if (processedIds.length > 0) {
-    await syncApi.deleteInit({ ids: processedIds }, installData.jwt)
+    await syncApi.deleteInit({ uuid: installData.id, ids: processedIds }, installData.jwt)
   }
 
-  return { newDevices }
+  return { newDevices, done: false }
 }

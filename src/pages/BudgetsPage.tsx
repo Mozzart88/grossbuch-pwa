@@ -4,9 +4,11 @@ import { Button, Card, Modal, Input, Select, Spinner, useToast } from '../compon
 import { budgetRepository, tagRepository, currencyRepository } from '../services/repositories'
 import type { Budget, BudgetInput, Tag, Currency } from '../types'
 import { SYSTEM_TAGS } from '../types'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function BudgetsPage() {
   const { showToast } = useToast()
+  const dataVersion = useDataRefresh()
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
   const [defaultCurrency, setDefaultCurrency] = useState<Currency | null>(null)
@@ -27,7 +29,7 @@ export function BudgetsPage() {
 
   useEffect(() => {
     loadData()
-  }, [currentMonth])
+  }, [currentMonth, dataVersion])
 
   const loadData = async () => {
     try {

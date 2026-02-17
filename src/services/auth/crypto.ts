@@ -195,6 +195,8 @@ export async function rsaEncrypt(
   data: ArrayBuffer,
   publicKeyBase64Url: string
 ): Promise<ArrayBuffer> {
+  if (data.byteLength > 190)
+    throw new Error('data length should not excide 190 bytes')
   const keyBuffer = base64UrlToArrayBuffer(publicKeyBase64Url)
   const publicKey = await crypto.subtle.importKey(
     'spki',

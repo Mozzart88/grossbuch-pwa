@@ -1,7 +1,8 @@
-import { queryOne } from '../database/connection'
+import { queryOne, setSuppressWriteNotifications } from '../database/connection'
 import { settingsRepository } from '../repositories/settingsRepository'
 import { exportSyncPackage } from './syncExport'
 import { importSyncPackage } from './syncImport'
+import { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } from './syncTriggers'
 import { encryptSyncPackage, decryptSyncPackage } from './syncCrypto'
 import {
   ensureSyncState,
@@ -10,6 +11,7 @@ import {
   hasUnpushedChanges as checkUnpushed,
 } from './syncRepository'
 import * as syncApi from './syncApi'
+import { syncSingleRate } from '../exchangeRate/exchangeRateSync'
 import type { ImportResult } from './syncTypes'
 
 interface InstallationData {
@@ -20,6 +22,8 @@ interface InstallationData {
 export async function getInstallationData(): Promise<InstallationData | null> {
   const raw = await settingsRepository.get('installation_id')
   if (!raw) return null
+  if (typeof raw === 'object')
+    return raw
   try {
     return JSON.parse(String(raw))
   } catch {
@@ -81,11 +85,18 @@ export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> 
   const hasChanges = await checkUnpushed(installData.id)
   if (!hasChanges) return false
 
+  const pushTimestamp = Math.floor(Date.now() / 1000)
   const pkg = await exportSyncPackage(state.last_push_at, installData.id)
   const encrypted = await encryptSyncPackage(pkg, allRecipients)
 
   await syncApi.push({ package: encrypted }, installData.jwt)
-  await updatePushTimestamp(installData.id)
+
+  setSuppressWriteNotifications(true)
+  try {
+    await updatePushTimestamp(installData.id, pushTimestamp)
+  } finally {
+    setSuppressWriteNotifications(false)
+  }
 
   return true
 }
@@ -108,20 +119,43 @@ export async function pullSync(): Promise<ImportResult[]> {
   const results: ImportResult[] = []
   const ackedIds: string[] = []
 
-  for (const { id, package: encrypted } of response.packages) {
-    try {
-      const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
-      const result = await importSyncPackage(pkg)
-      results.push(result)
-      ackedIds.push(id)
-    } catch (err) {
-      console.error('[pullSync] Failed to process package:', id, err)
+  setSuppressWriteNotifications(true)
+  await dropUpdatedAtTriggers()
+  try {
+    for (const { id, package: encrypted } of response.packages) {
+      try {
+        const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
+        const result = await importSyncPackage(pkg)
+        results.push(result)
+        ackedIds.push(id)
+      } catch (err) {
+        console.error('[pullSync] Failed to process package:', id, err)
+      }
     }
+  } finally {
+    await restoreUpdatedAtTriggers()
+    setSuppressWriteNotifications(false)
   }
 
   if (ackedIds.length > 0) {
     await syncApi.ack({ package_ids: ackedIds }, installData.jwt)
     await updateSyncTimestamp(installData.id)
+  }
+
+  // Fetch missing exchange rates for newly imported accounts
+  const newCurrencyIds = [...new Set(results.flatMap(r => r.newAccountCurrencyIds))]
+  for (const currencyId of newCurrencyIds) {
+    try {
+      const hasRate = await queryOne<{ rate: number }>(
+        'SELECT rate FROM exchange_rate WHERE currency_id = ? LIMIT 1',
+        [currencyId]
+      )
+      if (!hasRate) {
+        await syncSingleRate(currencyId)
+      }
+    } catch (err) {
+      console.warn('[pullSync] Failed to sync exchange rate for currency:', currencyId, err)
+    }
   }
 
   return results

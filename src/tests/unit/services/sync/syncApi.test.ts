@@ -135,7 +135,7 @@ describe('syncApi', () => {
       mockFetch.mockReturnValue(mockResponse({}, true))
 
       await postInit(
-        { target_uuid: 'target-1', encrypted_payload: 'enc-payload' },
+        { uuid: 'target-1', payload: 'enc-payload' },
         'jwt-token'
       )
 
@@ -147,7 +147,7 @@ describe('syncApi', () => {
             'Content-Type': 'application/json',
             Authorization: 'Bearer jwt-token',
           }),
-          body: JSON.stringify({ target_uuid: 'target-1', encrypted_payload: 'enc-payload' }),
+          body: JSON.stringify({ uuid: 'target-1', payload: 'enc-payload' }),
         })
       )
     })
@@ -156,7 +156,7 @@ describe('syncApi', () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 500))
 
       await expect(
-        postInit({ target_uuid: '', encrypted_payload: '' }, 'jwt')
+        postInit({ uuid: '', payload: '' }, 'jwt')
       ).rejects.toThrow('Sync init post failed: 500 Error')
     })
   })
@@ -168,10 +168,12 @@ describe('syncApi', () => {
       ]
       mockFetch.mockReturnValue(mockResponse(responseData))
 
-      const result = await getInit('jwt-token')
+      const result = await getInit('jwt-token', 'sender-1')
 
+      const calledUrl = mockFetch.mock.calls[0][0] as string
+      expect(calledUrl).toMatch(/^https:\/\/api\.example\.com\/sync\/init\?uuid=sender-1&_t=\d+$/)
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://api.example.com/sync/init',
+        expect.any(String),
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({
@@ -185,7 +187,7 @@ describe('syncApi', () => {
     it('throws on non-ok response', async () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 403))
 
-      await expect(getInit('jwt')).rejects.toThrow('Sync init get failed: 403 Error')
+      await expect(getInit('jwt', 'some-id')).rejects.toThrow('Sync init get failed: 403 Error')
     })
   })
 
@@ -193,7 +195,7 @@ describe('syncApi', () => {
     it('sends delete request to /sync/init', async () => {
       mockFetch.mockReturnValue(mockResponse({}, true))
 
-      await deleteInit({ ids: [1, 2, 3] }, 'jwt-token')
+      await deleteInit({ uuid: 'my-uuid', ids: [1, 2, 3] }, 'jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/sync/init',
@@ -202,7 +204,7 @@ describe('syncApi', () => {
           headers: expect.objectContaining({
             Authorization: 'Bearer jwt-token',
           }),
-          body: JSON.stringify({ ids: [1, 2, 3] }),
+          body: JSON.stringify({ uuid: 'my-uuid', ids: [1, 2, 3] }),
         })
       )
     })
@@ -210,7 +212,7 @@ describe('syncApi', () => {
     it('throws on non-ok response', async () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 500))
 
-      await expect(deleteInit({ ids: [1] }, 'jwt')).rejects.toThrow('Sync init delete failed: 500 Error')
+      await expect(deleteInit({ uuid: 'bad-uuid', ids: [1] }, 'jwt')).rejects.toThrow('Sync init delete failed: 500 Error')
     })
   })
 })

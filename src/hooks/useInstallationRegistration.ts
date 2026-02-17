@@ -50,6 +50,9 @@ export function useInstallationRegistration({
                 await sendInit(sharedUuid, sharedPublicKey)
               } catch (err) {
                 console.warn('[useInstallationRegistration] sendInit failed:', err)
+                if (import.meta.env.DEV) {
+                  showToast('Failed to send invitation responce', 'error')
+                }
               }
             }
             if (import.meta.env.DEV) {
@@ -87,6 +90,9 @@ export function useInstallationRegistration({
               await sendInit(sharedUuid, sharedPublicKey)
             } catch (err) {
               console.warn('[useInstallationRegistration] sendInit failed:', err)
+              if (import.meta.env.DEV) {
+                showToast(`Failed to send invitation responce ${(err as Error).message}`, 'error')
+              }
             }
           }
           if (import.meta.env.DEV) {

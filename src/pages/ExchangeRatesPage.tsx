@@ -5,6 +5,7 @@ import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 interface CurrencyWithRate extends Currency {
   currentRate: number
@@ -14,6 +15,7 @@ interface CurrencyWithRate extends Currency {
 export function ExchangeRatesPage() {
   const { showToast } = useToast()
   const layoutContext = useLayoutContextSafe()
+  const dataVersion = useDataRefresh()
   const [currencies, setCurrencies] = useState<CurrencyWithRate[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -25,7 +27,7 @@ export function ExchangeRatesPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   // Set up plus button to navigate to exchange transaction
   useEffect(() => {

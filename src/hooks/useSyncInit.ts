@@ -6,14 +6,16 @@ const THROTTLE_MS = 30000
 
 /**
  * Poll for init packages on route changes (like useSyncPull), with 30s throttle.
+ * Stops polling once handshake is complete (linked devices exist and no pending packages).
  */
 export function useSyncInit({ enabled = true }: { enabled?: boolean } = {}) {
   const location = useLocation()
   const lastPollRef = useRef(0)
   const isPollingRef = useRef(false)
+  const doneRef = useRef(false)
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || doneRef.current) return
 
     const now = Date.now()
     if (now - lastPollRef.current < THROTTLE_MS) return
@@ -23,6 +25,11 @@ export function useSyncInit({ enabled = true }: { enabled?: boolean } = {}) {
     lastPollRef.current = now
 
     pollAndProcessInit()
+      .then((result) => {
+        if (result.done) {
+          doneRef.current = true
+        }
+      })
       .catch((err) => {
         console.warn('[useSyncInit] Poll failed:', err)
       })

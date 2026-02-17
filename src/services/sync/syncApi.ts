@@ -109,9 +109,14 @@ export async function postInit(
 }
 
 export async function getInit(
-  jwt: string
+  jwt: string,
+  id: string
 ): Promise<SyncInitPackage[]> {
-  const response = await fetchWithTimeout(`${API_URL}/sync/init`, {
+  const params = new URLSearchParams({
+    uuid: id,
+    _t: Date.now().toString()
+  })
+  const response = await fetchWithTimeout(`${API_URL}/sync/init?${params}`, {
     method: 'GET',
     headers: authHeaders(jwt),
   })

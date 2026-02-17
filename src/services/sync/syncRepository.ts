@@ -19,10 +19,10 @@ export async function ensureSyncState(installationId: string): Promise<SyncState
   return { installation_id: installationId, last_sync_at: 0, last_push_at: 0 }
 }
 
-export async function updatePushTimestamp(installationId: string): Promise<void> {
+export async function updatePushTimestamp(installationId: string, timestamp: number): Promise<void> {
   await execSQL(
-    `UPDATE sync_state SET last_push_at = unixepoch(CURRENT_TIMESTAMP) WHERE installation_id = ?`,
-    [installationId]
+    `UPDATE sync_state SET last_push_at = ? WHERE installation_id = ?`,
+    [timestamp, installationId]
   )
 }
 
@@ -35,7 +35,7 @@ export async function updateSyncTimestamp(installationId: string): Promise<void>
 
 export async function getDeletionsSince(timestamp: number): Promise<SyncDeletion[]> {
   return querySQL<SyncDeletion>(
-    `SELECT table_name AS entity, entity_id, deleted_at FROM sync_deletions WHERE deleted_at > ?`,
+    `SELECT table_name AS entity, entity_id, deleted_at FROM sync_deletions WHERE deleted_at >= ?`,
     [timestamp]
   )
 }
@@ -62,23 +62,23 @@ export async function hasUnpushedChanges(installationId: string): Promise<boolea
 
   const result = await queryOne<{ cnt: number }>(`
     SELECT COUNT(*) as cnt FROM (
-      SELECT 1 FROM icon WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM icon WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM tag WHERE updated_at > ? AND id > 10 AND id NOT IN (22, 23) LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM tag WHERE updated_at >= ? AND id > 10 AND id NOT IN (22, 23) LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM wallet WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM wallet WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM account WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM account WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM counterparty WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM counterparty WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM currency WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM currency WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM trx WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM trx WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM budget WHERE updated_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM budget WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
-      SELECT 1 FROM sync_deletions WHERE deleted_at > ? LIMIT 1
+      SELECT 1 FROM ( SELECT * FROM sync_deletions WHERE deleted_at >= ? LIMIT 1 )
     )
   `, [since, since, since, since, since, since, since, since, since])
 

@@ -48,6 +48,10 @@ export default defineConfig({
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
+            urlPattern: /\/sync\//,
+            handler: 'NetworkOnly',
+          },
+          {
             urlPattern: /^https?.*/,
             handler: 'CacheFirst',
             options: {

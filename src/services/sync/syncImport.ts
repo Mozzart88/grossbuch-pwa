@@ -7,6 +7,7 @@ import type {
   SyncWallet,
   SyncAccount,
   SyncCounterparty,
+  SyncCurrency,
   SyncTransaction,
   SyncBudget,
   SyncDeletion,
@@ -15,11 +16,15 @@ import type {
 
 /**
  * Import a SyncPackage with last-write-wins conflict resolution.
- * Process in dependency order: icons -> tags -> wallets -> accounts -> counterparties -> transactions -> budgets -> deletions
+ * Process in dependency order: icons -> tags -> wallets -> accounts -> counterparties -> currencies -> transactions -> budgets -> deletions
+ *
+ * IMPORTANT: Caller must wrap in dropUpdatedAtTriggers/restoreUpdatedAtTriggers
+ * and setSuppressWriteNotifications to prevent echo loops.
  */
 export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult> {
   const result: ImportResult = {
     imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, deletions: 0 },
+    newAccountCurrencyIds: [],
     conflicts: 0,
     errors: [],
   }
@@ -30,8 +35,11 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     result.imported.icons = await importIcons(pkg.icons)
     result.imported.tags = await importTags(pkg.tags)
     result.imported.wallets = await importWallets(pkg.wallets)
-    result.imported.accounts = await importAccounts(pkg.accounts)
+    const accountsResult = await importAccounts(pkg.accounts)
+    result.imported.accounts = accountsResult.count
+    result.newAccountCurrencyIds = accountsResult.currencyIds
     result.imported.counterparties = await importCounterparties(pkg.counterparties)
+    result.imported.currencies = await importCurrencies(pkg.currencies)
     result.imported.transactions = await importTransactions(pkg.transactions)
     result.imported.budgets = await importBudgets(pkg.budgets)
     result.imported.deletions = await importDeletions(pkg.deletions)
@@ -56,10 +64,10 @@ async function importIcons(icons: SyncIcon[]): Promise<number> {
       [icon.id]
     )
     if (!local) {
-      await execSQL(`INSERT INTO icon (id,value) VALUES (?,?)`, [icon.id, icon.value])
+      await execSQL(`INSERT INTO icon (id, value, updated_at) VALUES (?, ?, ?)`, [icon.id, icon.value, icon.updated_at])
       count++
     } else if (local.updated_at < icon.updated_at) {
-      await execSQL('UPDATE icon SET value = ? WHERE id = ?', [icon.value, icon.id])
+      await execSQL('UPDATE icon SET value = ?, updated_at = ? WHERE id = ?', [icon.value, icon.updated_at, icon.id])
     }
   }
   return count
@@ -76,9 +84,9 @@ async function importTags(tags: SyncTag[]): Promise<number> {
     )
 
     if (!local) {
-      await execSQL(`INSERT INTO tag (id, name) VALUES (?,?)`, [tag.id, tag.name])
+      await execSQL(`INSERT INTO tag (id, name, updated_at) VALUES (?, ?, ?)`, [tag.id, tag.name, tag.updated_at])
     } else if (tag.updated_at > local.updated_at) {
-      await execSQL('UPDATE tag SET name = ? WHERE id = ?', [tag.name, tag.id])
+      await execSQL('UPDATE tag SET name = ?, updated_at = ? WHERE id = ?', [tag.name, tag.updated_at, tag.id])
     }
     await syncTagRelations(tag.id, tag.parents, tag.children)
     await syncTagIcon(tag.id, tag.icon)
@@ -126,11 +134,11 @@ async function importWallets(wallets: SyncWallet[]): Promise<number> {
     )
 
     if (!local) {
-      await execSQL(`INSERT INTO wallet (id, name, color) VALUES (?, ?, ?)`, [w.id, w.name, w.color])
+      await execSQL(`INSERT INTO wallet (id, name, color, updated_at) VALUES (?, ?, ?, ?)`, [w.id, w.name, w.color, w.updated_at])
       await syncWalletTags(w.id, w.tags)
       count++
     } else if (w.updated_at > local.updated_at) {
-      await execSQL(`UPDATE wallet SET name = ?, color = ? WHERE id = ?`, [w.name, w.color, local.id])
+      await execSQL(`UPDATE wallet SET name = ?, color = ?, updated_at = ? WHERE id = ?`, [w.name, w.color, w.updated_at, local.id])
       await syncWalletTags(local.id, w.tags)
       count++
     }
@@ -150,8 +158,9 @@ async function syncWalletTags(walletId: number, tagIds: number[]): Promise<void>
 
 // ======= Accounts =======
 
-async function importAccounts(accounts: SyncAccount[]): Promise<number> {
+async function importAccounts(accounts: SyncAccount[]): Promise<{ count: number; currencyIds: number[] }> {
   let count = 0
+  const currencyIds: number[] = []
   for (const acc of accounts) {
     const local = await queryOne<{ id: number; updated_at: number }>(
       `SELECT id, updated_at FROM account WHERE id = ?`,
@@ -160,17 +169,19 @@ async function importAccounts(accounts: SyncAccount[]): Promise<number> {
 
     if (!local) {
       await execSQL(
-        `INSERT INTO account (id, wallet_id, currency_id) VALUES (?, ?, ?)`,
-        [acc.id, acc.wallet, acc.currency]
+        `INSERT INTO account (id, wallet_id, currency_id, updated_at) VALUES (?, ?, ?, ?)`,
+        [acc.id, acc.wallet, acc.currency, acc.updated_at]
       )
       await syncAccountTags(acc.id, acc.tags)
+      currencyIds.push(acc.currency)
       count++
     } else if (acc.updated_at > local.updated_at) {
       await syncAccountTags(local.id, acc.tags)
+      await execSQL(`UPDATE account SET updated_at = ? WHERE id = ?`, [acc.updated_at, local.id])
       count++
     }
   }
-  return count
+  return { count, currencyIds }
 }
 
 async function syncAccountTags(accountId: number, tagIds: number[]): Promise<void> {
@@ -194,11 +205,11 @@ async function importCounterparties(counterparties: SyncCounterparty[]): Promise
     )
 
     if (!local) {
-      await execSQL(`INSERT INTO counterparty (id, name) VALUES (?, ?)`, [cp.id, cp.name])
+      await execSQL(`INSERT INTO counterparty (id, name, updated_at) VALUES (?, ?, ?)`, [cp.id, cp.name, cp.updated_at])
       await syncCounterpartyData(cp.id, cp)
       count++
     } else if (cp.updated_at > local.updated_at) {
-      await execSQL(`UPDATE counterparty SET name = ? WHERE id = ?`, [cp.name, local.id])
+      await execSQL(`UPDATE counterparty SET name = ?, updated_at = ? WHERE id = ?`, [cp.name, cp.updated_at, local.id])
       await syncCounterpartyData(local.id, cp)
       count++
     }
@@ -221,6 +232,47 @@ async function syncCounterpartyData(cpId: number, cp: SyncCounterparty): Promise
       [cpId, tagId]
     )
   }
+}
+
+// ======= Currencies =======
+
+async function importCurrencies(currencies: SyncCurrency[]): Promise<number> {
+  let count = 0
+  for (const cur of currencies) {
+    const local = await queryOne<{ id: number; updated_at: number }>(
+      `SELECT id, updated_at FROM currency WHERE id = ?`,
+      [cur.id]
+    )
+    if (!local) continue // Currency must already exist (pre-seeded)
+
+    if (cur.updated_at > local.updated_at) {
+      // Sync currency_to_tags
+      await execSQL(`DELETE FROM currency_to_tags WHERE currency_id = ?`, [local.id])
+      for (const tagId of cur.tags) {
+        await execSQL(
+          `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)`,
+          [local.id, tagId]
+        )
+      }
+      await execSQL(`UPDATE currency SET updated_at = ? WHERE id = ?`, [cur.updated_at, local.id])
+      count++
+    }
+
+    // Import exchange rate if sender has one and we don't
+    if (cur.rate != null) {
+      const localRate = await queryOne<{ rate: number }>(
+        `SELECT rate FROM exchange_rate WHERE currency_id = ? ORDER BY updated_at DESC LIMIT 1`,
+        [cur.id]
+      )
+      if (!localRate) {
+        await execSQL(
+          `INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)`,
+          [cur.id, cur.rate]
+        )
+      }
+    }
+  }
+  return count
 }
 
 // ======= Transactions =======
@@ -247,8 +299,8 @@ async function importTransactions(transactions: SyncTransaction[]): Promise<numb
       if (!local) {
         // Insert new transaction
         await execSQL(
-          `INSERT INTO trx (id, timestamp) VALUES (?, ?)`,
-          [trxBlob, trx.timestamp]
+          `INSERT INTO trx (id, timestamp, updated_at) VALUES (?, ?, ?)`,
+          [trxBlob, trx.timestamp, trx.updated_at]
         )
         await insertTrxRelations(trx, affectedAccountIds)
         count++
@@ -257,7 +309,7 @@ async function importTransactions(transactions: SyncTransaction[]): Promise<numb
         await execSQL(`DELETE FROM trx_base WHERE trx_id = ?`, [trxBlob])
         await execSQL(`DELETE FROM trx_to_counterparty WHERE trx_id = ?`, [trxBlob])
         await execSQL(`DELETE FROM trx_note WHERE trx_id = ?`, [trxBlob])
-        await execSQL(`UPDATE trx SET timestamp = ? WHERE id = ?`, [trx.timestamp, trxBlob])
+        await execSQL(`UPDATE trx SET timestamp = ?, updated_at = ? WHERE id = ?`, [trx.timestamp, trx.updated_at, trxBlob])
         await insertTrxRelations(trx, affectedAccountIds)
         count++
       }
@@ -383,14 +435,14 @@ async function importBudgets(budgets: SyncBudget[]): Promise<number> {
 
     if (!local) {
       await execSQL(
-        `INSERT INTO budget (id, start, end, tag_id, amount) VALUES (?, ?, ?, ?, ?)`,
-        [hexToBlob(b.id), b.start, b.end, b.tag, b.amount]
+        `INSERT INTO budget (id, start, end, tag_id, amount, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(b.id), b.start, b.end, b.tag, b.amount, b.updated_at]
       )
       count++
     } else if (b.updated_at > local.updated_at) {
       await execSQL(
-        `UPDATE budget SET start = ?, end = ?, tag_id = ?, amount = ? WHERE hex(id) = ?`,
-        [b.start, b.end, b.tag, b.amount, b.id]
+        `UPDATE budget SET start = ?, end = ?, tag_id = ?, amount = ?, updated_at = ? WHERE hex(id) = ?`,
+        [b.start, b.end, b.tag, b.amount, b.updated_at, b.id]
       )
       count++
     }

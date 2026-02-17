@@ -44,6 +44,7 @@ export interface SyncCurrency {
   decimal_places: number
   updated_at: number
   tags: number[]
+  rate: number | null
 }
 
 export interface SyncTransactionLine {
@@ -151,6 +152,7 @@ export interface ImportResult {
     budgets: number
     deletions: number
   }
+  newAccountCurrencyIds: number[]
   conflicts: number
   errors: string[]
 }
@@ -158,18 +160,18 @@ export interface ImportResult {
 // ======= Init (Handshake) =======
 
 export interface SyncInitPostRequest {
-  target_uuid: string
-  encrypted_payload: string // base64url RSA-encrypted {uuid, publicKey}
+  uuid: string
+  payload: string // base64url RSA-encrypted {uuid, publicKey}
 }
 
 export interface SyncInitPackage {
   id: number
-  sender_uuid: string
-  encrypted_payload: string
+  payload: string
   created_at: string
 }
 
 export interface SyncInitDeleteRequest {
+  uuid: string
   ids: number[]
 }
 

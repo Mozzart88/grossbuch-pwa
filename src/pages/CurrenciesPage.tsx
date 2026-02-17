@@ -4,9 +4,11 @@ import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency, CurrencyInput } from '../types'
 import { Badge } from '../components/ui/Badge'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function CurrenciesPage() {
   const { showToast } = useToast()
+  const dataVersion = useDataRefresh()
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -22,7 +24,7 @@ export function CurrenciesPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   const loadData = async () => {
     try {

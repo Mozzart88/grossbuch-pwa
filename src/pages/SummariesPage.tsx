@@ -17,6 +17,7 @@ import type {
   Tag,
 } from '../types'
 import { SYSTEM_TAGS } from '../types'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 const TABS = [
   { id: 'income-expense', label: 'Income/Expense' },
@@ -27,6 +28,7 @@ const TABS = [
 export function SummariesPage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
+  const dataVersion = useDataRefresh()
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tabParam = searchParams.get('tab') || 'income-expense'
@@ -69,7 +71,7 @@ export function SummariesPage() {
   // Load data when month changes
   useEffect(() => {
     loadData()
-  }, [month])
+  }, [month, dataVersion])
 
   const loadData = async () => {
     setLoading(true)
