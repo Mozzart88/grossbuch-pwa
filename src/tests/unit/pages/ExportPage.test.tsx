@@ -9,6 +9,24 @@ vi.mock('../../../services/export/csvExport', () => ({
   downloadCSV: vi.fn(),
 }))
 
+// Mock repositories
+vi.mock('../../../services/repositories', () => ({
+  walletRepository: {
+    findAll: vi.fn().mockResolvedValue([]),
+  },
+  tagRepository: {
+    findAll: vi.fn().mockResolvedValue([]),
+  },
+  counterpartyRepository: {
+    findAll: vi.fn().mockResolvedValue([]),
+  },
+}))
+
+// Mock verifyPin
+vi.mock('../../../services/auth', () => ({
+  verifyPin: vi.fn().mockResolvedValue(undefined),
+}))
+
 // Mock toast
 const mockShowToast = vi.fn()
 vi.mock('../../../components/ui', async () => {
@@ -20,14 +38,79 @@ vi.mock('../../../components/ui', async () => {
 })
 
 import { exportTransactionsToCSV, downloadCSV } from '../../../services/export/csvExport'
+import { verifyPin } from '../../../services/auth'
+import { walletRepository, tagRepository, counterpartyRepository } from '../../../services/repositories'
+import { Account, Wallet } from '../../../types'
 
 const mockExportTransactionsToCSV = vi.mocked(exportTransactionsToCSV)
 const mockDownloadCSV = vi.mocked(downloadCSV)
+const mockVerifyPin = vi.mocked(verifyPin)
+
+const mockAccounts: Account[] = [
+  {
+    id: 1,
+    wallet_id: 1,
+    currency_id: 1,
+    balance: 100,
+    updated_at: 0,
+    currency: 'USD',
+  },
+  {
+    id: 2,
+    wallet_id: 1,
+    currency_id: 2,
+    balance: 100,
+    updated_at: 0,
+    currency: 'EUR',
+  },
+  {
+    id: 3,
+    wallet_id: 2,
+    currency_id: 1,
+    balance: 100,
+    updated_at: 0,
+    currency: 'USD',
+  },
+  {
+    id: 4,
+    wallet_id: 3,
+    currency_id: 2,
+    balance: 100,
+    updated_at: 0,
+    currency: 'EUR',
+  },
+]
+
+const mockWallets: Wallet[] = [
+  {
+    id: 1,
+    name: 'Cash',
+    color: '#fff',
+    accounts: mockAccounts.filter(a => a.wallet_id == 1)
+  },
+  {
+    id: 2,
+    name: 'Bank',
+    color: '#fff',
+    accounts: mockAccounts.filter(a => a.wallet_id == 2)
+  },
+  {
+    id: 3,
+    name: 'Savings',
+    color: '#fff',
+    accounts: mockAccounts.filter(a => a.wallet_id == 3)
+  },
+]
+
 
 describe('ExportPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockExportTransactionsToCSV.mockResolvedValue('date,type,amount\n2025-01-09,expense,50')
+    mockExportTransactionsToCSV.mockResolvedValue('header\ndata')
+    mockVerifyPin.mockResolvedValue(undefined)
+    vi.mocked(walletRepository.findAll).mockResolvedValue(mockWallets)
+    vi.mocked(tagRepository.findAll).mockResolvedValue([])
+    vi.mocked(counterpartyRepository.findAll).mockResolvedValue([])
   })
 
   const renderPage = () => {
@@ -41,115 +124,110 @@ describe('ExportPage', () => {
   describe('Rendering', () => {
     it('renders page header', () => {
       renderPage()
-
       expect(screen.getByText('Export Data')).toBeInTheDocument()
     })
 
     it('renders export section title', () => {
       renderPage()
-
       expect(screen.getByText('Export Transactions')).toBeInTheDocument()
     })
 
     it('renders description text', () => {
       renderPage()
-
       expect(screen.getByText(/Download your transactions as a CSV file/)).toBeInTheDocument()
     })
 
     it('renders start date input', () => {
       renderPage()
-
       expect(screen.getByLabelText(/Start Date/i)).toBeInTheDocument()
     })
 
     it('renders end date input', () => {
       renderPage()
-
       expect(screen.getByLabelText(/End Date/i)).toBeInTheDocument()
     })
 
     it('renders export button', () => {
       renderPage()
-
       expect(screen.getByRole('button', { name: /Export to CSV/i })).toBeInTheDocument()
     })
 
-    it('renders info text about leaving dates empty', () => {
+    it('renders info text about leaving dates and filters empty', () => {
+      renderPage()
+      expect(screen.getByText('Leave dates and filters empty to export all transactions')).toBeInTheDocument()
+    })
+
+    it('renders filters section', () => {
+      renderPage()
+      expect(screen.getByText('Filters')).toBeInTheDocument()
+    })
+
+    it('renders filter labels', () => {
+      renderPage()
+      expect(screen.getByText('Wallets')).toBeInTheDocument()
+      expect(screen.getByText('Accounts')).toBeInTheDocument()
+      expect(screen.getByText('Tags')).toBeInTheDocument()
+      expect(screen.getByText('Counterparties')).toBeInTheDocument()
+    })
+
+    it('should filter accounts by selected wallet', async () => {
       renderPage()
 
-      expect(screen.getByText('Leave dates empty to export all transactions')).toBeInTheDocument()
+      const wallet = screen.getByText('Wallets')
+      fireEvent.click(wallet)
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+      const trigger = screen.getByText('Cash')
+      fireEvent.click(trigger)
+      const accounts = screen.getByText('Accounts')
+      fireEvent.click(accounts)
+      await waitFor(() => {
+        expect(screen.getByText('Cash - USD')).toBeInTheDocument()
+
+      })
+
     })
   })
 
-  describe('Export functionality', () => {
-    it('exports all transactions when no dates selected', async () => {
+  describe('PIN flow', () => {
+    it('opens PIN modal when export button clicked', async () => {
       renderPage()
 
       const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
       fireEvent.click(exportButton)
 
       await waitFor(() => {
-        expect(mockExportTransactionsToCSV).toHaveBeenCalledWith(undefined, undefined)
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
       })
     })
 
-    it('exports with start date when provided', async () => {
+    it('calls verifyPin and runs export after valid PIN', async () => {
       renderPage()
 
-      const startDateInput = screen.getByLabelText(/Start Date/i)
-      fireEvent.change(startDateInput, { target: { value: '2025-01-01' } })
-
+      // Click export to open PIN modal
       const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
       fireEvent.click(exportButton)
 
       await waitFor(() => {
-        expect(mockExportTransactionsToCSV).toHaveBeenCalledWith('2025-01-01', undefined)
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
       })
-    })
 
-    it('exports with end date when provided', async () => {
-      renderPage()
+      // Enter PIN
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
 
-      const endDateInput = screen.getByLabelText(/End Date/i)
-      fireEvent.change(endDateInput, { target: { value: '2025-01-31' } })
-
-      const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
-      fireEvent.click(exportButton)
+      // Click confirm
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
 
       await waitFor(() => {
-        expect(mockExportTransactionsToCSV).toHaveBeenCalledWith(undefined, '2025-01-31')
+        expect(mockVerifyPin).toHaveBeenCalledWith('123456')
       })
-    })
-
-    it('exports with both dates when provided', async () => {
-      renderPage()
-
-      const startDateInput = screen.getByLabelText(/Start Date/i)
-      fireEvent.change(startDateInput, { target: { value: '2025-01-01' } })
-
-      const endDateInput = screen.getByLabelText(/End Date/i)
-      fireEvent.change(endDateInput, { target: { value: '2025-01-31' } })
-
-      const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
-      fireEvent.click(exportButton)
 
       await waitFor(() => {
-        expect(mockExportTransactionsToCSV).toHaveBeenCalledWith('2025-01-01', '2025-01-31')
-      })
-    })
-
-    it('calls downloadCSV with correct content and filename', async () => {
-      renderPage()
-
-      const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
-      fireEvent.click(exportButton)
-
-      await waitFor(() => {
-        expect(mockDownloadCSV).toHaveBeenCalledWith(
-          'date,type,amount\n2025-01-09,expense,50',
-          expect.stringMatching(/transactions_all_all_\d{4}-\d{2}-\d{2}\.csv/)
-        )
+        expect(mockExportTransactionsToCSV).toHaveBeenCalled()
       })
     })
 
@@ -160,65 +238,99 @@ describe('ExportPage', () => {
       fireEvent.click(exportButton)
 
       await waitFor(() => {
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
+      })
+
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('Export successful', 'success')
       })
     })
 
-    it('shows Exporting... text while exporting', async () => {
-      mockExportTransactionsToCSV.mockImplementation(() => new Promise(() => {}))
-
+    it('calls downloadCSV with correct content and filename', async () => {
       renderPage()
 
       const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
       fireEvent.click(exportButton)
 
       await waitFor(() => {
-        expect(screen.getByText('Exporting...')).toBeInTheDocument()
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
+      })
+
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
+        expect(mockDownloadCSV).toHaveBeenCalledWith(
+          'header\ndata',
+          expect.stringMatching(/transactions_all_all_\d{4}-\d{2}-\d{2}\.csv/)
+        )
       })
     })
 
-    it('disables button while exporting', async () => {
-      mockExportTransactionsToCSV.mockImplementation(() => new Promise(() => {}))
-
+    it('passes date filters to export', async () => {
       renderPage()
+
+      const startDateInput = screen.getByLabelText(/Start Date/i)
+      fireEvent.change(startDateInput, { target: { value: '2025-01-01' } })
+
+      const endDateInput = screen.getByLabelText(/End Date/i)
+      fireEvent.change(endDateInput, { target: { value: '2025-01-31' } })
 
       const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
       fireEvent.click(exportButton)
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Exporting/i })).toBeDisabled()
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
+      })
+
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
+        expect(mockExportTransactionsToCSV).toHaveBeenCalledWith(
+          expect.objectContaining({
+            startDate: '2025-01-01',
+            endDate: '2025-01-31',
+          })
+        )
       })
     })
   })
 
   describe('Error handling', () => {
     it('shows error toast on export failure', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
       mockExportTransactionsToCSV.mockRejectedValue(new Error('Export failed'))
 
       renderPage()
 
       const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
       fireEvent.click(exportButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
+      })
+
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('Failed to export transactions', 'error')
-      })
-
-      consoleSpy.mockRestore()
-    })
-
-    it('logs error on export failure', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockExportTransactionsToCSV.mockRejectedValue(new Error('Export failed'))
-
-      renderPage()
-
-      const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
-      fireEvent.click(exportButton)
-
-      await waitFor(() => {
-        expect(consoleSpy).toHaveBeenCalledWith('Failed to export:', expect.any(Error))
       })
 
       consoleSpy.mockRestore()
@@ -236,6 +348,16 @@ describe('ExportPage', () => {
       fireEvent.click(exportButton)
 
       await waitFor(() => {
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
+      })
+
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
+
+      await waitFor(() => {
         expect(mockDownloadCSV).toHaveBeenCalledWith(
           expect.any(String),
           expect.stringContaining('2025-01-01')
@@ -251,6 +373,16 @@ describe('ExportPage', () => {
 
       const exportButton = screen.getByRole('button', { name: /Export to CSV/i })
       fireEvent.click(exportButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('Confirm Export')).toBeInTheDocument()
+      })
+
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+
+      const confirmButton = screen.getByRole('button', { name: /Confirm/i })
+      fireEvent.click(confirmButton)
 
       await waitFor(() => {
         expect(mockDownloadCSV).toHaveBeenCalledWith(

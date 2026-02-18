@@ -191,6 +191,25 @@ describe('useExchangeRateSync', () => {
       )
     })
 
+    it('shows info toast when no auth token', async () => {
+      mockSyncRates.mockResolvedValue({
+        success: false,
+        syncedCount: 0,
+        skippedReason: 'no_auth_token',
+      })
+
+      renderHook(() => useExchangeRateSync({ enabled: true }), { wrapper })
+
+      await act(async () => {
+        vi.advanceTimersByTime(1500)
+      })
+
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Rate sync skipped: no_auth_token',
+        'info'
+      )
+    })
+
     it('shows info toast for other skipped reasons', async () => {
       mockSyncRates.mockResolvedValue({
         success: false,

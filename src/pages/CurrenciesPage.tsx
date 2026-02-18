@@ -4,9 +4,11 @@ import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency, CurrencyInput } from '../types'
 import { Badge } from '../components/ui/Badge'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function CurrenciesPage() {
   const { showToast } = useToast()
+  const dataVersion = useDataRefresh()
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
@@ -22,7 +24,7 @@ export function CurrenciesPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   const loadData = async () => {
     try {
@@ -105,14 +107,14 @@ export function CurrenciesPage() {
     }
   }
 
-  const handleSetDefault = async (currency: Currency) => {
+  const handleSetSystem = async (currency: Currency) => {
     try {
-      await currencyRepository.setDefault(currency.id)
-      showToast(`${currency.code} set as default`, 'success')
+      await currencyRepository.setSystem(currency.id)
+      showToast(`${currency.code} set as system currency`, 'success')
       loadData()
     } catch (error) {
-      console.error('Failed to set default currency:', error)
-      showToast(error instanceof Error ? error.message : 'Failed to set default', 'error')
+      console.error('Failed to set system currency:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to set system', 'error')
     }
   }
 
@@ -147,7 +149,7 @@ export function CurrenciesPage() {
                 <div>
                   <p className="font-medium text-gray-900 dark:text-gray-100">
                     {currency.code}
-                    {currency.is_default ? (
+                    {currency.is_system ? (
                       <Badge>
                         Default
                       </Badge>
@@ -162,9 +164,9 @@ export function CurrenciesPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                {!currency.is_default && (
+                {!currency.is_system && (
                   <button
-                    onClick={() => handleSetDefault(currency)}
+                    onClick={() => handleSetSystem(currency)}
                     className="text-xs text-primary-600 dark:text-primary-400"
                   >
                     Set Default

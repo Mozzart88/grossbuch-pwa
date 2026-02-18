@@ -39,14 +39,16 @@ describe('Budget Integration', () => {
   it('should perform CRUD operations on budgets', async () => {
     const budgetRepository = await getRepository()
 
-    // 1. Create a budget
+    // 1. Create a budget: $500.00 => amount_int=500, amount_frac=0
     const budget = await budgetRepository.create({
       tag_id: SYSTEM_TAGS.FOOD,
-      amount: 50000, // $500.00
+      amount_int: 500,
+      amount_frac: 0,
     })
 
     expect(budget.tag_id).toBe(SYSTEM_TAGS.FOOD)
-    expect(budget.amount).toBe(50000)
+    expect(budget.amount_int).toBe(500)
+    expect(budget.amount_frac).toBe(0)
 
     // 2. Find by month
     const now = new Date()
@@ -56,8 +58,9 @@ describe('Budget Integration', () => {
     expect(budgets[0].tag).toBe('Food')
 
     // 3. Update
-    const updated = await budgetRepository.update(budget.id, { amount: 75000 })
-    expect(updated.amount).toBe(75000)
+    const updated = await budgetRepository.update(budget.id, { amount_int: 750, amount_frac: 0 })
+    expect(updated.amount_int).toBe(750)
+    expect(updated.amount_frac).toBe(0)
 
     // 4. Delete
     await budgetRepository.delete(budget.id)
@@ -73,32 +76,35 @@ describe('Budget Integration', () => {
     const accountId = insertAccount({
       wallet_id: walletId,
       currency_id: 1, // USD from seed
-      balance: 100000,
+      balance_int: 1000,
     })
     const tagId = insertTag({ name: 'Groceries' })
 
-    // Create budget for the new tag
+    // Create budget for the new tag: $100.00
     await budgetRepository.create({
       tag_id: tagId,
-      amount: 10000, // $100.00
+      amount_int: 100,
+      amount_frac: 0,
     })
 
     // Insert transactions for this tag
+    // $25.00 with rate 1.0 (rate_int=1, rate_frac=0)
     insertTransaction({
       account_id: accountId,
       tag_id: tagId,
       sign: '-',
-      amount: 2500,
-      rate: 100, // rate of 1.0 (integer representation)
+      amount_int: 25,
+      rate_int: 1,
       timestamp: Math.floor(Date.now() / 1000),
     })
 
+    // $15.00 with rate 1.0
     insertTransaction({
       account_id: accountId,
       tag_id: tagId,
       sign: '-',
-      amount: 1500,
-      rate: 100, // rate of 1.0
+      amount_int: 15,
+      rate_int: 1,
       timestamp: Math.floor(Date.now() / 1000),
     })
 
@@ -110,9 +116,8 @@ describe('Budget Integration', () => {
     const groceriesBudget = budgets.find(b => b.tag_id === tagId)
     expect(groceriesBudget).toBeDefined()
     // findByMonth converts amounts to default currency
-    // With rate=100 (1.0) and USD (2 decimal places):
-    // actual = (2500 * 0.01) / (100 * 0.01) * 100 + (1500 * 0.01) / (100 * 0.01) * 100 = 4000
-    expect(groceriesBudget?.actual).toBe(4000)
+    // With rate_int=1 (1.0) and USD: actual = 25/1 + 15/1 = 40
+    expect(groceriesBudget?.actual).toBeCloseTo(40, 1)
   })
 
   it('should convert multi-currency transactions to default currency', async () => {
@@ -126,42 +131,44 @@ describe('Budget Integration', () => {
     const usdAccountId = insertAccount({
       wallet_id: walletId,
       currency_id: 1, // USD from seed (decimal_places=2)
-      balance: 100000,
+      balance_int: 1000,
     })
 
     // EUR account
     const eurAccountId = insertAccount({
       wallet_id: walletId,
       currency_id: 2, // EUR from seed (decimal_places=2)
-      balance: 100000,
+      balance_int: 1000,
     })
 
     const tagId = insertTag({ name: 'Shopping' })
 
-    // Create budget for the tag
+    // Create budget for the tag: $200.00
     await budgetRepository.create({
       tag_id: tagId,
-      amount: 20000, // $200.00
+      amount_int: 200,
+      amount_frac: 0,
     })
 
-    // Insert USD transaction: $50.00 (rate=100 means 1.0 USD/USD)
+    // Insert USD transaction: $50.00 (rate=1.0 USD/USD)
     insertTransaction({
       account_id: usdAccountId,
       tag_id: tagId,
       sign: '-',
-      amount: 5000, // $50.00
-      rate: 100, // 1.0 (USD to USD)
+      amount_int: 50,
+      rate_int: 1, // 1.0 (USD to USD)
       timestamp: Math.floor(Date.now() / 1000),
     })
 
-    // Insert EUR transaction: €40.00 with rate of 0.90 (1 EUR = 1.11 USD)
-    // rate = 90 means 0.90, so 40 EUR = 40 / 0.90 = 44.44 USD
+    // Insert EUR transaction: 40.00 EUR with rate of 0.90 (1 EUR = 1.11 USD)
+    // rate_int=0, rate_frac=0.9*10^18 = 900000000000000000
     insertTransaction({
       account_id: eurAccountId,
       tag_id: tagId,
       sign: '-',
-      amount: 4000, // €40.00
-      rate: 90, // 0.90 EUR/USD
+      amount_int: 40,
+      rate_int: 0,
+      rate_frac: 900000000000000000,
       timestamp: Math.floor(Date.now() / 1000),
     })
 
@@ -172,11 +179,11 @@ describe('Budget Integration', () => {
 
     const shoppingBudget = budgets.find(b => b.tag_id === tagId)
     expect(shoppingBudget).toBeDefined()
-    // USD: (5000 * 0.01) / (100 * 0.01) * 100 = 5000
-    // EUR: (4000 * 0.01) / (90 * 0.01) * 100 = 40 / 0.9 * 100 = 4444.44 ≈ 4444
-    // Total: 5000 + 4444 = 9444 (rounded)
-    expect(shoppingBudget?.actual).toBeGreaterThan(9000)
-    expect(shoppingBudget?.actual).toBeLessThan(10000)
+    // USD: 50 / 1.0 = 50
+    // EUR: 40 / 0.9 = 44.44...
+    // Total: ~94.44
+    expect(shoppingBudget?.actual).toBeGreaterThan(90)
+    expect(shoppingBudget?.actual).toBeLessThan(100)
   })
 
   it('should correctly handle budget summaries from the summary view', async () => {
@@ -187,23 +194,25 @@ describe('Budget Integration', () => {
     const accountId = insertAccount({
       wallet_id: walletId,
       currency_id: 1,
-      balance: 100000,
+      balance_int: 1000,
     })
     const tagId = insertTag({ name: 'test-tag', parent_ids: [10] })
 
     insertBudget({
       tag_id: tagId,
-      amount: 5000,
+      amount_int: 50,
+      amount_frac: 0,
       start: Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000),
       end: Math.floor(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getTime() / 1000),
     })
 
+    // Insert transaction: amount_int=20, rate_int=1 (rate=1.0)
     insertTransaction({
       account_id: accountId,
       tag_id: tagId,
       sign: '-',
-      amount: 2000,
-      rate: 100, // rate of 1.0 (integer representation)
+      amount_int: 20,
+      rate_int: 1,
       timestamp: Math.floor(Date.now() / 1000),
     })
 
@@ -213,9 +222,10 @@ describe('Budget Integration', () => {
     const transportSummary = summary.find(s => s.tag === 'test-tag')
 
     expect(transportSummary).toBeDefined()
-    expect(transportSummary?.amount).toBe(5000)
-    // actual = abs(sum(sign * amount * rate)) = abs(-2000 * 100) = 200000
-    expect(transportSummary?.actual).toBe(200000)
+    // amount from the view is budget.amount_int + budget.amount_frac * 1e-18 = 50
+    expect(transportSummary?.amount).toBeCloseTo(50, 1)
+    // actual = abs(sum(sign * amount / rate)) = abs(-20 / 1) = 20
+    expect(transportSummary?.actual).toBeCloseTo(20, 1)
   })
 
   it('should not allow duplicate budgets for the same tag and period', async () => {
@@ -223,12 +233,14 @@ describe('Budget Integration', () => {
 
     await budgetRepository.create({
       tag_id: SYSTEM_TAGS.FOOD,
-      amount: 50000,
+      amount_int: 500,
+      amount_frac: 0,
     })
 
     await expect(budgetRepository.create({
       tag_id: SYSTEM_TAGS.FOOD,
-      amount: 60000,
+      amount_int: 600,
+      amount_frac: 0,
     })).rejects.toThrow('A budget already exists for this tag and period')
   })
 })

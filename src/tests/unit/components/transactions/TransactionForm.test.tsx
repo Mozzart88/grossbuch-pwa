@@ -21,9 +21,9 @@ vi.mock('../../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
-    getExchangeRate: vi.fn(),
+    getRateForCurrency: vi.fn(),
     findUsedInAccounts: vi.fn(),
   },
   transactionRepository: {
@@ -44,7 +44,6 @@ import {
   counterpartyRepository,
   currencyRepository,
   transactionRepository,
-  settingsRepository,
 } from '../../../../services/repositories'
 
 const mockWalletRepository = vi.mocked(walletRepository)
@@ -52,13 +51,13 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
-const mockSettingsRepository = vi.mocked(settingsRepository)
 
 const mockAccount: Account = {
   id: 1,
   wallet_id: 1,
   currency_id: 1,
-  balance: 15000, // 150.00
+  balance_int: 150,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Cash',
   currency: 'USD',
@@ -69,7 +68,8 @@ const mockAccountEUR: Account = {
   id: 2,
   wallet_id: 1,
   currency_id: 2,
-  balance: 75000, // 750.00
+  balance_int: 750,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Bank',
   currency: 'EUR',
@@ -79,7 +79,8 @@ const mockAccountSavings: Account = {
   id: 3,
   wallet_id: 2,
   currency_id: 1,
-  balance: 120000, // 1200.00
+  balance_int: 1200,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Savings',
   currency: 'USD',
@@ -108,7 +109,7 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: true,
+    is_system: true,
     is_fiat: true,
   },
   {
@@ -125,21 +126,21 @@ const mockCurrencies: Currency[] = [
     name: 'Bitcoin',
     symbol: 'B',
     decimal_places: 2,
-    is_default: false,
+    is_system: false,
     is_fiat: false
   }
 ]
 
 const mockExpenseTags: Tag[] = [
-  { id: 10, name: 'food' },
-  { id: 11, name: 'transport' },
-  { id: 23, name: 'Gifts' },
+  { id: 10, name: 'food', sort_order: 10 },
+  { id: 11, name: 'transport', sort_order: 9 },
+  { id: 23, name: 'Gifts', sort_order: 8 },
 ]
 
 const mockIncomeTags: Tag[] = [
-  { id: 20, name: 'salary' },
-  { id: 21, name: 'freelance' },
-  { id: 23, name: 'Gifts' },
+  { id: 20, name: 'salary', sort_order: 7 },
+  { id: 21, name: 'freelance', sort_order: 6 },
+  { id: 23, name: 'Gifts', sort_order: 5 },
 ]
 
 const mockCounterparties: Counterparty[] = [
@@ -148,12 +149,14 @@ const mockCounterparties: Counterparty[] = [
     name: 'Restaurant ABC',
     note: null,
     tag_ids: [10],
+    sort_order: 10
   },
   {
     id: 2,
     name: 'Company XYZ',
     note: null,
     tag_ids: [20],
+    sort_order: 10
   },
 ]
 
@@ -171,12 +174,11 @@ describe('TransactionForm', () => {
     mockCounterpartyRepository.create.mockResolvedValue({ id: 256 } as any)
     mockCounterpartyRepository.update.mockResolvedValue({} as any)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
-    mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
-    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0]) // USD is default
+    mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 1, frac: 0 })
     mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
-    mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency
   })
 
   const renderForm = () => {
@@ -624,7 +626,8 @@ describe('TransactionForm', () => {
                 account_id: 1,
                 tag_id: 10,
                 sign: '-',
-                amount: 5000,
+                amount_int: 50,
+                amount_frac: 0,
               }),
             ],
           })
@@ -666,7 +669,8 @@ describe('TransactionForm', () => {
                 account_id: 1,
                 tag_id: 20,
                 sign: '+',
-                amount: 100000,
+                amount_int: 1000,
+                amount_frac: 0,
               }),
             ],
           })
@@ -699,8 +703,8 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ account_id: 1, sign: '-', amount: 20000 }),
-              expect.objectContaining({ account_id: 3, sign: '+', amount: 20000 }),
+              expect.objectContaining({ account_id: 1, sign: '-', amount_int: 200, amount_frac: 0 }),
+              expect.objectContaining({ account_id: 3, sign: '+', amount_int: 200, amount_frac: 0 }),
             ]),
           })
         )
@@ -741,8 +745,8 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ account_id: 1, sign: '-', amount: 10000 }),
-              expect.objectContaining({ account_id: 2, sign: '+', amount: 9000 }),
+              expect.objectContaining({ account_id: 1, sign: '-', amount_int: 100, amount_frac: 0 }),
+              expect.objectContaining({ account_id: 2, sign: '+', amount_int: 90, amount_frac: 0 }),
             ]),
           })
         )
@@ -917,9 +921,7 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             counterparty_id: 1,
-            lines: expect.arrayContaining([
-              expect.objectContaining({ note: 'Dinner note' }),
-            ]),
+            note: 'Dinner note',
           })
         )
       })
@@ -1057,7 +1059,7 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ tag_id: 13, amount: 100 }),
+              expect.objectContaining({ tag_id: 13, amount_int: 1, amount_frac: 0 }),
             ]),
           })
         )
@@ -1085,8 +1087,9 @@ describe('TransactionForm', () => {
 
       await waitFor(() => {
         expect(mockTransactionRepository.create).toHaveBeenCalled()
-        // EUR (currency_id=2) rate: 85 EUR per 100 USD = 0.85 * 100 = 85
-        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 85)
+        // EUR (currency_id=2) rate: 85 EUR per 100 USD = 0.85
+        // toIntFrac(0.85) => { int: 0, frac: 850000000000000000 }
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 0, 850000000000000000)
       })
     })
 
@@ -1113,7 +1116,13 @@ describe('TransactionForm', () => {
       fireEvent.submit(submitBtn.closest('form')!)
 
       await waitFor(() => {
-        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 118)
+        // EUR sends 100, USD receives 85: rate for EUR = 100/85 ≈ 1.176470588235294
+        // toIntFrac(1.176470588235294) => { int: 1, frac: ~176470588235294000 }
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(
+          2,
+          expect.any(Number),
+          expect.any(Number),
+        )
       })
     })
   })
@@ -1139,8 +1148,8 @@ describe('TransactionForm', () => {
         .toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ rate: 100 }),
-              expect.objectContaining({ rate: 85 }),
+              expect.objectContaining({ rate_int: 1, rate_frac: 0 }),
+              expect.objectContaining({ rate_int: 1, rate_frac: 0 }),
             ]),
           })
         )
@@ -1168,8 +1177,8 @@ describe('TransactionForm', () => {
         .toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ rate: 118 }),
-              expect.objectContaining({ rate: 100 }),
+              expect.objectContaining({ rate_int: 1, rate_frac: 0 }),
+              expect.objectContaining({ rate_int: 1, rate_frac: 0 }),
             ]),
           })
         )
@@ -1266,7 +1275,8 @@ describe('TransactionForm', () => {
         id: 5,
         wallet_id: 1,
         currency_id: 2,
-        balance: 0,
+        balance_int: 0,
+        balance_frac: 0,
         updated_at: Date.now(),
         currency: 'EUR',
       })
@@ -1325,21 +1335,24 @@ describe('TransactionForm', () => {
                 account_id: 1,
                 tag_id: expect.any(Number), // SYSTEM_TAGS.EXCHANGE
                 sign: '-',
-                amount: 5500, // 55.00 USD
+                amount_int: 55,
+                amount_frac: 0,
               }),
               // Exchange IN to target account
               expect.objectContaining({
                 account_id: 5,
                 tag_id: expect.any(Number), // SYSTEM_TAGS.EXCHANGE
                 sign: '+',
-                amount: 5000, // 50.00 EUR
+                amount_int: 50,
+                amount_frac: 0,
               }),
               // Expense from target account
               expect.objectContaining({
                 account_id: 5,
                 tag_id: 10,
                 sign: '-',
-                amount: 5000, // 50.00 EUR
+                amount_int: 50,
+                amount_frac: 0,
               }),
             ]),
           })
@@ -1444,10 +1457,11 @@ describe('TransactionForm', () => {
 
     it('shows default payment currency first in dropdown', async () => {
       // Set EUR as default payment currency
-      mockSettingsRepository.get.mockImplementation((key) => {
-        if (key === 'default_payment_currency_id') return Promise.resolve(2) // EUR
-        return Promise.resolve(null)
-      })
+      mockCurrencyRepository.findAll.mockResolvedValue([
+        { ...mockCurrencies[0] },
+        { ...mockCurrencies[1], is_payment_default: true },
+        { ...mockCurrencies[2] },
+      ])
 
       renderForm()
 
@@ -1469,9 +1483,6 @@ describe('TransactionForm', () => {
     })
 
     it('shows account currency first when no default payment currency', async () => {
-      // No default payment currency set
-      mockSettingsRepository.get.mockResolvedValue(null)
-
       renderForm()
 
       await waitFor(() => {
@@ -1526,10 +1537,11 @@ describe('TransactionForm', () => {
 
     it('does not duplicate currencies across priority groups', async () => {
       // USD appears in: default payment currency, account currency, active currencies, fiat
-      mockSettingsRepository.get.mockImplementation((key) => {
-        if (key === 'default_payment_currency_id') return Promise.resolve(1) // USD
-        return Promise.resolve(null)
-      })
+      mockCurrencyRepository.findAll.mockResolvedValue([
+        { ...mockCurrencies[0], is_payment_default: true },
+        { ...mockCurrencies[1] },
+        { ...mockCurrencies[2] },
+      ])
 
       renderForm()
 

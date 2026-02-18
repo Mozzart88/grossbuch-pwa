@@ -38,9 +38,10 @@ vi.mock('../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
+    getRateForCurrency: vi.fn(),
     findUsedInAccounts: vi.fn(),
   },
   settingsRepository: {
@@ -98,7 +99,8 @@ describe('AddTransactionPage', () => {
             tags: undefined,
             updated_at: 1704067200,
             is_default: true,
-            balance: 0
+            balance_int: 0,
+            balance_frac: 0
           },
         ],
       },
@@ -107,12 +109,14 @@ describe('AddTransactionPage', () => {
       {
         id: 12,
         name: 'food',
+        sort_order: 10
       },
     ])
     mockTagRepository.findIncomeTags.mockResolvedValue([
       {
         id: 11,
         name: 'sale',
+        sort_order: 11
       },
     ])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
@@ -123,20 +127,21 @@ describe('AddTransactionPage', () => {
         name: 'US Dollar',
         symbol: '$',
         decimal_places: 2,
-        is_default: true,
+        is_system: true,
         is_fiat: true,
       },
     ])
-    mockCurrencyRepository.findDefault.mockResolvedValue({
+    mockCurrencyRepository.findSystem.mockResolvedValue({
       id: 1,
       code: 'USD',
       name: 'US Dollar',
       symbol: '$',
       decimal_places: 2,
-      is_default: true,
+      is_system: true,
       is_fiat: true,
     })
-    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate_int: 1, rate_frac: 0, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 1, frac: 0 })
     mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([
       {
         id: 1,
@@ -144,7 +149,7 @@ describe('AddTransactionPage', () => {
         name: 'US Dollar',
         symbol: '$',
         decimal_places: 2,
-        is_default: true,
+        is_system: true,
         is_fiat: true,
       },
     ])
@@ -216,14 +221,15 @@ describe('AddTransactionPage', () => {
               account_id: 1,
               tag_id: 12,
               sign: '-',
-              amount: 5000,
+              amount_int: 50,
+              amount_frac: 0,
             }),
           ],
         })
       )
     })
 
-    expect(mockNavigate).toHaveBeenCalledWith('/')
+    expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
   it('navigates back on cancel', async () => {

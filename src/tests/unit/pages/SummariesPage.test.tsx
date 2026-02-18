@@ -61,7 +61,7 @@ const renderWithRouter = (initialEntries = ['/summaries']) => {
 describe('SummariesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockCurrencyRepository.findDefault.mockResolvedValue({
+    mockCurrencyRepository.findSystem.mockResolvedValue({
       id: 1,
       code: 'USD',
       symbol: '$',
@@ -69,46 +69,48 @@ describe('SummariesPage', () => {
       name: 'US Dollar'
     })
     mockTransactionRepository.getMonthSummary.mockResolvedValue({
-      income: 100000,
-      expenses: 50000,
+      income: 1000,
+      expenses: 500,
     })
-    mockAccountRepository.getTotalBalance.mockResolvedValue(150000)
+    mockAccountRepository.getTotalBalance.mockResolvedValue(1500)
     mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
-      { tag_id: 1, tag: 'Food', income: 0, expense: 30000, net: -30000 },
-      { tag_id: 2, tag: 'Salary', income: 100000, expense: 0, net: 100000 },
+      { tag_id: 1, tag: 'Food', income: 0, expense: 300, net: -300 },
+      { tag_id: 2, tag: 'Salary', income: 1000, expense: 0, net: 1000 },
     ])
     mockTransactionRepository.getMonthlyCounterpartiesSummary.mockResolvedValue([
-      { counterparty_id: 1, counterparty: 'Employer', income: 100000, expense: 0, net: 100000 },
-      { counterparty_id: 2, counterparty: 'Grocery Store', income: 0, expense: 20000, net: -20000 },
+      { counterparty_id: 1, counterparty: 'Employer', income: 1000, expense: 0, net: 1000 },
+      { counterparty_id: 2, counterparty: 'Grocery Store', income: 0, expense: 200, net: -200 },
     ])
     mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
-      { tag_id: 1, tag: 'Food', amount: 30000, type: 'expense' },
-      { tag_id: 2, tag: 'Salary', amount: 100000, type: 'income' },
+      { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
+      { tag_id: 2, tag: 'Salary', amount: 1000, type: 'income' },
     ])
     // Budget mocks
     mockBudgetRepository.findByMonth.mockResolvedValue([])
     mockBudgetRepository.create.mockResolvedValue({
       id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
       tag_id: 1,
-      amount: 50000,
+      amount_int: 500,
+      amount_frac: 0,
       start: 0,
       end: 0,
       tag: 'Food',
-      actual: 30000,
+      actual: 300,
     })
     mockBudgetRepository.update.mockResolvedValue({
       id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
       tag_id: 1,
-      amount: 60000,
+      amount_int: 600,
+      amount_frac: 0,
       start: 0,
       end: 0,
       tag: 'Food',
-      actual: 30000,
+      actual: 300,
     })
     mockBudgetRepository.delete.mockResolvedValue(undefined)
     mockTagRepository.findExpenseTags.mockResolvedValue([
-      { id: 12, name: 'Food' },
-      { id: 13, name: 'Transport' },
+      { id: 12, name: 'Food', sort_order: 10 },
+      { id: 13, name: 'Transport', sort_order: 10 },
     ])
   })
 
@@ -153,7 +155,7 @@ describe('SummariesPage', () => {
   describe('Loading state', () => {
     it('shows loading spinner while fetching data', () => {
       // Make the promise hang to see loading state
-      mockCurrencyRepository.findDefault.mockImplementation(() => new Promise(() => { }))
+      mockCurrencyRepository.findSystem.mockImplementation(() => new Promise(() => { }))
 
       const { container } = renderWithRouter()
 
@@ -196,7 +198,7 @@ describe('SummariesPage', () => {
 
     it('shows In and Out columns when tag has both income and expense', async () => {
       mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
-        { tag_id: 3, tag: 'Mixed', income: 50000, expense: 20000, net: 30000 },
+        { tag_id: 3, tag: 'Mixed', income: 500, expense: 200, net: 300 },
       ])
 
       renderWithRouter()
@@ -291,7 +293,7 @@ describe('SummariesPage', () => {
 
     it('shows empty state when no expenses', async () => {
       mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
-        { tag_id: 2, tag: 'Salary', amount: 100000, type: 'income' },
+        { tag_id: 2, tag: 'Salary', amount: 1000, type: 'income' },
       ])
       mockTransactionRepository.getMonthSummary.mockResolvedValue({
         income: 0,
@@ -307,7 +309,7 @@ describe('SummariesPage', () => {
 
     it('shows empty state when no incomes', async () => {
       mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
-        { tag_id: 1, tag: 'Food', amount: 30000, type: 'expense' },
+        { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
       ])
       mockTransactionRepository.getMonthSummary.mockResolvedValue({
         income: 0,
@@ -550,11 +552,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -579,11 +582,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -600,11 +604,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -622,11 +627,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -658,11 +664,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000, // 60%
+          actual: 300, // 60%
         },
       ])
 
@@ -679,11 +686,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 45000, // 90%
+          actual: 450, // 90%
         },
       ])
 
@@ -700,11 +708,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 60000, // 120%
+          actual: 600, // 120%
         },
       ])
 
@@ -754,11 +763,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -790,11 +800,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -866,11 +877,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -902,11 +914,12 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 0,
+          amount_int: 0,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
-          actual: 30000,
+          actual: 300,
         },
       ])
 
@@ -923,7 +936,8 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 50000,
+          amount_int: 500,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
@@ -947,7 +961,8 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 1,
-          amount: 0,
+          amount_int: 0,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Food',
@@ -984,7 +999,8 @@ describe('SummariesPage', () => {
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
           tag_id: 13, // Transport - not in categoryBreakdown
-          amount: 20000,
+          amount_int: 200,
+          amount_frac: 0,
           start: 0,
           end: 0,
           tag: 'Transport',
@@ -993,8 +1009,8 @@ describe('SummariesPage', () => {
       ])
       // Food has expenses, Transport does not
       mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
-        { tag_id: 1, tag: 'Food', amount: 30000, type: 'expense' },
-        { tag_id: 2, tag: 'Salary', amount: 100000, type: 'income' },
+        { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
+        { tag_id: 2, tag: 'Salary', amount: 1000, type: 'income' },
       ])
 
       renderWithRouter()

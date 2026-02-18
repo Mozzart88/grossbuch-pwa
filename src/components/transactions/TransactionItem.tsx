@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { type TransactionLog } from '../../types'
-import { formatCurrency } from '../../utils/formatters'
+import { formatCurrencyValue } from '../../utils/formatters'
+import { fromIntFrac } from '../../utils/amount'
 import { formatTime } from '../../utils/dateUtils'
 
 interface TransactionItemProps {
@@ -9,6 +10,12 @@ interface TransactionItemProps {
 }
 
 type transactionT = 'exchange' | 'transfer' | 'expense' | 'income' | 'initial' | 'adjustment'
+
+/** Get the signed float amount from a TransactionLog line */
+function getSignedAmount(l: TransactionLog): number {
+  const abs = fromIntFrac(l.amount_int, l.amount_frac)
+  return l.sign === '-' ? -abs : abs
+}
 
 function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
   return trx.some(l => {
@@ -20,7 +27,7 @@ function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
 const isMultiCurrencyExpense = (trx: TransactionLog[]): boolean => {
   const exchangeLines = trx.filter(l => l.tags.includes('exchange'))
   const expenseLines = trx.filter(l =>
-    l.amount < 0 &&
+    getSignedAmount(l) < 0 &&
     l.tags !== 'exchange' &&
     l.tags !== 'transfer' &&
     l.tags.match(/^fee[s]?$/i) === null
@@ -46,17 +53,13 @@ const getTransactionType = (trx: TransactionLog[]): transactionT => {
   if (isTypeOf(trx, 'transfer')) {
     return 'transfer'
   }
-  return trx[0].amount < 0 ? 'expense' : 'income'
-}
-
-const getDecimalPlaces = (p: number): number => {
-  return Math.pow(10, p)
+  return getSignedAmount(trx[0]) < 0 ? 'expense' : 'income'
 }
 
 // Get the expense line for multi-currency expense transactions
 const getExpenseLine = (trx: TransactionLog[]): TransactionLog | undefined => {
   return trx.find(l =>
-    l.amount < 0 &&
+    getSignedAmount(l) < 0 &&
     l.tags !== 'exchange' &&
     l.tags !== 'transfer' &&
     l.tags.match(/^fee[s]?$/i) === null
@@ -70,52 +73,49 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     // For multi-currency expense, show the expense amount in the expense currency
     if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
       const expenseLine = getExpenseLine(transaction)!
-      const amount = Math.abs(expenseLine.amount) / getDecimalPlaces(expenseLine.decimal_places)
+      const amount = fromIntFrac(expenseLine.amount_int, expenseLine.amount_frac)
       return {
-        text: formatCurrency(amount, expenseLine.symbol),
+        text: formatCurrencyValue(amount, expenseLine.symbol),
         color: 'text-gray-600 dark:text-gray-400',
       }
     }
 
     const symbol = transaction[0].symbol
-    const decimalPlaces = transaction[0].decimal_places
-
-    const amount = transaction.reduce((acc, l) => acc + l.amount, 0) / getDecimalPlaces(decimalPlaces)
+    const amount = transaction.reduce((acc, l) => acc + getSignedAmount(l), 0)
     switch (transactionType) {
       case 'income':
         return {
-          text: `${formatCurrency(amount, symbol)}`,
+          text: formatCurrencyValue(amount, symbol),
           color: 'text-green-600 dark:text-green-400',
         }
       case 'transfer':
         return {
-          text: formatCurrency(transaction[0].amount / getDecimalPlaces(decimalPlaces), symbol),
+          text: formatCurrencyValue(getSignedAmount(transaction[0]), symbol),
           color: 'text-blue-600 dark:text-blue-400',
         }
       case 'exchange': {
-        const from = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
-        const to = transaction.find(l => l.amount >= 0 && l.tags.includes('exchange'))!
+        const from = transaction.find(l => getSignedAmount(l) < 0 && l.tags.includes('exchange'))!
+        const to = transaction.find(l => getSignedAmount(l) >= 0 && l.tags.includes('exchange'))!
         return {
-          text: `${formatCurrency(from.amount / getDecimalPlaces(from.decimal_places), from.symbol)} → ${formatCurrency(to.amount / getDecimalPlaces(to.decimal_places), to.symbol)}`,
+          text: `${formatCurrencyValue(getSignedAmount(from), from.symbol)} → ${formatCurrencyValue(getSignedAmount(to), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
         }
       }
       case 'initial':
       case 'adjustment':
         return {
-          text: `${formatCurrency(amount, symbol)}`,
+          text: formatCurrencyValue(amount, symbol),
           color: 'text-slate-500 dark:text-slate-400',
         }
       default:
         return {
-          text: `${formatCurrency(amount, symbol)}`,
+          text: formatCurrencyValue(amount, symbol),
           color: 'text-gray-600 dark:text-gray-400',
         }
     }
   }
 
   // Helper to wrap text in a colored span when wallet has a color configured.
-  // Returns plain text when color is null/falsy to inherit parent's gray styling.
   const getColoredText = (text: string, color: string | null): ReactNode => {
     if (color) {
       return <span style={{ color }}>{text}</span>
@@ -131,12 +131,12 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         return getColoredText(line.counterparty, line.wallet_color)
       }
       // Show source wallet (where money came from) with source currency
-      const exchangeOut = transaction.find(l => l.amount < 0 && l.tags.includes('exchange'))!
+      const exchangeOut = transaction.find(l => getSignedAmount(l) < 0 && l.tags.includes('exchange'))!
       return <>{getColoredText(`${exchangeOut.wallet}:${exchangeOut.symbol}`, exchangeOut.wallet_color)}</>
     }
 
-    const from = transaction.find(l => l.amount < 0 && l.tags === transactionType)!
-    const to = transaction.find(l => l.amount >= 0 && l.tags === transactionType)!
+    const from = transaction.find(l => getSignedAmount(l) < 0 && l.tags === transactionType)!
+    const to = transaction.find(l => getSignedAmount(l) >= 0 && l.tags === transactionType)!
 
     switch (transactionType) {
       case 'transfer':

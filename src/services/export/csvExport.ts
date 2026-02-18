@@ -1,59 +1,65 @@
 import { transactionRepository } from '../repositories'
-import type { TransactionLog } from '../../types'
+import { blobToHex } from '../../utils/blobUtils'
+import { fromIntFrac } from '../../utils/amount'
+
+export interface ExportFilters {
+  startDate?: string
+  endDate?: string
+  walletIds?: number[]
+  accountIds?: number[]
+  tagIds?: number[]
+  counterpartyIds?: number[]
+}
 
 function escapeCsvField(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return ''
   const str = String(value)
-  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     return `"${str.replace(/"/g, '""')}"`
   }
   return str
 }
 
-function formatDate(dateTime: string): string {
-  return dateTime.slice(0, 10)
-}
-
-function formatTime(dateTime: string): string {
-  return dateTime.slice(11, 16)
-}
-
-export async function exportTransactionsToCSV(
-  startDate?: string,
-  endDate?: string,
-  decimalPlaces: number = 2
-): Promise<string> {
-  // Convert date strings to unix timestamps if provided
-  const startTs = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : undefined
-  const endTs = endDate ? Math.floor(new Date(endDate + 'T23:59:59').getTime() / 1000) : undefined
-
-  const transactions = await transactionRepository.findAllForExport(startTs, endTs)
+export async function exportTransactionsToCSV(filters: ExportFilters = {}): Promise<string> {
+  const rows = await transactionRepository.findAllForExportDetailed(filters)
 
   const headers = [
-    'Date',
-    'Time',
-    'Wallet',
-    'Currency',
-    'Tags',
-    'Amount',
-    'Rate',
-    'Counterparty',
+    'date_time',
+    'trx_id',
+    'account_id',
+    'wallet',
+    'currency_code',
+    'tag_id',
+    'tag',
+    'amount',
+    'rate',
+    'counterparty_id',
+    'counterparty',
+    'note',
   ]
 
-  const divisor = Math.pow(10, decimalPlaces)
+  const csvRows = rows.map((r) => {
+    const value = fromIntFrac(r.amount_int, r.amount_frac)
+    const signedAmount = (r.sign === '-' ? '-' : '') + value.toFixed(r.decimal_places)
+    const rateValue = fromIntFrac(r.rate_int, r.rate_frac)
 
-  const rows = transactions.map((t: TransactionLog) => [
-    escapeCsvField(formatDate(t.date_time)),
-    escapeCsvField(formatTime(t.date_time)),
-    escapeCsvField(t.wallet),
-    escapeCsvField(t.currency),
-    escapeCsvField(t.tags),
-    escapeCsvField((t.amount / divisor).toFixed(decimalPlaces)),
-    escapeCsvField(t.rate),
-    escapeCsvField(t.counterparty),
-  ])
+    return [
+      escapeCsvField(r.date_time),
+      escapeCsvField(blobToHex(r.trx_id)),
+      escapeCsvField(r.account_id),
+      escapeCsvField(r.wallet_name),
+      escapeCsvField(r.currency_code),
+      escapeCsvField(r.tag_id),
+      escapeCsvField(r.tag_name),
+      escapeCsvField(signedAmount),
+      escapeCsvField(rateValue),
+      escapeCsvField(r.counterparty_id),
+      escapeCsvField(r.counterparty_name),
+      escapeCsvField(r.note),
+    ].join(',')
+  })
 
-  return [headers.join(','), ...rows.map((row) => row.join(','))].join('\n')
+  return [headers.join(','), ...csvRows].join('\n')
 }
 
 export function downloadCSV(content: string, filename: string): void {

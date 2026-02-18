@@ -39,7 +39,12 @@ describe('Accounts Integration', () => {
       expect(result[0].values[0]).toBeDefined()
       expect(result[0].values[0][1]).toBe(walletId) // wallet_id
       expect(result[0].values[0][2]).toBe(1) // currency_id
-      expect(result[0].values[0][3]).toBe(0) // balance default
+      // balance_int and balance_frac default to 0
+      const cols = result[0].columns
+      const balIntIdx = cols.indexOf('balance_int')
+      const balFracIdx = cols.indexOf('balance_frac')
+      expect(result[0].values[0][balIntIdx]).toBe(0)
+      expect(result[0].values[0][balFracIdx]).toBe(0)
     })
 
     it('updates account properties', async () => {
@@ -49,13 +54,14 @@ describe('Accounts Integration', () => {
       const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
       db.run(
-        'UPDATE account SET balance = ? WHERE id = ?',
-        [50000, accountId]
+        'UPDATE account SET balance_int = ?, balance_frac = ? WHERE id = ?',
+        [500, 0, accountId]
       )
 
-      const result = db.exec('SELECT balance FROM account WHERE id = ?', [accountId])
+      const result = db.exec('SELECT balance_int, balance_frac FROM account WHERE id = ?', [accountId])
 
-      expect(result[0].values[0][0]).toBe(50000)
+      expect(result[0].values[0][0]).toBe(500)
+      expect(result[0].values[0][1]).toBe(0)
     })
 
     it('archives account by adding archived tag', async () => {
@@ -161,61 +167,61 @@ describe('Accounts Integration', () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Main' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
 
-      // Income
+      // Income: +500.00
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.SALE,
         sign: '+',
-        amount: 50000,
+        amount_int: 500,
       })
 
-      // Expense
+      // Expense: -200.00
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 20000,
+        amount_int: 200,
       })
 
-      // Another Expense
+      // Another Expense: -100.00
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 10000,
+        amount_int: 100,
       })
 
       // Calculate net from transactions
       const result = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END) as net
         FROM trx_base WHERE account_id = ?
       `, [accountId])
 
-      // Net: +50000 - 20000 - 10000 = 20000
-      expect(result[0].values[0][0]).toBe(20000)
+      // Net: +500 - 200 - 100 = 200
+      expect(result[0].values[0][0]).toBeCloseTo(200, 5)
     })
 
     it('handles negative balance', async () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Main' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 10000 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 100 })
 
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 20000,
+        amount_int: 200,
       })
 
       const result = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END) as net
         FROM trx_base WHERE account_id = ?
       `, [accountId])
 
-      expect(result[0].values[0][0]).toBe(-20000)
+      expect(result[0].values[0][0]).toBeCloseTo(-200, 5)
     })
   })
 
@@ -252,7 +258,7 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 10000,
+        amount_int: 100,
       })
 
       // Transfer out (this account is source)
@@ -264,14 +270,14 @@ describe('Accounts Integration', () => {
       const debitId = new Uint8Array(8)
       crypto.getRandomValues(debitId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId, trxId1, accountId, SYSTEM_TAGS.TRANSFER, '-', 5000, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId1, accountId, SYSTEM_TAGS.TRANSFER, '-', 50, 0, 0, 0]
       )
       const creditId = new Uint8Array(8)
       crypto.getRandomValues(creditId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId, trxId1, account2Id, SYSTEM_TAGS.TRANSFER, '+', 5000, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId1, account2Id, SYSTEM_TAGS.TRANSFER, '+', 50, 0, 0, 0]
       )
 
       // Transfer in (this account is destination)
@@ -282,14 +288,14 @@ describe('Accounts Integration', () => {
       const debitId2 = new Uint8Array(8)
       crypto.getRandomValues(debitId2)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId2, trxId2, account2Id, SYSTEM_TAGS.TRANSFER, '-', 2500, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [debitId2, trxId2, account2Id, SYSTEM_TAGS.TRANSFER, '-', 25, 0, 0, 0]
       )
       const creditId2 = new Uint8Array(8)
       crypto.getRandomValues(creditId2)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId2, trxId2, accountId, SYSTEM_TAGS.TRANSFER, '+', 2500, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [creditId2, trxId2, accountId, SYSTEM_TAGS.TRANSFER, '+', 25, 0, 0, 0]
       )
 
       // Count transactions linked to accountId
@@ -313,12 +319,12 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 100000, // 1000.00
+        amount_int: 1000, // 1000.00
       })
 
       // Verify the INITIAL transaction exists
       const result = db.exec(`
-        SELECT tb.tag_id, tb.sign, tb.amount, tag.name as tag_name
+        SELECT tb.tag_id, tb.sign, tb.amount_int, tb.amount_frac, tag.name as tag_name
         FROM trx_base tb
         JOIN tag ON tb.tag_id = tag.id
         WHERE tb.account_id = ? AND tb.tag_id = ?
@@ -327,8 +333,9 @@ describe('Accounts Integration', () => {
       expect(result[0].values.length).toBe(1)
       expect(result[0].values[0][0]).toBe(SYSTEM_TAGS.INITIAL)
       expect(result[0].values[0][1]).toBe('+')
-      expect(result[0].values[0][2]).toBe(100000)
-      expect(result[0].values[0][3]).toBe('initial')
+      expect(result[0].values[0][2]).toBe(1000) // amount_int
+      expect(result[0].values[0][3]).toBe(0) // amount_frac
+      expect(result[0].values[0][4]).toBe('initial')
     })
 
     it('INITIAL transaction updates account balance via trigger', async () => {
@@ -338,20 +345,22 @@ describe('Accounts Integration', () => {
       const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
       // Account balance should start at 0
-      let result = db.exec('SELECT balance FROM account WHERE id = ?', [accountId])
+      let result = db.exec('SELECT balance_int, balance_frac FROM account WHERE id = ?', [accountId])
       expect(result[0].values[0][0]).toBe(0)
+      expect(result[0].values[0][1]).toBe(0)
 
       // Create INITIAL transaction
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 50000, // 500.00
+        amount_int: 500, // 500.00
       })
 
       // Account balance should now reflect the initial balance (trigger updates it)
-      result = db.exec('SELECT balance FROM account WHERE id = ?', [accountId])
-      expect(result[0].values[0][0]).toBe(50000)
+      result = db.exec('SELECT balance_int, balance_frac FROM account WHERE id = ?', [accountId])
+      expect(result[0].values[0][0]).toBe(500)
+      expect(result[0].values[0][1]).toBe(0)
     })
 
     it('INITIAL transactions are excluded from trx_log by tag filter', async () => {
@@ -365,7 +374,7 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 100000,
+        amount_int: 1000,
       })
 
       // Create regular expense
@@ -373,7 +382,7 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 5000,
+        amount_int: 50,
       })
 
       // Query trx_log excluding 'initial' tag (as findByMonth does)
@@ -400,8 +409,8 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 100000,
-        rate: 100,
+        amount_int: 1000,
+        rate_int: 1,
         timestamp,
       })
 
@@ -410,8 +419,8 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.SALE,
         sign: '+',
-        amount: 50000,
-        rate: 100,
+        amount_int: 500,
+        rate_int: 1,
         timestamp,
       })
 
@@ -420,16 +429,16 @@ describe('Accounts Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 20000,
-        rate: 100,
+        amount_int: 200,
+        rate_int: 1,
         timestamp,
       })
 
       // Query summary excluding INITIAL, TRANSFER, EXCHANGE
       const result = db.exec(`
         SELECT
-          COALESCE(SUM(CASE WHEN sign = '+' AND tag_id NOT IN (?, ?, ?) THEN amount ELSE 0 END), 0) as income,
-          COALESCE(SUM(CASE WHEN sign = '-' AND tag_id NOT IN (?, ?, ?) THEN amount ELSE 0 END), 0) as expenses
+          COALESCE(SUM(CASE WHEN sign = '+' AND tag_id NOT IN (?, ?, ?) THEN (amount_int + amount_frac * 1e-18) ELSE 0 END), 0) as income,
+          COALESCE(SUM(CASE WHEN sign = '-' AND tag_id NOT IN (?, ?, ?) THEN (amount_int + amount_frac * 1e-18) ELSE 0 END), 0) as expenses
         FROM trx_base
         WHERE account_id = ?
       `, [
@@ -438,10 +447,10 @@ describe('Accounts Integration', () => {
         accountId
       ])
 
-      // Income should only include the sale (50000), not the initial (100000)
-      expect(result[0].values[0][0]).toBe(50000)
-      // Expenses should be 20000
-      expect(result[0].values[0][1]).toBe(20000)
+      // Income should only include the sale (500), not the initial (1000)
+      expect(result[0].values[0][0]).toBeCloseTo(500, 5)
+      // Expenses should be 200
+      expect(result[0].values[0][1]).toBeCloseTo(200, 5)
     })
   })
 })

@@ -16,6 +16,7 @@ vi.mock('../../pages', () => ({
   CurrenciesPage: () => <div data-testid="currencies-page">Currencies</div>,
   ExchangeRatesPage: () => <div data-testid="exchange-rates-page">Exchange Rates</div>,
   ExportPage: () => <div data-testid="export-page">Export</div>,
+  ImportPage: () => <div data-testid="import-page">Import</div>,
   DownloadPage: () => <div data-testid="download-page">Export</div>,
   BudgetsPage: () => <div data-testid="budgets-page">Budgets</div>,
   SummariesPage: () => <div data-testid="summaries-page">Summaries</div>,
@@ -23,6 +24,8 @@ vi.mock('../../pages', () => ({
   PinLoginPage: () => <div data-testid="pin-login-page">PIN Login</div>,
   ChangePinPage: () => <div data-testid="change-pin-page">Change PIN</div>,
   MigrationPage: () => <div data-testid="migration-page">Migration</div>,
+  InstallPage: () => <div data-testid="install-page">Install</div>,
+  SharePage: () => <div data-testid="share-page">Share</div>,
 }))
 
 // Mock TabBar
@@ -65,6 +68,21 @@ let mockAuthState = {
 vi.mock('../../store/AuthContext', () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useAuth: () => mockAuthState,
+}))
+
+// Mock installation hook - default to installed
+vi.mock('../../hooks/useInstallation', () => ({
+  useInstallation: () => ({
+    isInstalled: true,
+    isIOS: false,
+    canPromptInstall: false,
+    promptInstall: vi.fn(),
+  }),
+}))
+
+// Mock installation registration hook
+vi.mock('../../hooks/useInstallationRegistration', () => ({
+  useInstallationRegistration: vi.fn(),
 }))
 
 // Mock theme context
