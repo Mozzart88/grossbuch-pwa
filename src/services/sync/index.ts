@@ -1,6 +1,6 @@
 import { queryOne, setSuppressWriteNotifications } from '../database/connection'
 import { settingsRepository } from '../repositories/settingsRepository'
-import { exportSyncPackage } from './syncExport'
+import { exportSyncPackage, exportChunkedSyncPackages } from './syncExport'
 import { importSyncPackage } from './syncImport'
 import { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } from './syncTriggers'
 import { encryptSyncPackage, decryptSyncPackage } from './syncCrypto'
@@ -70,13 +70,19 @@ export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> 
   if (allRecipients.length === 0) return false
 
   if (targetUuid) {
-    // Full-history push for a specific new device
+    // Full-history push for a specific new device (chunked to avoid payload size limits)
     const target = allRecipients.find(r => r.installation_id === targetUuid)
-    if (!target) return false
+    if (!target) {
+      console.warn('[pushSync] Target device not found in linked installations:', targetUuid)
+      return false
+    }
 
-    const pkg = await exportSyncPackage(0, installData.id)
-    const encrypted = await encryptSyncPackage(pkg, [target])
-    await syncApi.push({ package: encrypted }, installData.jwt)
+    const chunks = await exportChunkedSyncPackages(installData.id)
+    for (const chunk of chunks) {
+      const encrypted = await encryptSyncPackage(chunk, [target])
+      await syncApi.push({ package: encrypted }, installData.jwt, 60000)
+    }
+    console.log(`[pushSync] Full-history push: ${chunks.length} chunk(s) to ${targetUuid}`)
     return true
   }
 
@@ -127,7 +133,12 @@ export async function pullSync(): Promise<ImportResult[]> {
         const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
         const result = await importSyncPackage(pkg)
         results.push(result)
-        ackedIds.push(id)
+        if (result.errors.length > 0) {
+          console.error('[pullSync] Import errors for package:', id, result.errors)
+          // Don't ack — package stays on server for retry
+        } else {
+          ackedIds.push(id)
+        }
       } catch (err) {
         console.error('[pullSync] Failed to process package:', id, err)
       }

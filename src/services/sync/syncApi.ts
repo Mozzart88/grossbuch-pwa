@@ -14,10 +14,11 @@ const TIMEOUT_MS = 15000
 
 async function fetchWithTimeout(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeout = TIMEOUT_MS
 ): Promise<Response> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
 
   try {
     const response = await fetch(url, {
@@ -39,13 +40,14 @@ function authHeaders(jwt: string): Record<string, string> {
 
 export async function push(
   request: SyncPushRequest,
-  jwt: string
+  jwt: string,
+  timeout = TIMEOUT_MS
 ): Promise<SyncPushResponse> {
   const response = await fetchWithTimeout(`${API_URL}/sync/push`, {
     method: 'POST',
     headers: authHeaders(jwt),
     body: JSON.stringify(request),
-  })
+  }, timeout)
 
   if (!response.ok) {
     throw new Error(`Sync push failed: ${response.status} ${response.statusText}`)

@@ -18,10 +18,10 @@ export function useSyncPull({ enabled = true }: { enabled?: boolean } = {}) {
     if (isPullingRef.current) return
 
     isPullingRef.current = true
-    lastPullRef.current = now
 
     pullSync()
       .then((results) => {
+        lastPullRef.current = Date.now()
         if (results.some(r => Object.values(r.imported).some(v => v > 0))) {
           notifyDataRefresh()
         }

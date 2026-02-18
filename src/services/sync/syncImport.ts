@@ -29,7 +29,16 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     errors: [],
   }
 
+  console.log(`[importSyncPackage] Starting: ${pkg.transactions.length} trx, ${pkg.wallets.length} wallets, ${pkg.accounts.length} accounts`)
+
+  // Drop balance triggers BEFORE transaction (DDL outside transaction)
+  const hasTransactions = pkg.transactions.length > 0
+  if (hasTransactions) {
+    await dropBalanceTriggers()
+  }
+
   try {
+    await execSQL('PRAGMA foreign_keys = OFF')
     await execSQL('BEGIN TRANSACTION')
 
     result.imported.icons = await importIcons(pkg.icons)
@@ -49,7 +58,14 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     await execSQL('ROLLBACK').catch(() => { })
     const msg = err instanceof Error ? err.message : 'Unknown import error'
     result.errors.push(msg)
+  } finally {
+    await execSQL('PRAGMA foreign_keys = ON')
+    if (hasTransactions) {
+      await restoreBalanceTriggers()
+    }
   }
+
+  console.log(`[importSyncPackage] Done:`, result.imported, result.errors.length > 0 ? `errors: ${result.errors}` : 'no errors')
 
   return result
 }
@@ -280,115 +296,117 @@ async function importCurrencies(currencies: SyncCurrency[]): Promise<number> {
 async function importTransactions(transactions: SyncTransaction[]): Promise<number> {
   if (transactions.length === 0) return 0
 
-  // Temporarily drop balance triggers to avoid incremental balance updates during import
-  await execSQL(`DROP TRIGGER IF EXISTS trg_add_trx_base`)
-  await execSQL(`DROP TRIGGER IF EXISTS trg_del_trx_base`)
-  await execSQL(`DROP TRIGGER IF EXISTS trg_update_trx_base`)
-
   const affectedAccountIds = new Set<number>()
   let count = 0
 
-  try {
-    for (const trx of transactions) {
-      const trxBlob = hexToBlob(trx.id)
-      const local = await queryOne<{ updated_at: number }>(
-        `SELECT updated_at FROM trx WHERE hex(id) = ?`,
-        [trx.id]
-      )
+  for (const trx of transactions) {
+    const trxBlob = hexToBlob(trx.id)
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM trx WHERE hex(id) = ?`,
+      [trx.id]
+    )
 
-      if (!local) {
-        // Insert new transaction
-        await execSQL(
-          `INSERT INTO trx (id, timestamp, updated_at) VALUES (?, ?, ?)`,
-          [trxBlob, trx.timestamp, trx.updated_at]
-        )
-        await insertTrxRelations(trx, affectedAccountIds)
-        count++
-      } else if (trx.updated_at > local.updated_at) {
-        // Last-write-wins: replace transaction data
-        await execSQL(`DELETE FROM trx_base WHERE trx_id = ?`, [trxBlob])
-        await execSQL(`DELETE FROM trx_to_counterparty WHERE trx_id = ?`, [trxBlob])
-        await execSQL(`DELETE FROM trx_note WHERE trx_id = ?`, [trxBlob])
-        await execSQL(`UPDATE trx SET timestamp = ?, updated_at = ? WHERE id = ?`, [trx.timestamp, trx.updated_at, trxBlob])
-        await insertTrxRelations(trx, affectedAccountIds)
-        count++
-      }
-    }
-
-    // Recalculate balances for all affected accounts
-    if (affectedAccountIds.size > 0) {
-      const ids = Array.from(affectedAccountIds)
-      const placeholders = ids.map(() => '?').join(',')
+    if (!local) {
+      // Insert new transaction
       await execSQL(
-        `UPDATE account SET balance = (
-          SELECT COALESCE(SUM(
-            CASE WHEN sign = '+' THEN amount ELSE -amount END
-          ), 0) FROM trx_base WHERE account_id = account.id
-        ) WHERE id IN (${placeholders})`,
-        ids
+        `INSERT INTO trx (id, timestamp, updated_at) VALUES (?, ?, ?)`,
+        [trxBlob, trx.timestamp, trx.updated_at]
       )
+      await insertTrxRelations(trx, affectedAccountIds)
+      count++
+    } else if (trx.updated_at > local.updated_at) {
+      // Last-write-wins: replace transaction data
+      await execSQL(`DELETE FROM trx_base WHERE trx_id = ?`, [trxBlob])
+      await execSQL(`DELETE FROM trx_to_counterparty WHERE trx_id = ?`, [trxBlob])
+      await execSQL(`DELETE FROM trx_note WHERE trx_id = ?`, [trxBlob])
+      await execSQL(`UPDATE trx SET timestamp = ?, updated_at = ? WHERE id = ?`, [trx.timestamp, trx.updated_at, trxBlob])
+      await insertTrxRelations(trx, affectedAccountIds)
+      count++
     }
-  } finally {
-    // Recreate balance triggers
-    await execSQL(`
-      CREATE TRIGGER IF NOT EXISTS trg_add_trx_base
-      AFTER INSERT ON trx_base
-      FOR EACH ROW
-      BEGIN
-        UPDATE account
-        SET balance = (
-          CASE
-            WHEN NEW.sign = '-' THEN balance - NEW.amount
-            ELSE balance + NEW.amount
-          END
-        )
-        WHERE id = NEW.account_id;
-      END
-    `)
-    await execSQL(`
-      CREATE TRIGGER IF NOT EXISTS trg_del_trx_base
-      AFTER DELETE ON trx_base
-      FOR EACH ROW
-      BEGIN
-        UPDATE account
-        SET balance = (
-          CASE
-            WHEN OLD.sign = '+' THEN balance - OLD.amount
-            ELSE balance + OLD.amount
-          END
-        )
-        WHERE id = OLD.account_id;
-      END
-    `)
-    await execSQL(`
-      CREATE TRIGGER IF NOT EXISTS trg_update_trx_base
-      AFTER UPDATE OF sign, amount ON trx_base
-      WHEN 0 != NEW.amount
-      BEGIN
-        UPDATE account
-        SET balance = (
-          CASE
-          WHEN OLD.sign != NEW.sign
-          THEN (
-            CASE
-            WHEN NEW.sign = '+' THEN balance + OLD.amount + NEW.amount
-            ELSE balance - OLD.amount - NEW.amount
-            END
-          )
-          ELSE (
-            CASE
-            WHEN NEW.sign = '+' THEN balance - OLD.amount + NEW.amount
-            ELSE balance + OLD.amount - NEW.amount
-            END
-          )
-          END
-        )
-        WHERE id = NEW.account_id;
-      END
-    `)
+  }
+
+  // Recalculate balances for all affected accounts
+  if (affectedAccountIds.size > 0) {
+    const ids = Array.from(affectedAccountIds)
+    const placeholders = ids.map(() => '?').join(',')
+    await execSQL(
+      `UPDATE account SET balance = (
+        SELECT COALESCE(SUM(
+          CASE WHEN sign = '+' THEN amount ELSE -amount END
+        ), 0) FROM trx_base WHERE account_id = account.id
+      ) WHERE id IN (${placeholders})`,
+      ids
+    )
   }
 
   return count
+}
+
+// ======= Balance Trigger Helpers =======
+
+async function dropBalanceTriggers(): Promise<void> {
+  await execSQL(`DROP TRIGGER IF EXISTS trg_add_trx_base`)
+  await execSQL(`DROP TRIGGER IF EXISTS trg_del_trx_base`)
+  await execSQL(`DROP TRIGGER IF EXISTS trg_update_trx_base`)
+}
+
+async function restoreBalanceTriggers(): Promise<void> {
+  await execSQL(`
+    CREATE TRIGGER IF NOT EXISTS trg_add_trx_base
+    AFTER INSERT ON trx_base
+    FOR EACH ROW
+    BEGIN
+      UPDATE account
+      SET balance = (
+        CASE
+          WHEN NEW.sign = '-' THEN balance - NEW.amount
+          ELSE balance + NEW.amount
+        END
+      )
+      WHERE id = NEW.account_id;
+    END
+  `)
+  await execSQL(`
+    CREATE TRIGGER IF NOT EXISTS trg_del_trx_base
+    AFTER DELETE ON trx_base
+    FOR EACH ROW
+    BEGIN
+      UPDATE account
+      SET balance = (
+        CASE
+          WHEN OLD.sign = '+' THEN balance - OLD.amount
+          ELSE balance + OLD.amount
+        END
+      )
+      WHERE id = OLD.account_id;
+    END
+  `)
+  await execSQL(`
+    CREATE TRIGGER IF NOT EXISTS trg_update_trx_base
+    AFTER UPDATE OF sign, amount ON trx_base
+    WHEN 0 != NEW.amount
+    BEGIN
+      UPDATE account
+      SET balance = (
+        CASE
+        WHEN OLD.sign != NEW.sign
+        THEN (
+          CASE
+          WHEN NEW.sign = '+' THEN balance + OLD.amount + NEW.amount
+          ELSE balance - OLD.amount - NEW.amount
+          END
+        )
+        ELSE (
+          CASE
+          WHEN NEW.sign = '+' THEN balance - OLD.amount + NEW.amount
+          ELSE balance + OLD.amount - NEW.amount
+          END
+        )
+        END
+      )
+      WHERE id = NEW.account_id;
+    END
+  `)
 }
 
 async function insertTrxRelations(

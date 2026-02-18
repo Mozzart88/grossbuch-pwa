@@ -13,6 +13,57 @@ import type {
   SyncBudget,
 } from './syncTypes'
 
+const TRX_BATCH_SIZE = 100
+
+/**
+ * Export full history as chunked SyncPackages for a full-history push.
+ * Transactions are split into batches of TRX_BATCH_SIZE.
+ * Reference data is duplicated in every chunk (idempotent import).
+ */
+export async function exportChunkedSyncPackages(
+  senderId: string,
+  batchSize = TRX_BATCH_SIZE
+): Promise<SyncPackage[]> {
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, deletions] =
+    await Promise.all([
+      exportIcons(0),
+      exportTags(0),
+      exportWallets(0),
+      exportAccounts(0),
+      exportCounterparties(0),
+      exportCurrencies(0),
+      exportTransactions(0),
+      exportBudgets(0),
+      getDeletionsSince(0),
+    ])
+
+  const makePackage = (trxSlice: SyncTransaction[]): SyncPackage => ({
+    version: 1,
+    sender_id: senderId,
+    created_at: Math.floor(Date.now() / 1000),
+    since: 0,
+    icons,
+    tags,
+    wallets,
+    accounts,
+    counterparties,
+    currencies,
+    transactions: trxSlice,
+    budgets,
+    deletions,
+  })
+
+  if (transactions.length <= batchSize) {
+    return [makePackage(transactions)]
+  }
+
+  const packages: SyncPackage[] = []
+  for (let i = 0; i < transactions.length; i += batchSize) {
+    packages.push(makePackage(transactions.slice(i, i + batchSize)))
+  }
+  return packages
+}
+
 /**
  * Export all changes since `sinceTimestamp` into a SyncPackage.
  * All foreign keys are resolved to natural keys (names/codes).
