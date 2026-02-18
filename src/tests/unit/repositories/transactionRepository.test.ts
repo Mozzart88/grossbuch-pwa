@@ -274,13 +274,18 @@ describe('transactionRepository', () => {
     it('returns MonthlyTagsSummary ', async () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
 
+      const startTs = Math.floor(new Date(`2025-01-01T00:00:00`).getTime() / 1000)
+      const endDate = new Date(`2025-01-01`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const endTs = Math.floor(endDate.getTime() / 1000)
+
       const result = await transactionRepository.getMonthlyTagsSummary('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining('amount_int'),
         expect.arrayContaining([
-          1735700400,
-          1738368000,
+          startTs,
+          endTs,
         ])
       )
 
@@ -292,13 +297,18 @@ describe('transactionRepository', () => {
     it('returns MonthlyCounterpartiesSummary ', async () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
 
+      const startTs = Math.floor(new Date(`2025-01-01T00:00:00`).getTime() / 1000)
+      const endDate = new Date(`2025-01-01`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const endTs = Math.floor(endDate.getTime() / 1000)
+
       const result = await transactionRepository.getMonthlyCounterpartiesSummary('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining('amount_int'),
         expect.arrayContaining([
-          1735700400,
-          1738368000,
+          startTs,
+          endTs,
         ])
       )
 
@@ -310,13 +320,18 @@ describe('transactionRepository', () => {
     it('returns MonthlyCategoryBreakdown ', async () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
 
+      const startTs = Math.floor(new Date(`2025-01-01T00:00:00`).getTime() / 1000)
+      const endDate = new Date(`2025-01-01`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const endTs = Math.floor(endDate.getTime() / 1000)
+
       const result = await transactionRepository.getMonthlyCategoryBreakdown('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
         expect.stringContaining('amount_int'),
         expect.arrayContaining([
-          1735700400,
-          1738368000,
+          startTs,
+          endTs,
         ])
       )
 
