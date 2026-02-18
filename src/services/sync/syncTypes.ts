@@ -44,7 +44,8 @@ export interface SyncCurrency {
   decimal_places: number
   updated_at: number
   tags: number[]
-  rate: number | null
+  rate_int: number | null
+  rate_frac: number | null
 }
 
 export interface SyncTransactionLine {
@@ -52,8 +53,10 @@ export interface SyncTransactionLine {
   account: number
   tag: number
   sign: '+' | '-'
-  amount: number
-  rate: number
+  amount_int: number
+  amount_frac: number
+  rate_int: number
+  rate_frac: number
 }
 
 export interface SyncTransaction {
@@ -70,7 +73,8 @@ export interface SyncBudget {
   start: number
   end: number
   tag: number
-  amount: number
+  amount_int: number
+  amount_frac: number
   updated_at: number
 }
 
@@ -83,7 +87,7 @@ export interface SyncDeletion {
 // ======= Sync Package =======
 
 export interface SyncPackage {
-  version: 1
+  version: 2
   sender_id: string
   created_at: number
   since: number

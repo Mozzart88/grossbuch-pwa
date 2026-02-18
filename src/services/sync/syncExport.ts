@@ -38,7 +38,7 @@ export async function exportChunkedSyncPackages(
     ])
 
   const makePackage = (trxSlice: SyncTransaction[]): SyncPackage => ({
-    version: 1,
+    version: 2,
     sender_id: senderId,
     created_at: Math.floor(Date.now() / 1000),
     since: 0,
@@ -86,7 +86,7 @@ export async function exportSyncPackage(
     ])
 
   return {
-    version: 1,
+    version: 2,
     sender_id: senderId,
     created_at: Math.floor(Date.now() / 1000),
     since: sinceTimestamp,
@@ -219,16 +219,20 @@ async function exportCurrencies(since: number): Promise<SyncCurrency[]> {
          WHERE c2t.currency_id = c.id),
         ''
       ) as tags,
-      (SELECT er.rate FROM exchange_rate er
+      (SELECT er.rate_int FROM exchange_rate er
        WHERE er.currency_id = c.id
-       ORDER BY er.updated_at DESC LIMIT 1) as rate
+       ORDER BY er.updated_at DESC LIMIT 1) as rate_int,
+      (SELECT er.rate_frac FROM exchange_rate er
+       WHERE er.currency_id = c.id
+       ORDER BY er.updated_at DESC LIMIT 1) as rate_frac
     FROM currency c
     WHERE c.updated_at >= ?`,
     [since]
   ).then(rows => rows.map(r => ({
     ...r,
     tags: r.tags ? String(r.tags).split(',').map(id => parseInt(id)) : [],
-    rate: r.rate ?? null,
+    rate_int: r.rate_int ?? null,
+    rate_frac: r.rate_frac ?? null,
   })))
 }
 
@@ -246,8 +250,10 @@ interface TrxLineRow {
   account: number
   tag: number
   sign: '+' | '-'
-  amount: number
-  rate: number
+  amount_int: number
+  amount_frac: number
+  rate_int: number
+  rate_frac: number
 }
 
 async function exportTransactions(since: number): Promise<SyncTransaction[]> {
@@ -268,7 +274,6 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
 
   // Get all lines for these transactions in one query
   const trxIds = trxRows.map(t => t.id)
-  // const placeholders = trxIds.map(() => '?').join(',')
   const placeholders = new Array(trxIds.length).fill('?').join(',')
 
   const lineRows = await querySQL<TrxLineRow>(
@@ -278,8 +283,10 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
       tb.account_id as account,
       tb.tag_id as tag,
       tb.sign,
-      tb.amount,
-      tb.rate
+      tb.amount_int,
+      tb.amount_frac,
+      tb.rate_int,
+      tb.rate_frac
     FROM trx_base tb
     WHERE hex(tb.trx_id) IN (${placeholders})`,
     trxIds
@@ -294,8 +301,10 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
       account: line.account,
       tag: line.tag,
       sign: line.sign,
-      amount: line.amount,
-      rate: line.rate,
+      amount_int: line.amount_int,
+      amount_frac: line.amount_frac,
+      rate_int: line.rate_int,
+      rate_frac: line.rate_frac,
     })
     linesByTrx.set(line.trx_id, lines)
   }
@@ -317,7 +326,8 @@ async function exportBudgets(since: number): Promise<SyncBudget[]> {
       b.start,
       b.end,
       b.tag_id AS tag,
-      b.amount,
+      b.amount_int,
+      b.amount_frac,
       b.updated_at
     FROM budget b
     WHERE b.updated_at >= ?`,

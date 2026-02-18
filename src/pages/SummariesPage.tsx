@@ -6,7 +6,8 @@ import { MonthSummary } from '../components/transactions/MonthSummary'
 import { PageTabs, Card, Spinner, DropdownMenu, Modal, Input, Select, Button, useToast } from '../components/ui'
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
-import { formatCurrency } from '../utils/formatters'
+import { formatCurrencyValue } from '../utils/formatters'
+import { fromIntFrac, toIntFrac } from '../utils/amount'
 import type {
   MonthSummary as MonthSummaryType,
   MonthlyTagSummary,
@@ -94,31 +95,15 @@ export function SummariesPage() {
       ])
 
       setSummary({
-        income: monthSum.income / Math.pow(10, decimals),
-        expenses: monthSum.expenses / Math.pow(10, decimals),
-        totalBalance: totalBalance / Math.pow(10, decimals),
+        income: monthSum.income,
+        expenses: monthSum.expenses,
+        totalBalance: totalBalance,
         displayCurrencySymbol: symbol,
       })
 
-      // Convert amounts from integer to decimal
-      setTagsSummary(tags.map(t => ({
-        ...t,
-        income: t.income / Math.pow(10, decimals),
-        expense: t.expense / Math.pow(10, decimals),
-        net: t.net / Math.pow(10, decimals),
-      })))
-
-      setCounterpartiesSummary(counterparties.map(c => ({
-        ...c,
-        income: c.income / Math.pow(10, decimals),
-        expense: c.expense / Math.pow(10, decimals),
-        net: c.net / Math.pow(10, decimals),
-      })))
-
-      setCategoryBreakdown(breakdown.map(b => ({
-        ...b,
-        amount: b.amount / Math.pow(10, decimals),
-      })))
+      setTagsSummary(tags)
+      setCounterpartiesSummary(counterparties)
+      setCategoryBreakdown(breakdown)
 
       setBudgets(monthBudgets)
       setExpenseTags(allExpenseTags.filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
@@ -169,15 +154,17 @@ export function SummariesPage() {
     return options
   }
 
-  const parseAmount = (value: string): number => {
-    return Math.round(parseFloat(value) * Math.pow(10, decimalPlaces))
+  const parseAmountToIntFrac = (value: string): { int: number; frac: number } => {
+    const parsed = parseFloat(value)
+    if (isNaN(parsed)) return { int: 0, frac: 0 }
+    return toIntFrac(Math.abs(parsed))
   }
 
   const openBudgetModal = (tagId: number, suggestedAmount: number, existingBudget?: Budget) => {
     setSelectedTagId(tagId)
     if (existingBudget) {
       setEditingBudget(existingBudget)
-      setBudgetAmount((existingBudget.amount / Math.pow(10, decimalPlaces)).toString())
+      setBudgetAmount(fromIntFrac(existingBudget.amount_int, existingBudget.amount_frac).toString())
       // Convert budget start timestamp to YYYY-MM format
       const budgetDate = new Date(existingBudget.start * 1000)
       setBudgetPeriod(`${budgetDate.getFullYear()}-${String(budgetDate.getMonth() + 1).padStart(2, '0')}`)
@@ -207,9 +194,11 @@ export function SummariesPage() {
       const startDate = new Date(year, mo - 1, 1)
       const endDate = new Date(year, mo, 1)
 
+      const { int: amount_int, frac: amount_frac } = parseAmountToIntFrac(budgetAmount)
       const data: BudgetInput = {
         tag_id: selectedTagId as number,
-        amount: parseAmount(budgetAmount),
+        amount_int,
+        amount_frac,
         start: Math.floor(startDate.getTime() / 1000),
         end: Math.floor(endDate.getTime() / 1000),
       }
@@ -329,7 +318,7 @@ export function SummariesPage() {
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
                       onClick={() => handleCategoryClick('income')}
                     >
-                      Income ({formatCurrency(summary.income, currencySymbol, decimalPlaces)})
+                      Income ({formatCurrencyValue(summary.income, currencySymbol, decimalPlaces)})
                     </h3>
                     {incomeCategories.length === 0 ? (
                       <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No income this month</p>
@@ -356,7 +345,7 @@ export function SummariesPage() {
                     <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
                       onClick={() => handleCategoryClick('expense')}
                     >
-                      Expenses ({formatCurrency(summary.expenses, currencySymbol, decimalPlaces)}{budgets.length > 0 ? '/' + formatCurrency(budgets.reduce((acc, b) => b.amount + acc, 0.0) / Math.pow(10, decimalPlaces), currencySymbol, decimalPlaces) : ''})
+                      Expenses ({formatCurrencyValue(summary.expenses, currencySymbol, decimalPlaces)}{budgets.length > 0 ? '/' + formatCurrencyValue(budgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0.0), currencySymbol, decimalPlaces) : ''})
                     </h3>
                     {expenseCategories.length === 0 ? (
                       <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No expenses this month</p>
@@ -471,18 +460,18 @@ function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlace
       <div className="flex items-center justify-between mb-2">
         <h4 className="font-medium text-gray-900 dark:text-gray-100">{title}</h4>
         <span className={`text-sm font-semibold ${net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-          {formatCurrency(net, currencySymbol, decimalPlaces)}
+          {formatCurrencyValue(net, currencySymbol, decimalPlaces)}
         </span>
       </div>
       {income > 0 && expense > 0 &&
         <div className="flex gap-4 text-sm">
           <div>
             <span className="text-gray-500 dark:text-gray-400">In: </span>
-            <span className="text-green-600 dark:text-green-400">{formatCurrency(income, currencySymbol, decimalPlaces)}</span>
+            <span className="text-green-600 dark:text-green-400">{formatCurrencyValue(income, currencySymbol, decimalPlaces)}</span>
           </div>
           <div>
             <span className="text-gray-500 dark:text-gray-400">Out: </span>
-            <span className="text-red-600 dark:text-red-400">{formatCurrency(expense, currencySymbol, decimalPlaces)}</span>
+            <span className="text-red-600 dark:text-red-400">{formatCurrencyValue(expense, currencySymbol, decimalPlaces)}</span>
           </div>
         </div>
       }
@@ -509,9 +498,10 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
   const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
 
   // Calculate progress based on whether we have a budget
-  const hasBudget = budget && budget.amount > 0
-  const budgetAmountDecimal = hasBudget ? budget.amount / Math.pow(10, decimalPlaces) : 0
-  const budgetActualDecimal = hasBudget ? (budget.actual ?? 0) / Math.pow(10, decimalPlaces) : 0
+  const budgetAmountFloat = budget ? fromIntFrac(budget.amount_int, budget.amount_frac) : 0
+  const hasBudget = budget && budgetAmountFloat > 0
+  const budgetAmountDecimal = hasBudget ? budgetAmountFloat : 0
+  const budgetActualDecimal = hasBudget ? (budget.actual ?? 0) : 0
 
   // Progress calculation
   let progress: number
@@ -556,8 +546,8 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
         <div className="flex items-center gap-2">
           <span className={`text-sm font-semibold ${type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
             {hasBudget
-              ? `${formatCurrency(budgetActualDecimal, currencySymbol, decimalPlaces)}/${formatCurrency(budgetAmountDecimal, currencySymbol, decimalPlaces)}`
-              : formatCurrency(amount, currencySymbol, decimalPlaces)
+              ? `${formatCurrencyValue(budgetActualDecimal, currencySymbol, decimalPlaces)}/${formatCurrencyValue(budgetAmountDecimal, currencySymbol, decimalPlaces)}`
+              : formatCurrencyValue(amount, currencySymbol, decimalPlaces)
             }
           </span>
           {dropdownItems.length > 0 && (

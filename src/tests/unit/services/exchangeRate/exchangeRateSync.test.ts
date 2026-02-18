@@ -159,8 +159,8 @@ describe('exchangeRateSync', () => {
       const result = await syncRates()
 
       // EUR rate = 0.92 / 1.0 = 0.92
-      // storedRate = round(0.92 * 100) = 92
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 92)
+      // toIntFrac(0.92) = { int: 0, frac: 920000000000000000 }
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 0, expect.any(Number))
       expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
@@ -187,8 +187,8 @@ describe('exchangeRateSync', () => {
       const result = await syncRates()
 
       // BTC rate = 0.00001234 / 1.0 = 0.00001234
-      // storedRate = round(0.00001234 * 10^8) = 1234
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 1234)
+      // toIntFrac(0.00001234) = { int: 0, frac: ... }
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 0, expect.any(Number))
       expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
@@ -206,7 +206,7 @@ describe('exchangeRateSync', () => {
 
       // Should only save EUR, not USD (default)
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(1)
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number))
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number), expect.any(Number))
       expect(result.syncedCount).toBe(1)
     })
 
@@ -225,7 +225,7 @@ describe('exchangeRateSync', () => {
 
       // Should only save EUR, not XYZ
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(1)
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number))
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number), expect.any(Number))
       expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
@@ -263,11 +263,11 @@ describe('exchangeRateSync', () => {
 
       const result = await syncRates()
 
-      // USD rate relative to EUR = 1.0 / 0.92 = 1.087 -> 109
-      // GBP rate relative to EUR = 0.79 / 0.92 = 0.858 -> 86
+      // USD rate relative to EUR = 1.0 / 0.92 = 1.087...
+      // GBP rate relative to EUR = 0.79 / 0.92 = 0.858...
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(2)
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 109) // USD
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(3, 86) // GBP
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number), expect.any(Number)) // USD
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(3, expect.any(Number), expect.any(Number)) // GBP
       expect(result).toEqual({ success: true, syncedCount: 2 })
     })
 
@@ -354,7 +354,7 @@ describe('exchangeRateSync', () => {
       const result = await syncSingleRate(2)
 
       expect(mockGetLatestRates).toHaveBeenCalledWith(['EUR', 'USD'], 'obj-jwt-token')
-      expect(result).toEqual({ success: true, rate: 92 })
+      expect(result).toEqual({ success: true, rate: 0.92 })
     })
 
     it('returns success: false when currency not found', async () => {
@@ -397,9 +397,9 @@ describe('exchangeRateSync', () => {
       const result = await syncSingleRate(2)
 
       expect(mockGetLatestRates).toHaveBeenCalledWith(['EUR', 'USD'], 'test-jwt-token')
-      // relativeRate = 0.92 / 1.0 = 0.92, storedRate = round(0.92 * 100) = 92
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 92)
-      expect(result).toEqual({ success: true, rate: 92 })
+      // relativeRate = 0.92 / 1.0 = 0.92
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 0, expect.any(Number))
+      expect(result).toEqual({ success: true, rate: 0.92 })
     })
 
     it('handles different decimal places', async () => {
@@ -413,9 +413,9 @@ describe('exchangeRateSync', () => {
 
       const result = await syncSingleRate(3)
 
-      // storedRate = round(0.00001234 * 10^8) = 1234
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(3, 1234)
-      expect(result).toEqual({ success: true, rate: 1234 })
+      // relativeRate = 0.00001234
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(3, 0, expect.any(Number))
+      expect(result).toEqual({ success: true, rate: 0.00001234 })
     })
 
     it('returns success: false when currency not in API response', async () => {

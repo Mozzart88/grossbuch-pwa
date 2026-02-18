@@ -135,7 +135,7 @@ describe('Sync Timestamp Boundary', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.EXPENSE,
         sign: '-',
-        amount: 5000,
+        amount_int: 50,
       })
 
       const hexId = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
@@ -199,7 +199,7 @@ describe('Sync Timestamp Boundary', () => {
     it('exports budgets created at exactly the since timestamp', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
-      const budgetId = insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount: 50000 })
+      const budgetId = insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount_int: 500 })
       const hexId = Array.from(budgetId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
 
       const db = getTestDatabase()
@@ -335,13 +335,13 @@ describe('Sync Timestamp Boundary', () => {
         account_id: usdAccountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 10000, // $100.00
+        amount_int: 100, // $100.00
       })
       const arsTrxId = insertTransaction({
         account_id: arsAccountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 10000000, // ARS 100,000.00
+        amount_int: 100000, // ARS 100,000.00
       })
 
       // Drop triggers so manual updated_at sticks
@@ -400,7 +400,7 @@ describe('Sync Timestamp Boundary', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.EXPENSE,
         sign: '-',
-        amount: 2500,
+        amount_int: 25,
       })
 
       // Export from A
@@ -529,13 +529,13 @@ describe('Sync Timestamp Boundary', () => {
         account_id: usdAccountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 10000,
+        amount_int: 100,
       })
       const eurTrxId = insertTransaction({
         account_id: eurAccountId,
         tag_id: SYSTEM_TAGS.INITIAL,
         sign: '+',
-        amount: 50000,
+        amount_int: 500,
       })
 
       const usdHex = Array.from(usdTrxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()

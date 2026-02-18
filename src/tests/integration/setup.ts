@@ -194,12 +194,13 @@ export function insertWallet(data: {
 export function insertAccount(data: {
   wallet_id: number
   currency_id: number
-  balance?: number
+  balance_int?: number
+  balance_frac?: number
 }): number {
   const database = getTestDatabase()
   database.run(
-    'INSERT INTO account (wallet_id, currency_id, balance) VALUES (?, ?, ?)',
-    [data.wallet_id, data.currency_id, data.balance ?? 0]
+    'INSERT INTO account (wallet_id, currency_id, balance_int, balance_frac) VALUES (?, ?, ?, ?)',
+    [data.wallet_id, data.currency_id, data.balance_int ?? 0, data.balance_frac ?? 0]
   )
   return Number(database.exec('SELECT last_insert_rowid()')[0].values[0][0])
 }
@@ -247,8 +248,10 @@ export function insertTransaction(data: {
   account_id: number
   tag_id: number
   sign: '+' | '-'
-  amount: number
-  rate?: number
+  amount_int: number
+  amount_frac?: number
+  rate_int?: number
+  rate_frac?: number
   counterparty_id?: number
   note?: string
   timestamp?: number
@@ -265,8 +268,8 @@ export function insertTransaction(data: {
   crypto.getRandomValues(trxBaseId)
 
   database.run(
-    'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [trxBaseId, trxId, data.account_id, data.tag_id, data.sign, data.amount, data.rate ?? 0]
+    'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [trxBaseId, trxId, data.account_id, data.tag_id, data.sign, data.amount_int, data.amount_frac ?? 0, data.rate_int ?? 0, data.rate_frac ?? 0]
   )
 
   if (data.counterparty_id) {
@@ -285,7 +288,8 @@ export function insertTransaction(data: {
 
 export function insertBudget(data: {
   tag_id: number
-  amount: number
+  amount_int: number
+  amount_frac?: number
   start?: number
   end?: number
 }): Uint8Array {
@@ -299,8 +303,8 @@ export function insertBudget(data: {
   const end = data.end ?? (startOfMonth + 30 * 24 * 60 * 60) // End of month
 
   database.run(
-    'INSERT INTO budget (id, start, end, tag_id, amount) VALUES (?, ?, ?, ?, ?)',
-    [budgetId, start, end, data.tag_id, data.amount]
+    'INSERT INTO budget (id, start, end, tag_id, amount_int, amount_frac) VALUES (?, ?, ?, ?, ?, ?)',
+    [budgetId, start, end, data.tag_id, data.amount_int, data.amount_frac ?? 0]
   )
 
   return budgetId
@@ -308,14 +312,15 @@ export function insertBudget(data: {
 
 export function insertExchangeRate(data: {
   currency_id: number
-  rate: number
+  rate_int: number
+  rate_frac?: number
 }): void {
   const database = getTestDatabase()
   const timestamp = Math.floor(Date.now() / 1000)
 
   database.run(
-    'INSERT INTO exchange_rate (currency_id, rate, updated_at) VALUES (?, ?, ?)',
-    [data.currency_id, data.rate, timestamp]
+    'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac, updated_at) VALUES (?, ?, ?, ?)',
+    [data.currency_id, data.rate_int, data.rate_frac ?? 0, timestamp]
   )
 }
 

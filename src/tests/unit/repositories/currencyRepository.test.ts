@@ -415,7 +415,7 @@ describe('currencyRepository', () => {
 
   describe('getExchangeRate', () => {
     it('returns latest exchange rate for currency', async () => {
-      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
+      const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
       mockQueryOne.mockResolvedValue(rate)
 
       const result = await currencyRepository.getExchangeRate(2)
@@ -439,8 +439,8 @@ describe('currencyRepository', () => {
   describe('getAllExchangeRates', () => {
     it('returns latest exchange rate for each currency', async () => {
       const rates: ExchangeRate[] = [
-        { currency_id: 2, rate: 11500, updated_at: 1704067200 },
-        { currency_id: 3, rate: 12800, updated_at: 1704067200 },
+        { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 },
+        { currency_id: 3, rate_int: 1, rate_frac: 280000000000000000, updated_at: 1704067200 },
       ]
       mockQuerySQL.mockResolvedValue(rates)
 
@@ -452,62 +452,53 @@ describe('currencyRepository', () => {
   })
 
   describe('setExchangeRate', () => {
-    it('inserts new exchange rate', async () => {
-      await currencyRepository.setExchangeRate(2, 11500)
+    it('inserts new exchange rate with int and frac', async () => {
+      await currencyRepository.setExchangeRate(2, 1, 150000000000000000)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)',
-        [2, 11500]
+        'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
+        [2, 1, 150000000000000000]
       )
     })
   })
 
   describe('getRateForCurrency', () => {
-    it('returns latest exchange rate for currency', async () => {
-      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
-      mockQueryOne.mockResolvedValue(rate)
+    it('returns latest exchange rate for currency as IntFrac', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
+      // First call: findById returns non-system currency
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, is_system: false })
+      // Second call: getExchangeRate returns rate
+      mockQueryOne.mockResolvedValueOnce(rate)
 
       const result = await currencyRepository.getRateForCurrency(2)
 
-      expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('FROM exchange_rate'),
-        [2]
-      )
-      expect(result).toEqual(rate.rate)
+      expect(result).toEqual({ int: 1, frac: 150000000000000000 })
     })
 
-    it('returns 100 when currency is system', async () => {
-      mockQueryOne.mockResolvedValue({ is_system: true, decimal_places: 2 })
+    it('returns {int: 1, frac: 0} when currency is system', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, is_system: true })
 
       const result = await currencyRepository.getRateForCurrency(1)
 
-      expect(result).toEqual(100)
+      expect(result).toEqual({ int: 1, frac: 0 })
     })
 
-    it('returns 100 when no currency', async () => {
+    it('returns {int: 1, frac: 0} when no currency found', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       const result = await currencyRepository.getRateForCurrency(1)
 
-      expect(result).toEqual(100)
+      expect(result).toEqual({ int: 1, frac: 0 })
     })
 
-    it('returns 100 when no rate for currency', async () => {
-      mockQueryOne.mockResolvedValueOnce({ decimal_places: 2 })
+    it('returns {int: 1, frac: 0} when no rate for currency', async () => {
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, is_system: false })
       mockQueryOne.mockResolvedValueOnce(null)
 
-      const result = await currencyRepository.getRateForCurrency(1)
+      const result = await currencyRepository.getRateForCurrency(2)
 
       expect(mockQueryOne).toHaveBeenCalledTimes(2)
-      expect(mockQueryOne).toHaveBeenLastCalledWith(
-        expect.stringContaining('FROM exchange_rate'),
-        [1]
-      )
-
-      // expect(mockQueryOne.mock.results[1]).toBeNull()
-      expect(mockQueryOne).toHaveLastResolvedWith(null)
-
-      expect(result).toEqual(100)
+      expect(result).toEqual({ int: 1, frac: 0 })
     })
   })
 

@@ -3,6 +3,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
+import { fromIntFrac, toIntFrac } from '../utils/amount'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
 import { useDataRefresh } from '../hooks/useDataRefresh'
@@ -10,6 +11,7 @@ import { useDataRefresh } from '../hooks/useDataRefresh'
 interface CurrencyWithRate extends Currency {
   currentRate: number
   lastUpdated: number | null
+  decimal_places: number
 }
 
 export function ExchangeRatesPage() {
@@ -55,7 +57,7 @@ export function ExchangeRatesPage() {
         const currency = curs.find((c) => rate.currency_id === c.id)
         return {
           ...currency!,
-          currentRate: rate.rate,
+          currentRate: fromIntFrac(rate.rate_int, rate.rate_frac),
           lastUpdated: rate.updated_at,
         }
       })
@@ -74,12 +76,7 @@ export function ExchangeRatesPage() {
       return
     }
     setEditingCurrency(currency)
-    // Display rate as decimal (rate stored as value * 10^decimal_places)
-    const divisor = Math.pow(10, currency.decimal_places)
-    // const displayRate = currency.currentRate !== null
-    //   ? (currency.currentRate / divisor).toFixed(4)
-    //   : '1.00'
-    const displayRate = (currency.currentRate / divisor).toFixed(4)
+    const displayRate = currency.currentRate.toFixed(4)
     setRate(displayRate)
     setModalOpen(true)
   }
@@ -102,10 +99,8 @@ export function ExchangeRatesPage() {
 
     setSubmitting(true)
     try {
-      // Convert display rate to stored integer (rate = value * 10^decimal_places)
-      const multiplier = Math.pow(10, editingCurrency.decimal_places)
-      const rateInt = Math.round(rateFloat * multiplier)
-      await currencyRepository.setExchangeRate(editingCurrency.id, rateInt)
+      const { int: rateInt, frac: rateFrac } = toIntFrac(rateFloat)
+      await currencyRepository.setExchangeRate(editingCurrency.id, rateInt, rateFrac)
       showToast('Exchange rate updated', 'success')
       closeModal()
       loadData()
@@ -119,14 +114,9 @@ export function ExchangeRatesPage() {
 
   const formatRate = (currency: CurrencyWithRate): string => {
     if (currency.is_system) {
-      return '1.0000'
+      return '1.00'
     }
-    // if (currency.currentRate === null) {
-    //   return 'Not set'
-    // }
-    // Rate stored as value * 10^decimal_places
-    const divisor = Math.pow(10, currency.decimal_places)
-    return (currency.currentRate / divisor).toFixed(4)
+    return currency.currentRate.toFixed(currency.decimal_places + 2)
   }
 
   const formatLastUpdated = (timestamp: number | null): string => {

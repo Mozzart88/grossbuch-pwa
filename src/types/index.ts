@@ -65,7 +65,8 @@ export interface CurrencyInput {
 // Exchange Rate
 export interface ExchangeRate {
   currency_id: number
-  rate: number // Stored as integer, divide by 10^decimal_places
+  rate_int: number
+  rate_frac: number
   updated_at: number
 }
 
@@ -87,12 +88,13 @@ export interface WalletInput {
   color?: string
 }
 
-// Account (wallet + currency combination) - single balance, no created_at
+// Account (wallet + currency combination) - balance as (int, frac), no created_at
 export interface Account {
   id: number
   wallet_id: number
   currency_id: number
-  balance: number // Stored as integer, divide by 10^decimal_places
+  balance_int: number    // floor convention
+  balance_frac: number   // always >= 0
   updated_at: number
   // Joined fields from 'accounts' view
   wallet?: string
@@ -150,15 +152,17 @@ export interface TransactionInput {
   note?: string
 }
 
-// Transaction line item (trx_base) - amount/rate instead of real/actual
+// Transaction line item (trx_base) - amount/rate as (int, frac) pairs
 export interface TransactionLine {
   id: Uint8Array // 8-byte BLOB
   trx_id: Uint8Array
   account_id: number
   tag_id: number
   sign: '+' | '-'
-  amount: number // Stored as integer, divide by 10^decimal_places
-  rate: number // Exchange rate (1 = default currency, otherwise multiply to get default currency value)
+  amount_int: number
+  amount_frac: number
+  rate_int: number
+  rate_frac: number
   // Joined fields
   wallet?: string
   currency?: string
@@ -169,8 +173,10 @@ export interface TransactionLineInput {
   account_id: number
   tag_id: number
   sign: '+' | '-'
-  amount: number
-  rate: number // Defaults to 1 for default currency
+  amount_int: number
+  amount_frac: number
+  rate_int: number
+  rate_frac: number
 }
 
 // Transaction note
@@ -179,23 +185,25 @@ export interface TransactionNote {
   note: string
 }
 
-// Budget - 8-byte blob id, amount is INTEGER
+// Budget - 8-byte blob id, amount as (int, frac)
 export interface Budget {
   id: Uint8Array // 8-byte BLOB
   start: number // Unix timestamp
   end: number // Unix timestamp
   tag_id: number
-  amount: number // INTEGER (not REAL)
+  amount_int: number
+  amount_frac: number
   // Joined fields
   tag?: string
-  actual: number
+  actual: number // computed, stays as single float for display
 }
 
 export interface BudgetInput {
   start?: number
   end?: number
   tag_id: number
-  amount: number
+  amount_int: number
+  amount_frac: number
 }
 
 // View types (from SQL views)
@@ -208,7 +216,7 @@ export interface TransactionView {
   wallet: string
   currency: string
   tags: string
-  amount: number // Single amount instead of real/actual
+  amount: number // computed float for display
 }
 
 // From 'exchanges' view
@@ -219,7 +227,7 @@ export interface ExchangeView {
   wallet: string
   currency: string
   tag: string
-  amount: number
+  amount: number // computed float for display
 }
 
 // From 'transfers' view
@@ -230,7 +238,7 @@ export interface TransferView {
   wallet: string
   currency: string
   tag: string
-  amount: number
+  amount: number // computed float for display
 }
 
 // From 'trx_log' view
@@ -245,27 +253,31 @@ export interface TransactionLog {
   decimal_places: number
   // TODO: tags should be renamed to tag, because trx_log.tags contains only one tag
   tags: string
-  amount: number
-  rate: number
+  sign: '+' | '-'
+  amount_int: number
+  amount_frac: number
+  rate_int: number
+  rate_frac: number
 }
 
 // From 'summary' view
 export interface BudgetSummary {
   tag: string
-  amount: number
+  amount_int: number
+  amount_frac: number
   actual: number
 }
 
 // From 'counterparties_summary' view
 export interface CounterpartySummary {
   counterparty: string
-  amount: number
+  amount: number // computed float
 }
 
 // From 'tags_summary' view
 export interface TagSummary {
   tag: string
-  amount: number
+  amount: number // computed float
 }
 
 // From 'tags_hierarchy' view
@@ -322,7 +334,8 @@ export type SystemTagId = (typeof SYSTEM_TAGS)[keyof typeof SYSTEM_TAGS]
 
 // Utility function type for formatting amounts
 export type AmountFormatter = (
-  amount: number,
+  int: number,
+  frac: number,
   decimalPlaces: number
 ) => string
 

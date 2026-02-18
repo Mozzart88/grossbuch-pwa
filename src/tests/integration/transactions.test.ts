@@ -36,45 +36,45 @@ describe('Transactions Integration', () => {
 
       // Create wallet and account
       const walletId = insertWallet({ name: 'Cash' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
 
-      // Add income transaction (sale tag - id 11)
+      // Add income transaction (sale tag)
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.SALE,
         sign: '+',
-        amount: 50000,
+        amount_int: 500,
       })
 
       // Query balance from transactions
       const trxResult = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as balance
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END) as balance
         FROM trx_base WHERE account_id = ?
       `, [accountId])
 
-      expect(trxResult[0].values[0][0]).toBe(50000)
+      expect(trxResult[0].values[0][0]).toBeCloseTo(500, 5)
     })
 
     it('calculates balance with expense transactions', async () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Cash' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
 
-      // Expense transaction (food tag - id 12)
+      // Expense transaction (food tag)
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 20000,
+        amount_int: 200,
       })
 
       const trxResult = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as balance
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END) as balance
         FROM trx_base WHERE account_id = ?
       `, [accountId])
 
-      expect(trxResult[0].values[0][0]).toBe(-20000)
+      expect(trxResult[0].values[0][0]).toBeCloseTo(-200, 5)
     })
 
     it('calculates balance with transfers', async () => {
@@ -82,8 +82,8 @@ describe('Transactions Integration', () => {
 
       const walletId1 = insertWallet({ name: 'Cash' })
       const walletId2 = insertWallet({ name: 'Bank' })
-      const account1Id = insertAccount({ wallet_id: walletId1, currency_id: 1, balance: 100000 })
-      const account2Id = insertAccount({ wallet_id: walletId2, currency_id: 1, balance: 50000 })
+      const account1Id = insertAccount({ wallet_id: walletId1, currency_id: 1, balance_int: 1000 })
+      const account2Id = insertAccount({ wallet_id: walletId2, currency_id: 1, balance_int: 500 })
 
       // Transfer: create a trx with two trx_base entries (double-entry)
       const trxId = new Uint8Array(8)
@@ -96,33 +96,33 @@ describe('Transactions Integration', () => {
       const debitId = new Uint8Array(8)
       crypto.getRandomValues(debitId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId, trxId, account1Id, SYSTEM_TAGS.TRANSFER, '-', 30000, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId, account1Id, SYSTEM_TAGS.TRANSFER, '-', 300, 0, 0, 0]
       )
 
       // Credit to destination
       const creditId = new Uint8Array(8)
       crypto.getRandomValues(creditId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId, trxId, account2Id, SYSTEM_TAGS.TRANSFER, '+', 30000, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId, account2Id, SYSTEM_TAGS.TRANSFER, '+', 300, 0, 0, 0]
       )
 
       // Check source account transactions
       const result1 = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END) as net
         FROM trx_base WHERE account_id = ?
       `, [account1Id])
 
-      expect(result1[0].values[0][0]).toBe(-30000)
+      expect(result1[0].values[0][0]).toBeCloseTo(-300, 5)
 
       // Check destination account transactions
       const result2 = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END) as net
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END) as net
         FROM trx_base WHERE account_id = ?
       `, [account2Id])
 
-      expect(result2[0].values[0][0]).toBe(30000)
+      expect(result2[0].values[0][0]).toBeCloseTo(300, 5)
     })
   })
 
@@ -140,7 +140,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.SALE,
         sign: '+',
-        amount: 300000,
+        amount_int: 3000,
         timestamp: jan15,
       })
 
@@ -150,7 +150,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 50000,
+        amount_int: 500,
         timestamp: jan20,
       })
 
@@ -160,22 +160,22 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 20000,
+        amount_int: 200,
         timestamp: jan25,
       })
 
       // Query monthly summary using trx_base directly
       const result = db.exec(`
         SELECT
-          COALESCE(SUM(CASE WHEN sign = '+' THEN amount ELSE 0 END), 0) as income,
-          COALESCE(SUM(CASE WHEN sign = '-' THEN amount ELSE 0 END), 0) as expenses
+          COALESCE(SUM(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE 0 END), 0) as income,
+          COALESCE(SUM(CASE WHEN sign = '-' THEN (amount_int + amount_frac * 1e-18) ELSE 0 END), 0) as expenses
         FROM trx_base tb
         JOIN trx t ON tb.trx_id = t.id
         WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE '2025-01%'
       `)
 
-      expect(result[0].values[0][0]).toBe(300000) // Income
-      expect(result[0].values[0][1]).toBe(70000) // Expenses (50000 + 20000)
+      expect(result[0].values[0][0]).toBeCloseTo(3000, 5) // Income
+      expect(result[0].values[0][1]).toBeCloseTo(700, 5) // Expenses (500 + 200)
     })
 
     it('returns zero for months with no transactions', async () => {
@@ -183,8 +183,8 @@ describe('Transactions Integration', () => {
 
       const result = db.exec(`
         SELECT
-          COALESCE(SUM(CASE WHEN sign = '+' THEN amount ELSE 0 END), 0) as income,
-          COALESCE(SUM(CASE WHEN sign = '-' THEN amount ELSE 0 END), 0) as expenses
+          COALESCE(SUM(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE 0 END), 0) as income,
+          COALESCE(SUM(CASE WHEN sign = '-' THEN (amount_int + amount_frac * 1e-18) ELSE 0 END), 0) as expenses
         FROM trx_base tb
         JOIN trx t ON tb.trx_id = t.id
         WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE '2025-02%'
@@ -207,7 +207,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 10000,
+        amount_int: 100,
       })
 
       // Currency CASCADE deletes account, but account RESTRICT fails due to trx_base
@@ -226,7 +226,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 10000,
+        amount_int: 100,
       })
 
       // trx_base has ON DELETE RESTRICT for account_id
@@ -249,7 +249,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: tagId,
         sign: '-',
-        amount: 10000,
+        amount_int: 100,
       })
 
       // trx_base has ON DELETE RESTRICT for tag_id
@@ -264,8 +264,8 @@ describe('Transactions Integration', () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Multi-currency' })
-      const usdAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
-      const eurAccountId = insertAccount({ wallet_id: walletId, currency_id: 2, balance: 0 })
+      const usdAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+      const eurAccountId = insertAccount({ wallet_id: walletId, currency_id: 2, balance_int: 0 })
 
       // Exchange: USD to EUR
       const trxId = new Uint8Array(8)
@@ -274,20 +274,20 @@ describe('Transactions Integration', () => {
 
       db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
 
-      // Debit USD
+      // Debit USD: 100.00
       const debitId = new Uint8Array(8)
       crypto.getRandomValues(debitId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId, trxId, usdAccountId, SYSTEM_TAGS.EXCHANGE, '-', 10000, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId, usdAccountId, SYSTEM_TAGS.EXCHANGE, '-', 100, 0, 0, 0]
       )
 
-      // Credit EUR (at 0.925 rate, 100 USD = 92.50 EUR = 9250 cents)
+      // Credit EUR: 92.50 (at 0.925 rate, 100 USD = 92.50 EUR)
       const creditId = new Uint8Array(8)
       crypto.getRandomValues(creditId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId, trxId, eurAccountId, SYSTEM_TAGS.EXCHANGE, '+', 9250, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId, eurAccountId, SYSTEM_TAGS.EXCHANGE, '+', 92, 500000000000000000, 0, 0]
       )
 
       // Verify both entries exist
@@ -295,19 +295,21 @@ describe('Transactions Integration', () => {
       expect(result[0].values[0][0]).toBe(2)
 
       // Verify amounts
-      const debitResult = db.exec('SELECT amount FROM trx_base WHERE id = ?', [debitId])
-      expect(debitResult[0].values[0][0]).toBe(10000)
+      const debitResult = db.exec('SELECT amount_int, amount_frac FROM trx_base WHERE id = ?', [debitId])
+      expect(debitResult[0].values[0][0]).toBe(100)
+      expect(debitResult[0].values[0][1]).toBe(0)
 
-      const creditResult = db.exec('SELECT amount FROM trx_base WHERE id = ?', [creditId])
-      expect(creditResult[0].values[0][0]).toBe(9250)
+      const creditResult = db.exec('SELECT amount_int, amount_frac FROM trx_base WHERE id = ?', [creditId])
+      expect(creditResult[0].values[0][0]).toBe(92)
+      expect(creditResult[0].values[0][1]).toBe(500000000000000000)
     })
 
     it('affects both account balances correctly', async () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Multi-currency' })
-      const usdAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance: 100000 })
-      const eurAccountId = insertAccount({ wallet_id: walletId, currency_id: 2, balance: 0 })
+      const usdAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+      const eurAccountId = insertAccount({ wallet_id: walletId, currency_id: 2, balance_int: 0 })
 
       // Exchange transaction
       const trxId = new Uint8Array(8)
@@ -316,35 +318,35 @@ describe('Transactions Integration', () => {
 
       db.run('INSERT INTO trx (id, timestamp) VALUES (?, ?)', [trxId, timestamp])
 
-      // Debit USD
+      // Debit USD: 100.00
       const debitId = new Uint8Array(8)
       crypto.getRandomValues(debitId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [debitId, trxId, usdAccountId, SYSTEM_TAGS.EXCHANGE, '-', 10000, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [debitId, trxId, usdAccountId, SYSTEM_TAGS.EXCHANGE, '-', 100, 0, 0, 0]
       )
 
-      // Credit EUR
+      // Credit EUR: 92.50
       const creditId = new Uint8Array(8)
       crypto.getRandomValues(creditId)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [creditId, trxId, eurAccountId, SYSTEM_TAGS.EXCHANGE, '+', 9250, 0]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [creditId, trxId, eurAccountId, SYSTEM_TAGS.EXCHANGE, '+', 92, 500000000000000000, 0, 0]
       )
 
       // Check USD account net
       const usdNet = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END)
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END)
         FROM trx_base WHERE account_id = ?
       `, [usdAccountId])
-      expect(usdNet[0].values[0][0]).toBe(-10000)
+      expect(usdNet[0].values[0][0]).toBeCloseTo(-100, 5)
 
       // Check EUR account net
       const eurNet = db.exec(`
-        SELECT sum(CASE WHEN sign = '+' THEN amount ELSE -amount END)
+        SELECT sum(CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END)
         FROM trx_base WHERE account_id = ?
       `, [eurAccountId])
-      expect(eurNet[0].values[0][0]).toBe(9250)
+      expect(eurNet[0].values[0][0]).toBeCloseTo(92.5, 5)
     })
   })
 
@@ -381,7 +383,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 5000,
+        amount_int: 50,
         note: 'Lunch at restaurant',
       })
 
@@ -400,7 +402,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 5000,
+        amount_int: 50,
         note: 'Test note for query',
       })
 
@@ -425,7 +427,7 @@ describe('Transactions Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
         sign: '-',
-        amount: 5000,
+        amount_int: 50,
         // No note
       })
 
@@ -460,15 +462,15 @@ describe('Transactions Integration', () => {
       const lineId1 = new Uint8Array(8)
       crypto.getRandomValues(lineId1)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [lineId1, trxId, accountId, SYSTEM_TAGS.EXCHANGE, '-', 10000, 100]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [lineId1, trxId, accountId, SYSTEM_TAGS.EXCHANGE, '-', 100, 0, 1, 0]
       )
 
       const lineId2 = new Uint8Array(8)
       crypto.getRandomValues(lineId2)
       db.run(
-        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [lineId2, trxId, accountId2, SYSTEM_TAGS.EXCHANGE, '+', 9000, 90]
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [lineId2, trxId, accountId2, SYSTEM_TAGS.EXCHANGE, '+', 90, 0, 0, 900000000000000000]
       )
 
       // Verify there's only one note for the transaction

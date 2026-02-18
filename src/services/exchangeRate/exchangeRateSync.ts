@@ -1,6 +1,7 @@
 import { currencyRepository } from '../repositories/currencyRepository'
 import { settingsRepository } from '../repositories/settingsRepository'
 import { getLatestRates } from './exchangeRateApi'
+import { toIntFrac } from '../../utils/amount'
 
 export interface SyncRatesResult {
   success: boolean
@@ -54,11 +55,11 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
     }
 
     const relativeRate = apiRate / defaultCurrencyApiRate
-    const storedRate = Math.round(relativeRate * Math.pow(10, currency.decimal_places))
+    const { int: rateInt, frac: rateFrac } = toIntFrac(relativeRate)
 
-    await currencyRepository.setExchangeRate(currency.id, storedRate)
+    await currencyRepository.setExchangeRate(currency.id, rateInt, rateFrac)
 
-    return { success: true, rate: storedRate }
+    return { success: true, rate: relativeRate }
   } catch (error) {
     console.warn('[ExchangeRateSync] Failed to fetch single rate:', error)
     return { success: false }
@@ -136,13 +137,11 @@ export async function syncRates(): Promise<SyncRatesResult> {
     // EUR rate = apiRate / defaultCurrencyApiRate
     const relativeRate = apiRate / defaultCurrencyApiRate
 
-    // Convert to integer storage format (multiply by 10^decimalPlaces)
-    const storedRate = Math.round(
-      relativeRate * Math.pow(10, currency.decimal_places)
-    )
+    // Convert to IntFrac storage format
+    const { int: rateInt, frac: rateFrac } = toIntFrac(relativeRate)
 
     // Save to database
-    await currencyRepository.setExchangeRate(currency.id, storedRate)
+    await currencyRepository.setExchangeRate(currency.id, rateInt, rateFrac)
     syncedCount++
   }
 

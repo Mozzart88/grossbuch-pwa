@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { formatCurrency } from '../../utils/formatters'
+import { formatCurrencyValue } from '../../utils/formatters'
 
 interface MonthSummaryProps {
   income: number
@@ -30,19 +30,19 @@ export function MonthSummary({ income, expenses, totalBalance, displayCurrencySy
       <div className="text-center">
         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Income</p>
         <p className="text-sm font-semibold text-green-600 dark:text-green-400">
-          {formatCurrency(income, displayCurrencySymbol, decimalPlaces)}
+          {formatCurrencyValue(income, displayCurrencySymbol, decimalPlaces)}
         </p>
       </div>
       <div className="text-center">
         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Expenses</p>
         <p className="text-sm font-semibold text-red-600 dark:text-red-400">
-          {formatCurrency(expenses, displayCurrencySymbol, decimalPlaces)}
+          {formatCurrencyValue(expenses, displayCurrencySymbol, decimalPlaces)}
         </p>
       </div>
       <div className="text-center">
         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">Balance</p>
         <p className={`text-sm font-semibold ${totalBalance >= 0 ? 'text-gray-900 dark:text-gray-100' : 'text-red-600 dark:text-red-400'}`}>
-          {formatCurrency(totalBalance, displayCurrencySymbol, decimalPlaces)}
+          {formatCurrencyValue(totalBalance, displayCurrencySymbol, decimalPlaces)}
         </p>
       </div>
     </div>

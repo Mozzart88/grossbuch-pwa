@@ -154,9 +154,9 @@ export function TransactionList() {
       setTransactions(txns)
       setDecimalPlaces(decimals)
       setSummary({
-        income: monthSum.income / Math.pow(10, decimals),
-        expenses: monthSum.expenses / Math.pow(10, decimals),
-        totalBalance: totalBalance / Math.pow(10, decimals),
+        income: monthSum.income,
+        expenses: monthSum.expenses,
+        totalBalance: totalBalance,
         displayCurrencySymbol,
       })
 
@@ -165,7 +165,7 @@ export function TransactionList() {
       const summaries = await Promise.all(
         dates.map(async (date) => {
           const net = await transactionRepository.getDaySummary(date, filter)
-          return [date, net / Math.pow(10, decimals)] as const
+          return [date, net] as const
         })
       )
       setDaySummaries(new Map(summaries))

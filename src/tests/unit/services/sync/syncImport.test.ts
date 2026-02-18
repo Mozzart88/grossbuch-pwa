@@ -16,7 +16,7 @@ const { importSyncPackage } = await import('../../../../services/sync/syncImport
 
 function emptyPackage() {
   return {
-    version: 1 as const,
+    version: 2 as const,
     sender_id: 'sender',
     created_at: 1000,
     since: 0,
@@ -121,13 +121,13 @@ describe('syncImport', () => {
 
     it('passes updated_at when inserting budgets', async () => {
       const pkg = emptyPackage()
-      pkg.budgets = [{ id: 'BB', start: 100, end: 200, tag: 3, amount: 1000, updated_at: 5000 }]
+      pkg.budgets = [{ id: 'BB', start: 100, end: 200, tag: 3, amount_int: 1000, amount_frac: 0, updated_at: 5000 }]
 
       await importSyncPackage(pkg)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO budget (id, start, end, tag_id, amount, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-        ['blob:BB', 100, 200, 3, 1000, 5000]
+        'INSERT INTO budget (id, start, end, tag_id, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        ['blob:BB', 100, 200, 3, 1000, 0, 5000]
       )
     })
   })
@@ -249,13 +249,13 @@ describe('syncImport', () => {
       })
 
       const pkg = emptyPackage()
-      pkg.budgets = [{ id: 'BB', start: 100, end: 200, tag: 3, amount: 1000, updated_at: 5000 }]
+      pkg.budgets = [{ id: 'BB', start: 100, end: 200, tag: 3, amount_int: 1000, amount_frac: 0, updated_at: 5000 }]
 
       await importSyncPackage(pkg)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'UPDATE budget SET start = ?, end = ?, tag_id = ?, amount = ?, updated_at = ? WHERE hex(id) = ?',
-        [100, 200, 3, 1000, 5000, 'BB']
+        'UPDATE budget SET start = ?, end = ?, tag_id = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?',
+        [100, 200, 3, 1000, 0, 5000, 'BB']
       )
     })
   })
@@ -269,7 +269,7 @@ describe('syncImport', () => {
       })
 
       const pkg = emptyPackage()
-      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [4], rate: null }]
+      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [4], rate_int: null, rate_frac: null }]
 
       await importSyncPackage(pkg)
 
@@ -295,25 +295,25 @@ describe('syncImport', () => {
       })
 
       const pkg = emptyPackage()
-      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [], rate: 92 }]
+      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [], rate_int: 0, rate_frac: 920000000000000000 }]
 
       await importSyncPackage(pkg)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)',
-        [5, 92]
+        'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
+        [5, 0, 920000000000000000]
       )
     })
 
     it('skips exchange rate when local already has one', async () => {
       mockQueryOne.mockImplementation((sql: string) => {
         if (sql.includes('FROM currency')) return Promise.resolve({ id: 5, updated_at: 1000 })
-        if (sql.includes('FROM exchange_rate')) return Promise.resolve({ rate: 100 })
+        if (sql.includes('FROM exchange_rate')) return Promise.resolve({ rate_int: 1 })
         return Promise.resolve(null)
       })
 
       const pkg = emptyPackage()
-      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [], rate: 92 }]
+      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [], rate_int: 0, rate_frac: 920000000000000000 }]
 
       await importSyncPackage(pkg)
 
@@ -326,7 +326,7 @@ describe('syncImport', () => {
     it('skips unknown currencies (not pre-seeded)', async () => {
       // queryOne returns null for unknown currency
       const pkg = emptyPackage()
-      pkg.currencies = [{ id: 999, decimal_places: 2, updated_at: 5000, tags: [4], rate: 50 }]
+      pkg.currencies = [{ id: 999, decimal_places: 2, updated_at: 5000, tags: [4], rate_int: 0, rate_frac: 500000000000000000 }]
 
       await importSyncPackage(pkg)
 

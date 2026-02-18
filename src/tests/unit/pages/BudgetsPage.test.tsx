@@ -34,9 +34,10 @@ const mockBudget = {
   start: 1704067200,
   end: 1706745600,
   tag_id: SYSTEM_TAGS.FOOD,
-  amount: 50000,
+  amount_int: 500,
+  amount_frac: 0,
   tag: 'food',
-  actual: 25000,
+  actual: 250,
 }
 
 const mockExpenseTags = [
@@ -127,7 +128,7 @@ describe('BudgetsPage', () => {
 
     it('shows over budget warning when exceeded', async () => {
       mockBudgetRepository.findByMonth.mockResolvedValue([
-        { ...mockBudget, actual: 60000 },
+        { ...mockBudget, actual: 600 },
       ])
       renderPage()
 
@@ -273,7 +274,7 @@ describe('BudgetsPage', () => {
 
     it('updates budget on form submit', async () => {
       mockBudgetRepository.findByMonth.mockResolvedValue([mockBudget])
-      mockBudgetRepository.update.mockResolvedValue({ ...mockBudget, amount: 75000 })
+      mockBudgetRepository.update.mockResolvedValue({ ...mockBudget, amount_int: 750, amount_frac: 0 })
       renderPage()
 
       await waitFor(() => {
@@ -407,7 +408,7 @@ describe('BudgetsPage', () => {
   describe('Edge cases', () => {
     it('handles budget with zero limit amount', async () => {
       mockBudgetRepository.findByMonth.mockResolvedValue([
-        { ...mockBudget, amount: 0, actual: 100 },
+        { ...mockBudget, amount_int: 0, amount_frac: 0, actual: 1 },
       ])
       renderPage()
 
@@ -419,7 +420,7 @@ describe('BudgetsPage', () => {
 
     it('handles budget with zero actual spending', async () => {
       mockBudgetRepository.findByMonth.mockResolvedValue([
-        { ...mockBudget, actual: 0 },
+        { ...mockBudget, actual: 0.0 },
       ])
       renderPage()
 
@@ -431,7 +432,7 @@ describe('BudgetsPage', () => {
 
     it('shows yellow progress bar for 80-100% spending', async () => {
       mockBudgetRepository.findByMonth.mockResolvedValue([
-        { ...mockBudget, amount: 10000, actual: 8500 }, // 85%
+        { ...mockBudget, amount_int: 100, amount_frac: 0, actual: 85 }, // 85%
       ])
       renderPage()
 

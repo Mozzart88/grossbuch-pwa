@@ -3,6 +3,7 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast } from '../components/ui'
 import { budgetRepository, tagRepository, currencyRepository } from '../services/repositories'
 import type { Budget, BudgetInput, Tag, Currency } from '../types'
+import { fromIntFrac, toIntFrac } from '../utils/amount'
 import { SYSTEM_TAGS } from '../types'
 import { useDataRefresh } from '../hooks/useDataRefresh'
 
@@ -48,15 +49,16 @@ export function BudgetsPage() {
     }
   }
 
-  const formatAmount = (cents: number): string => {
+  const formatBudgetAmount = (value: number): string => {
     const decimal = defaultCurrency?.decimal_places ?? 2
     const symbol = defaultCurrency?.symbol ?? '$'
-    return `${symbol}${(cents / Math.pow(10, decimal)).toFixed(decimal)}`
+    return `${symbol}${Math.abs(value).toFixed(decimal)}`
   }
 
-  const parseAmount = (value: string): number => {
-    const decimal = defaultCurrency?.decimal_places ?? 2
-    return Math.round(parseFloat(value) * Math.pow(10, decimal))
+  const parseAmountToIntFrac = (value: string): { int: number; frac: number } => {
+    const parsed = parseFloat(value)
+    if (isNaN(parsed)) return { int: 0, frac: 0 }
+    return toIntFrac(Math.abs(parsed))
   }
 
   const getMonthLabel = (month: string): string => {
@@ -77,8 +79,7 @@ export function BudgetsPage() {
     if (budget) {
       setEditingBudget(budget)
       setTagId(budget.tag_id)
-      const decimal = defaultCurrency?.decimal_places ?? 2
-      setAmount((budget.amount / Math.pow(10, decimal)).toString())
+      setAmount(fromIntFrac(budget.amount_int, budget.amount_frac).toString())
     } else {
       setEditingBudget(null)
       setTagId('')
@@ -102,9 +103,11 @@ export function BudgetsPage() {
       const startDate = new Date(year, month - 1, 1)
       const endDate = new Date(year, month, 1)
 
+      const { int: amount_int, frac: amount_frac } = parseAmountToIntFrac(amount)
       const data: BudgetInput = {
         tag_id: tagId as number,
-        amount: parseAmount(amount),
+        amount_int,
+        amount_frac,
         start: Math.floor(startDate.getTime() / 1000),
         end: Math.floor(endDate.getTime() / 1000),
       }
@@ -148,9 +151,10 @@ export function BudgetsPage() {
   }
 
   const getProgress = (budget: Budget): number => {
-    if (budget.amount === 0) return budget.actual && budget.actual > 0 ? 100 : 0
+    const budgetAmount = fromIntFrac(budget.amount_int, budget.amount_frac)
+    if (budgetAmount === 0) return budget.actual && budget.actual > 0 ? 100 : 0
     if (!budget.actual) return 0
-    return Math.min(100, (budget.actual / budget.amount) * 100)
+    return Math.min(100, (budget.actual / budgetAmount) * 100)
   }
 
   const getProgressColor = (percent: number): string => {
@@ -228,7 +232,7 @@ export function BudgetsPage() {
                 </span>
               </div>
               <span className={`text-sm font-medium text-gray-400`}>
-                {formatAmount(budgets.reduce((acc, b) => b.actual + acc, 0.0)) + '/' + formatAmount(budgets.reduce((acc, b) => b.amount + acc, 0.0))}
+                {formatBudgetAmount(budgets.reduce((acc, b) => (b.actual ?? 0) + acc, 0.0)) + '/' + formatBudgetAmount(budgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0.0))}
               </span>
             </div>
             {budgets.map((budget) => {
@@ -271,16 +275,16 @@ export function BudgetsPage() {
 
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-gray-500 dark:text-gray-400">
-                      {formatAmount(budget.actual ?? 0)} spent
+                      {formatBudgetAmount(budget.actual ?? 0)} spent
                     </span>
                     <span className="text-gray-900 dark:text-gray-100 font-medium">
-                      {formatAmount(budget.amount)} limit
+                      {formatBudgetAmount(fromIntFrac(budget.amount_int, budget.amount_frac))} limit
                     </span>
                   </div>
 
                   {progress >= 100 && (
                     <div className="mt-2 text-xs text-red-600 dark:text-red-400">
-                      ⚠️ Over budget by {formatAmount((budget.actual ?? 0) - budget.amount)}
+                      ⚠️ Over budget by {formatBudgetAmount((budget.actual ?? 0) - fromIntFrac(budget.amount_int, budget.amount_frac))}
                     </div>
                   )}
                 </Card>

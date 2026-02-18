@@ -1,5 +1,6 @@
 import { transactionRepository } from '../repositories'
 import { blobToHex } from '../../utils/blobUtils'
+import { fromIntFrac } from '../../utils/amount'
 
 export interface ExportFilters {
   startDate?: string
@@ -38,8 +39,9 @@ export async function exportTransactionsToCSV(filters: ExportFilters = {}): Prom
   ]
 
   const csvRows = rows.map((r) => {
-    const divisor = Math.pow(10, r.decimal_places)
-    const signedAmount = (r.sign === '-' ? '-' : '') + (r.amount / divisor).toFixed(r.decimal_places)
+    const value = fromIntFrac(r.amount_int, r.amount_frac)
+    const signedAmount = (r.sign === '-' ? '-' : '') + value.toFixed(r.decimal_places)
+    const rateValue = fromIntFrac(r.rate_int, r.rate_frac)
 
     return [
       escapeCsvField(r.date_time),
@@ -50,7 +52,7 @@ export async function exportTransactionsToCSV(filters: ExportFilters = {}): Prom
       escapeCsvField(r.tag_id),
       escapeCsvField(r.tag_name),
       escapeCsvField(signedAmount),
-      escapeCsvField(r.rate),
+      escapeCsvField(rateValue),
       escapeCsvField(r.counterparty_id),
       escapeCsvField(r.counterparty_name),
       escapeCsvField(r.note),

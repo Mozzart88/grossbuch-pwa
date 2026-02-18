@@ -1,6 +1,7 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Currency, CurrencyInput, ExchangeRate } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
+import type { IntFrac } from '../../utils/amount'
 
 export const currencyRepository = {
   async findAll(): Promise<Currency[]> {
@@ -29,7 +30,7 @@ export const currencyRepository = {
     return queryOne<Currency>(`
       SELECT
         *
-      FROM currencies 
+      FROM currencies
       WHERE id = ?
     `, [id])
   },
@@ -38,7 +39,7 @@ export const currencyRepository = {
     return queryOne<Currency>(`
       SELECT
         *
-      FROM currencies 
+      FROM currencies
       WHERE code = ?
     `, [code])
   },
@@ -175,37 +176,36 @@ export const currencyRepository = {
     `)
   },
 
-  async setExchangeRate(currencyId: number, rate: number): Promise<void> {
+  async setExchangeRate(currencyId: number, rateInt: number, rateFrac: number): Promise<void> {
     await execSQL(
-      'INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)',
-      [currencyId, rate]
+      'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
+      [currencyId, rateInt, rateFrac]
     )
   },
 
   /**
    * Get the exchange rate for a currency to convert to default currency.
-   * Rate semantics: rate = value * 10^decimal_places
-   * (how many smallest units of this currency per 1 USD)
-   * Returns:
-   * - 10^decimal_places for the default currency (1.00 rate)
-   * - Latest rate from exchange_rate table for non-default currencies
-   * - 10^decimal_places as fallback if no rate exists
+   * Returns IntFrac:
+   * - {int: 1, frac: 0} for the system currency (1.00 rate)
+   * - Latest rate from exchange_rate table for non-system currencies
+   * - {int: 1, frac: 0} as fallback if no rate exists
    */
-  async getRateForCurrency(currencyId: number): Promise<number> {
+  async getRateForCurrency(currencyId: number): Promise<IntFrac> {
     const currency = await this.findById(currencyId)
     if (!currency) {
-      return 100 // Fallback for 2 decimal places
+      return { int: 1, frac: 0 }
     }
-
-    const defaultRate = Math.pow(10, currency.decimal_places)
 
     // Check if this is the system currency
     if (currency.is_system) {
-      return defaultRate
+      return { int: 1, frac: 0 }
     }
 
     // Get latest rate from exchange_rate table
     const rate = await this.getExchangeRate(currencyId)
-    return rate?.rate ?? defaultRate // Fallback to 1.00 equivalent if no rate exists
+    if (rate) {
+      return { int: rate.rate_int, frac: rate.rate_frac }
+    }
+    return { int: 1, frac: 0 }
   },
 }

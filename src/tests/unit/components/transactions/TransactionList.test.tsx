@@ -58,8 +58,11 @@ const sampleTransaction: TransactionLog = {
   wallet: 'Cash',
   currency: 'USD',
   tags: 'food',
-  amount: -5000, // -50.00
-  rate: 0,
+  sign: '-',
+  amount_int: 50,
+  amount_frac: 0,
+  rate_int: 1,
+  rate_frac: 0,
   symbol: '$',
   decimal_places: 2,
   wallet_color: ''
@@ -78,10 +81,9 @@ describe('TransactionList', () => {
       is_fiat: true,
     })
     mockTransactionRepository.findByMonthFiltered.mockResolvedValue([sampleTransaction])
-    mockTransactionRepository.findByMonthFiltered.mockResolvedValue([sampleTransaction])
-    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000, expenses: 50000 })
-    mockTransactionRepository.getDaySummary.mockResolvedValue(-5000) // -50.00 in cents
-    mockAccountRepository.getTotalBalance.mockResolvedValue(150000)
+    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 1000, expenses: 500 })
+    mockTransactionRepository.getDaySummary.mockResolvedValue(-50) // natural float
+    mockAccountRepository.getTotalBalance.mockResolvedValue(1500)
     mockTagRepository.findById.mockResolvedValue({ id: 10, name: 'Food', sort_order: 10 })
     mockCounterpartyRepository.findById.mockResolvedValue({ id: 1, name: 'Supermarket', sort_order: 10 })
   })
@@ -171,7 +173,7 @@ describe('TransactionList', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      // Total balance: 150000 / 100 = 1500.00
+      // Total balance: 1500 (natural float)
       expect(screen.getByText('$1,500.00')).toBeInTheDocument()
     })
   })
@@ -186,13 +188,13 @@ describe('TransactionList', () => {
       is_system: true,
       is_crypto: true,
     })
-    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 100000000, expenses: 50000000 })
-    mockAccountRepository.getTotalBalance.mockResolvedValue(150000000)
+    mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 1, expenses: 0.5 })
+    mockAccountRepository.getTotalBalance.mockResolvedValue(1.5)
 
     renderWithRouter()
 
     await waitFor(() => {
-      // With 8 decimal places: 100000000 / 10^8 = 1.00000000
+      // With 8 decimal places: 1.00000000
       expect(screen.getByText('₿1.00000000')).toBeInTheDocument()
     })
   })
@@ -204,7 +206,7 @@ describe('TransactionList', () => {
       // Transaction shows wallet name when no counterparty
       expect(screen.getByText('Cash')).toBeInTheDocument()
       // Transaction amount
-      expect(screen.getByText('$50.00')).toBeInTheDocument()
+      expect(screen.getByText('-$50.00')).toBeInTheDocument()
     })
   })
 
@@ -261,7 +263,7 @@ describe('TransactionList', () => {
 
   describe('day summaries', () => {
     it('displays day summary in date header', async () => {
-      mockTransactionRepository.getDaySummary.mockResolvedValue(-5000) // -50.00
+      mockTransactionRepository.getDaySummary.mockResolvedValue(-50) // natural float
 
       renderWithRouter()
 
@@ -271,7 +273,7 @@ describe('TransactionList', () => {
     })
 
     it('shows positive day summary with + prefix', async () => {
-      mockTransactionRepository.getDaySummary.mockResolvedValue(10000) // +100.00
+      mockTransactionRepository.getDaySummary.mockResolvedValue(100) // natural float
 
       renderWithRouter()
 
@@ -281,7 +283,7 @@ describe('TransactionList', () => {
     })
 
     it('applies green color for positive summary', async () => {
-      mockTransactionRepository.getDaySummary.mockResolvedValue(10000)
+      mockTransactionRepository.getDaySummary.mockResolvedValue(100)
 
       renderWithRouter()
 
@@ -292,7 +294,7 @@ describe('TransactionList', () => {
     })
 
     it('applies gray color for negative summary', async () => {
-      mockTransactionRepository.getDaySummary.mockResolvedValue(-5000)
+      mockTransactionRepository.getDaySummary.mockResolvedValue(-50)
 
       renderWithRouter()
 

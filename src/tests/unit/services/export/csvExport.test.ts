@@ -33,9 +33,11 @@ describe('csvExport', () => {
     tag_id: 12,
     tag_name: 'food',
     sign: '-' as const,
-    amount: 5025,
+    amount_int: 50,
+    amount_frac: 250000000000000000,
     decimal_places: 2,
-    rate: 100,
+    rate_int: 1,
+    rate_frac: 0,
     counterparty_id: 1,
     counterparty_name: 'Supermarket',
     note: null as string | null,
@@ -71,7 +73,8 @@ describe('csvExport', () => {
       mockFindAllForExportDetailed.mockResolvedValue([{
         ...sampleRow,
         sign: '+' as const,
-        amount: 100000,
+        amount_int: 1000,
+        amount_frac: 0,
       }])
 
       const result = await exportTransactionsToCSV()
@@ -84,7 +87,8 @@ describe('csvExport', () => {
       mockFindAllForExportDetailed.mockResolvedValue([{
         ...sampleRow,
         sign: '-' as const,
-        amount: 10000,
+        amount_int: 100,
+        amount_frac: 0,
       }])
 
       const result = await exportTransactionsToCSV()
@@ -96,7 +100,8 @@ describe('csvExport', () => {
       mockFindAllForExportDetailed.mockResolvedValue([{
         ...sampleRow,
         sign: '+' as const,
-        amount: 12345678,
+        amount_int: 0,
+        amount_frac: 123456780000000000,
         decimal_places: 8,
       }])
 
@@ -191,8 +196,8 @@ describe('csvExport', () => {
     it('handles multiple transactions', async () => {
       const rows = [
         sampleRow,
-        { ...sampleRow, amount: 10000 },
-        { ...sampleRow, amount: 20000 },
+        { ...sampleRow, amount_int: 100, amount_frac: 0 },
+        { ...sampleRow, amount_int: 200, amount_frac: 0 },
       ]
       mockFindAllForExportDetailed.mockResolvedValue(rows)
 
@@ -213,15 +218,16 @@ describe('csvExport', () => {
       expect(result).toContain('"Line 1\r\nLine 2"')
     })
 
-    it('outputs rate as raw integer', async () => {
+    it('outputs rate as float value', async () => {
       mockFindAllForExportDetailed.mockResolvedValue([{
         ...sampleRow,
-        rate: 31500,
+        rate_int: 315,
+        rate_frac: 0,
       }])
 
       const result = await exportTransactionsToCSV()
 
-      expect(result).toContain('31500')
+      expect(result).toContain('315')
     })
   })
 

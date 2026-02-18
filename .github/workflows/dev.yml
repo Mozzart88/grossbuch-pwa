@@ -43,7 +43,7 @@ jobs:
           path: dist
 
   unit-test:
-    needs: [build, smoke-test]
+    needs: [build]
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:

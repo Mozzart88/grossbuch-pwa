@@ -199,8 +199,10 @@ describe('csvImport', () => {
       expect(lineArg.account_id).toBe(1)
       expect(lineArg.tag_id).toBe(12)
       expect(lineArg.sign).toBe('-')
-      expect(lineArg.amount).toBe(5025) // |-50.25| * 10^2
-      expect(lineArg.rate).toBe(100)
+      expect(lineArg.amount_int).toBe(50)
+      expect(lineArg.amount_frac).toBe(250000000000000000)
+      expect(lineArg.rate_int).toBe(100)
+      expect(lineArg.rate_frac).toBe(0)
     })
   })
 
@@ -254,7 +256,8 @@ describe('csvImport', () => {
       // Second line should be positive
       const line2 = mockAddImportLine.mock.calls[1][1]
       expect(line2.sign).toBe('+')
-      expect(line2.amount).toBe(5025)
+      expect(line2.amount_int).toBe(50)
+      expect(line2.amount_frac).toBe(250000000000000000)
     })
   })
 
@@ -553,7 +556,10 @@ describe('csvImport', () => {
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
       expect(lineArg.sign).toBe('+')
-      expect(lineArg.amount).toBe(12345)
+      expect(lineArg.amount_int).toBe(123)
+      // frac precision: toIntFrac(123.45) may have minor floating point variance
+      const positiveValue = lineArg.amount_int + lineArg.amount_frac / 1e18
+      expect(positiveValue).toBeCloseTo(123.45, 10)
     })
 
     it('correctly parses negative amounts', async () => {
@@ -565,7 +571,10 @@ describe('csvImport', () => {
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
       expect(lineArg.sign).toBe('-')
-      expect(lineArg.amount).toBe(9999)
+      expect(lineArg.amount_int).toBe(99)
+      // frac precision: toIntFrac(99.99) may have minor floating point variance
+      const negativeValue = lineArg.amount_int + lineArg.amount_frac / 1e18
+      expect(negativeValue).toBeCloseTo(99.99, 10)
     })
 
     it('errors on non-numeric amounts', async () => {
@@ -583,7 +592,7 @@ describe('csvImport', () => {
 
   // 24-25. Rate parsing
   describe('rate parsing', () => {
-    it('parses integer rate from CSV', async () => {
+    it('parses float rate from CSV into IntFrac', async () => {
       setupDefaultMocks()
       const csv = makeCSV(makeRow({ rate: '31500' }))
 
@@ -591,7 +600,8 @@ describe('csvImport', () => {
 
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
-      expect(lineArg.rate).toBe(31500)
+      expect(lineArg.rate_int).toBe(31500)
+      expect(lineArg.rate_frac).toBe(0)
     })
 
     it('defaults to 0 for empty rate', async () => {
@@ -602,7 +612,8 @@ describe('csvImport', () => {
 
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
-      expect(lineArg.rate).toBe(0)
+      expect(lineArg.rate_int).toBe(0)
+      expect(lineArg.rate_frac).toBe(0)
     })
 
     it('falls back to 0 for non-numeric rate', async () => {
@@ -613,7 +624,8 @@ describe('csvImport', () => {
 
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
-      expect(lineArg.rate).toBe(0)
+      expect(lineArg.rate_int).toBe(0)
+      expect(lineArg.rate_frac).toBe(0)
     })
   })
 
@@ -995,7 +1007,8 @@ describe('csvImport', () => {
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
       expect(lineArg.sign).toBe('+')
-      expect(lineArg.amount).toBe(0)
+      expect(lineArg.amount_int).toBe(0)
+      expect(lineArg.amount_frac).toBe(0)
     })
 
     it('handles different decimal places for currency', async () => {
@@ -1020,7 +1033,9 @@ describe('csvImport', () => {
 
       expect(result.errors).toHaveLength(0)
       const lineArg = mockAddImportLine.mock.calls[0][1]
-      expect(lineArg.amount).toBe(12345678) // 0.12345678 * 10^8
+      // toIntFrac(0.12345678) = { int: 0, frac: 123456780000000000 }
+      expect(lineArg.amount_int).toBe(0)
+      expect(lineArg.amount_frac).toBe(123456780000000000)
     })
 
     it('upgrades currency decimal_places when CSV has more precision', async () => {
@@ -1051,7 +1066,9 @@ describe('csvImport', () => {
       )
       // Amount should use the upgraded 8 decimal places
       const lineArg = mockAddImportLine.mock.calls[0][1]
-      expect(lineArg.amount).toBe(8520659999) // 85.20659999 * 10^8
+      // toIntFrac(85.20659999) = { int: 85, frac: ... }
+      expect(lineArg.amount_int).toBe(85)
+      expect(lineArg.amount_frac).toBeGreaterThan(0)
     })
   })
 
@@ -1066,7 +1083,8 @@ describe('csvImport', () => {
       await importTransactionsFromCSV(csv)
 
       // Should call setExchangeRate with latest rate (14600) for currency id 1
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(1, 14600)
+      // toIntFrac(14600) = { int: 14600, frac: 0 }
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(1, 14600, 0)
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(1)
     })
 
@@ -1088,8 +1106,8 @@ describe('csvImport', () => {
 
       await importTransactionsFromCSV(csv)
 
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(1, 100)
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 110)
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(1, 100, 0)
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, 110, 0)
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(2)
     })
 

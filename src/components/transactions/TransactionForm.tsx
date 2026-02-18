@@ -5,6 +5,7 @@ import { walletRepository, tagRepository, counterpartyRepository, transactionRep
 import { Button, Input, Select, LiveSearch, DateTimeUI, Modal, Badge } from '../ui'
 import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
+import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
@@ -127,17 +128,14 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
       // Source account (where money came from)
       setAccountId(exchangeOut.account_id.toString())
-      const sourceAcc = accounts.find(a => a.id === exchangeOut.account_id)
-      const sourceDp = sourceAcc?.decimalPlaces ?? 2
-      setPaymentAmount((exchangeOut.amount / Math.pow(10, sourceDp)).toString())
+      setPaymentAmount(fromIntFrac(exchangeOut.amount_int, exchangeOut.amount_frac).toString())
 
       // Payment currency (expense currency)
       const targetCurrency = currencies.find(c => c.code === expenseLine.currency)
       if (targetCurrency) {
         setPaymentCurrencyId(targetCurrency.id)
       }
-      const targetDp = targetCurrency?.decimal_places ?? 2
-      setAmount((expenseLine.amount / Math.pow(10, targetDp)).toString())
+      setAmount(fromIntFrac(expenseLine.amount_int, expenseLine.amount_frac).toString())
 
       setTagId(expenseLine.tag_id.toString())
       setNote(initialData.note || '')
@@ -165,11 +163,10 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setTagId(firstLine.tag_id.toString())
       setNote(initialData.note || '')
 
-      const acc = accounts.find(a => a.id === firstLine.account_id)
-      const dp = acc?.decimalPlaces ?? 2
-      setAmount((firstLine.amount / Math.pow(10, dp)).toString())
+      setAmount(fromIntFrac(firstLine.amount_int, firstLine.amount_frac).toString())
 
       // For regular expenses, set payment currency to match account
+      const acc = accounts.find(a => a.id === firstLine.account_id)
       if (detectedMode === 'expense' && acc) {
         setPaymentCurrencyId(acc.currency_id)
       }
@@ -186,21 +183,18 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setToAccountId(toLine.account_id.toString())
       setNote(initialData.note || '')
 
-      const fromAcc = accounts.find(a => a.id === fromLine.account_id)
-      const fromDp = fromAcc?.decimalPlaces ?? 2
-      setAmount((fromLine.amount / Math.pow(10, fromDp)).toString())
-
-      const toAcc = accounts.find(a => a.id === toLine.account_id)
-      const toDp = toAcc?.decimalPlaces ?? 2
-      setToAmount((toLine.amount / Math.pow(10, toDp)).toString())
+      setAmount(fromIntFrac(fromLine.amount_int, fromLine.amount_frac).toString())
+      setToAmount(fromIntFrac(toLine.amount_int, toLine.amount_frac).toString())
 
       if (feeLine) {
-        setFee((feeLine.amount / Math.pow(10, fromDp)).toString())
+        setFee(fromIntFrac(feeLine.amount_int, feeLine.amount_frac).toString())
         setFeeTagId(feeLine.tag_id.toString())
       }
 
       if (detectedMode === 'exchange') {
-        const rate = toLine.amount / fromLine.amount
+        const fromAmt = fromIntFrac(fromLine.amount_int, fromLine.amount_frac)
+        const toAmt = fromIntFrac(toLine.amount_int, toLine.amount_frac)
+        const rate = toAmt / fromAmt
         setExchangeRate(rate.toFixed(6))
       }
     }
@@ -358,14 +352,14 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
   const getPlaceholder = (decimals: number) => '0.' + '0'.repeat(decimals)
 
   // Format balance for display
-  const formatBalance = (balance: number, decimals: number) => {
-    return (balance / Math.pow(10, decimals)).toFixed(decimals)
+  const formatBalance = (balanceInt: number, balanceFrac: number, decimals: number) => {
+    return fromIntFrac(balanceInt, balanceFrac).toFixed(decimals)
   }
 
-  // Convert display amount to integer
-  const toIntegerAmount = (displayAmount: string, decimals: number): number => {
+  // Convert display amount to IntFrac
+  const toAmountIntFrac = (displayAmount: string): { int: number; frac: number } => {
     const parsed = parseFloat(displayAmount) || 0
-    return Math.round(parsed * Math.pow(10, decimals))
+    return toIntFrac(Math.abs(parsed))
   }
 
   // Handle exchange rate calculation
@@ -431,14 +425,14 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         finalTagId = newTag.id.toString()
       }
 
-      const intAmount = toIntegerAmount(amount, decimalPlaces)
-      const intFee = fee ? toIntegerAmount(fee, decimalPlaces) : undefined
+      const { int: amountInt, frac: amountFrac } = toAmountIntFrac(amount)
+      const feeIntFrac = fee ? toAmountIntFrac(fee) : undefined
 
-      // Get exchange rate for the account's currency (100 = 1.00 in default currency)
+      // Get exchange rate for the account's currency
       const selectedAccount = accounts.find(a => a.id.toString() === accountId)
-      const accountRate = selectedAccount
-        ? (await currencyRepository.getExchangeRate(selectedAccount.currency_id))?.rate ?? 100
-        : 100
+      const accountRateData = selectedAccount
+        ? await currencyRepository.getRateForCurrency(selectedAccount.currency_id)
+        : { int: 1, frac: 0 }
 
       let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
       if (counterpartyName && !counterpartyId) {
@@ -464,8 +458,10 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           account_id: parseInt(accountId),
           tag_id: parseInt(finalTagId),
           sign: '+' as const,
-          amount: intAmount,
-          rate: accountRate,
+          amount_int: amountInt,
+          amount_frac: amountFrac,
+          rate_int: accountRateData.int,
+          rate_frac: accountRateData.frac,
         })
       } else if (mode === 'expense') {
         // Check if this is a multi-currency expense
@@ -477,37 +473,43 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           )
 
           // Get rates
-          const sourceRate = accountRate
-          const targetRate = (await currencyRepository.getExchangeRate(paymentCurrencyId))?.rate ?? 100
+          const sourceRateData = accountRateData
+          const targetRateData = await currencyRepository.getRateForCurrency(paymentCurrencyId)
 
           // Source amount (what we pay from account)
-          const sourceIntAmount = toIntegerAmount(paymentAmount, decimalPlaces)
+          const sourceAmountIF = toAmountIntFrac(paymentAmount)
           // Target amount (what we spend in payment currency)
-          const targetIntAmount = toIntegerAmount(amount, paymentCurrencyDecimalPlaces)
+          const targetAmountIF = toAmountIntFrac(amount)
 
           // 1. Exchange OUT from source account
           payload.lines.push({
             account_id: parseInt(accountId),
             tag_id: SYSTEM_TAGS.EXCHANGE,
             sign: '-' as const,
-            amount: sourceIntAmount,
-            rate: sourceRate,
+            amount_int: sourceAmountIF.int,
+            amount_frac: sourceAmountIF.frac,
+            rate_int: sourceRateData.int,
+            rate_frac: sourceRateData.frac,
           })
           // 2. Exchange IN to target account
           payload.lines.push({
             account_id: targetAccount.id,
             tag_id: SYSTEM_TAGS.EXCHANGE,
             sign: '+' as const,
-            amount: targetIntAmount,
-            rate: targetRate,
+            amount_int: targetAmountIF.int,
+            amount_frac: targetAmountIF.frac,
+            rate_int: targetRateData.int,
+            rate_frac: targetRateData.frac,
           })
           // 3. Expense from target account
           payload.lines.push({
             account_id: targetAccount.id,
             tag_id: parseInt(finalTagId),
             sign: '-' as const,
-            amount: targetIntAmount,
-            rate: targetRate,
+            amount_int: targetAmountIF.int,
+            amount_frac: targetAmountIF.frac,
+            rate_int: targetRateData.int,
+            rate_frac: targetRateData.frac,
           })
         } else {
           // Normal single-currency expense
@@ -515,90 +517,73 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             account_id: parseInt(accountId),
             tag_id: parseInt(finalTagId),
             sign: '-' as const,
-            amount: intAmount,
-            rate: accountRate,
+            amount_int: amountInt,
+            amount_frac: amountFrac,
+            rate_int: accountRateData.int,
+            rate_frac: accountRateData.frac,
           })
         }
       } else if (mode === 'transfer') {
-        payload.lines.push(
-          {
-            account_id: parseInt(accountId),
-            tag_id: SYSTEM_TAGS.TRANSFER,
-            sign: '-' as const,
-            amount: intAmount,
-            rate: accountRate,
-          })
+        payload.lines.push({
+          account_id: parseInt(accountId),
+          tag_id: SYSTEM_TAGS.TRANSFER,
+          sign: '-' as const,
+          amount_int: amountInt,
+          amount_frac: amountFrac,
+          rate_int: accountRateData.int,
+          rate_frac: accountRateData.frac,
+        })
         payload.lines.push({
           account_id: parseInt(toAccountId),
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '+' as const,
-          amount: intAmount,
-          rate: accountRate, // Same currency for transfers
+          amount_int: amountInt,
+          amount_frac: amountFrac,
+          rate_int: accountRateData.int,
+          rate_frac: accountRateData.frac,
         })
 
-        if (intFee) {
+        if (feeIntFrac) {
           payload.lines.push({
             account_id: parseInt(accountId),
             tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
             sign: '-' as const,
-            amount: intFee,
-            rate: accountRate,
+            amount_int: feeIntFrac.int,
+            amount_frac: feeIntFrac.frac,
+            rate_int: accountRateData.int,
+            rate_frac: accountRateData.frac,
           })
         }
       } else if (mode === 'exchange') {
-        const intToAmount = toIntegerAmount(toAmount, toDecimalPlaces)
+        const toAmountIF = toAmountIntFrac(toAmount)
 
-        // Calculate rate: how many units of 'to' currency per 1 unit of 'from' currency
-        // Rate stored as integer where 100 = 1.00
         const fromDisplay = parseFloat(amount) || 0
         const toDisplay = parseFloat(toAmount) || 0
 
-        // Find which currency is default to determine rate direction
         const fromCurrency = accounts.find(a => a.id.toString() === accountId)
         const toCurrency = accounts.find(a => a.id.toString() === toAccountId)
 
-        // Rate for 'from' currency: how much default currency you get for 1 unit
-        // If from is default currency, rate = 100. Otherwise calculate from exchange.
-        let fromRate = 100
-        let toRate = 100
+        let fromRateIF = { int: 1, frac: 0 }
+        let toRateIF = { int: 1, frac: 0 }
 
         if (fromCurrency && toCurrency && fromDisplay > 0 && toDisplay > 0) {
-          // The actual exchange: fromAmount of fromCurrency = toAmount of toCurrency
-          // If toCurrency is the default, then fromRate = toAmount/fromAmount * 100
-          // If fromCurrency is the default, then toRate = fromAmount/toAmount * 100
-
-          // For now, calculate rate as toAmount/fromAmount * 100 adjusted for decimals
-          const fromDisplayNormalized = fromDisplay * Math.pow(10, fromCurrency.decimalPlaces)
-          const toDisplayNormalized = toDisplay * Math.pow(10, toCurrency.decimalPlaces)
-
-          await currencyRepository.getExchangeRate(fromCurrency.currency_id)
-            .then(v => {
-              if (v) fromRate = v.rate
-            })
-          await currencyRepository.getExchangeRate(toCurrency.currency_id)
-            .then(v => {
-              if (v) toRate = v.rate
-            })
-          // Cross rate calculation
-          // const crossRate = (toDisplayNormalized / fromDisplayNormalized) * 100
+          fromRateIF = await currencyRepository.getRateForCurrency(fromCurrency.currency_id)
+          toRateIF = await currencyRepository.getRateForCurrency(toCurrency.currency_id)
 
           // Update exchange_rate table for the non-default currency
-          // Rate semantics: rate=100 means 1.00 to the default currency
-          // If from is default currency, set rate for 'to' currency
-          // If to is default currency, set rate for 'from' currency
           const defaultCurrency = await currencyRepository.findSystem()
 
           if (defaultCurrency) {
             if (fromCurrency.currency_id === defaultCurrency.id) {
-              // From is default (USD), to is foreign (EUR)
-              // Rate = how many EUR per 1 USD = toAmount/fromAmount * 10^decimal_places
-              toRate = Math.round((toDisplayNormalized / fromDisplayNormalized) * 100)
-              await currencyRepository.setExchangeRate(toCurrency.currency_id, toRate)
+              // From is default, set rate for 'to' currency
+              const rateValue = toDisplay / fromDisplay
+              toRateIF = toIntFrac(rateValue)
+              await currencyRepository.setExchangeRate(toCurrency.currency_id, toRateIF.int, toRateIF.frac)
             } else if (toCurrency.currency_id === defaultCurrency.id) {
-              // To is default (USD), from is foreign (EUR)
-              // Rate = how many EUR per 1 USD = fromAmount/toAmount * 10^decimal_places
-              fromRate = Math.round((fromDisplayNormalized / toDisplayNormalized) * 100)
-              await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRate)
+              // To is default, set rate for 'from' currency
+              const rateValue = fromDisplay / toDisplay
+              fromRateIF = toIntFrac(rateValue)
+              await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRateIF.int, fromRateIF.frac)
             }
           }
         }
@@ -607,24 +592,30 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           account_id: parseInt(accountId),
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '-' as const,
-          amount: intAmount,
-          rate: fromRate,
+          amount_int: amountInt,
+          amount_frac: amountFrac,
+          rate_int: fromRateIF.int,
+          rate_frac: fromRateIF.frac,
         })
         payload.lines.push({
           account_id: parseInt(toAccountId),
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+' as const,
-          amount: intToAmount,
-          rate: toRate,
+          amount_int: toAmountIF.int,
+          amount_frac: toAmountIF.frac,
+          rate_int: toRateIF.int,
+          rate_frac: toRateIF.frac,
         })
 
-        if (intFee) {
+        if (feeIntFrac) {
           payload.lines.push({
             account_id: parseInt(accountId),
             tag_id: feeTagId ? parseInt(feeTagId) : SYSTEM_TAGS.FEE,
             sign: '-' as const,
-            amount: intFee,
-            rate: fromRate,
+            amount_int: feeIntFrac.int,
+            amount_frac: feeIntFrac.frac,
+            rate_int: fromRateIF.int,
+            rate_frac: fromRateIF.frac,
           })
         }
       }
@@ -741,7 +732,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         onChange={(e) => setAccountId(e.target.value)}
         options={accounts.map((a) => ({
           value: a.id,
-          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
+          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
         }))}
         placeholder="Select account"
         error={errors.accountId}
@@ -805,7 +796,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
             .filter((a) => mode === 'transfer' ? a.currency_id === selectedAccount?.currency_id : a.currency_id !== selectedAccount?.currency_id)
             .map((a) => ({
               value: a.id,
-              label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance, a.decimalPlaces)})`,
+              label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
             }))}
           placeholder="Select destination account"
           error={errors.toAccountId}

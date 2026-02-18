@@ -56,7 +56,8 @@ const mockAccount: Account = {
   id: 1,
   wallet_id: 1,
   currency_id: 1,
-  balance: 150000,
+  balance_int: 1500,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Cash',
   currency: 'USD',
@@ -69,7 +70,8 @@ const mockBankAccount: Account = {
   id: 2,
   wallet_id: 2,
   currency_id: 1,
-  balance: 1500000,
+  balance_int: 15000,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Bank',
   currency: 'USD',
@@ -274,7 +276,8 @@ describe('AccountsPage', () => {
         accounts: [{
           ...mockAccount,
           currency_id: 999, // Non-existent currency
-          balance: 12345,
+          balance_int: 123,
+          balance_frac: 450000000000000000,
         }],
       },
     ])
@@ -283,8 +286,8 @@ describe('AccountsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Unknown Currency Wallet')).toBeInTheDocument()
-      // Balance displayed as raw number when currency not found
-      expect(screen.getByText('12345')).toBeInTheDocument()
+      // Balance displayed as raw number when currency not found (fromIntFrac(123, 450000000000000000) = 123.45)
+      expect(screen.getByText('123.45')).toBeInTheDocument()
     })
   })
 
@@ -309,7 +312,7 @@ describe('AccountsPage', () => {
     mockWalletRepository.findAll.mockResolvedValue([
       {
         ...mockWallets[0],
-        accounts: [{ ...mockAccount, balance: -50000 }],
+        accounts: [{ ...mockAccount, balance_int: -500, balance_frac: 0 }],
       },
     ])
 
@@ -534,7 +537,8 @@ describe('AccountsPage', () => {
         id: 0,
         wallet_id: 1,
         currency_id: 1,
-        balance: 0,
+        balance_int: 0,
+        balance_frac: 0,
         updated_at: 0
       })
     })
@@ -635,7 +639,7 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
       })
 
-      // Enter initial balance (100.50 for currency with 2 decimal places = 10050)
+      // Enter initial balance (100.50 as float)
       const balanceInput = screen.getByLabelText('Initial Balance')
       fireEvent.change(balanceInput, { target: { value: '100.50' } })
 
@@ -644,7 +648,7 @@ describe('AccountsPage', () => {
       fireEvent.click(addButton)
 
       await waitFor(() => {
-        expect(mockWalletRepository.addAccount).toHaveBeenCalledWith(1, 2, 10050)
+        expect(mockWalletRepository.addAccount).toHaveBeenCalledWith(1, 2, 100.50)
       })
     })
 
@@ -1047,11 +1051,13 @@ describe('AccountsPage', () => {
       fireEvent.click(adjustButton)
 
       await waitFor(() => {
-        // Current balance is 150000 (1500.00), target is 2000.00 = 200000
+        // Current balance is (1500, 0), target is 2000.00 = toIntFrac(2000) = {int: 2000, frac: 0}
         expect(mockTransactionRepository.createBalanceAdjustment).toHaveBeenCalledWith(
           1, // account id
-          150000, // current balance
-          200000 // target balance
+          1500, // current balance_int
+          0, // current balance_frac
+          2000, // target_int
+          0 // target_frac
         )
       })
 
@@ -1192,7 +1198,8 @@ describe('AccountsPage', () => {
         id: 0,
         wallet_id: 1,
         currency_id: 2,
-        balance: 0,
+        balance_int: 0,
+        balance_frac: 0,
         updated_at: 0,
       })
     })
@@ -1246,7 +1253,7 @@ describe('AccountsPage', () => {
         { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_fiat: true },
       ])
       mockWalletRepository.addAccount.mockResolvedValue({
-        id: 0, wallet_id: 1, currency_id: 1, balance: 0, updated_at: 0,
+        id: 0, wallet_id: 1, currency_id: 1, balance_int: 0, balance_frac: 0, updated_at: 0,
       })
 
       renderWithRouter()
@@ -1280,7 +1287,7 @@ describe('AccountsPage', () => {
 
     it('skips rate fetch when exchange rate already exists', async () => {
       mockCurrencyRepository.getExchangeRate.mockResolvedValue({
-        id: 1, currency_id: 2, rate: 92, updated_at: '2025-01-01',
+        currency_id: 2, rate_int: 0, rate_frac: 920000000000000000, updated_at: 1704067200,
       })
 
       await addEurCurrency()
@@ -1326,8 +1333,8 @@ describe('AccountsPage', () => {
       fireEvent.click(saveButton)
 
       await waitFor(() => {
-        // 0.92 * 10^2 = 92
-        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 92)
+        // toIntFrac(0.92) = {int: 0, frac: ~920000000000000000}
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 0, expect.any(Number))
       })
 
       expect(mockShowToast).toHaveBeenCalledWith('Exchange rate saved', 'success')

@@ -1,6 +1,5 @@
 import { querySQL, queryOne, execSQL } from '../database'
 import type { Budget, BudgetInput, BudgetSummary } from '../../types'
-import { SYSTEM_TAGS } from '../../types'
 
 // Helper to convert Uint8Array to hex string for SQL queries
 function toHex(bytes: Uint8Array): string {
@@ -56,37 +55,28 @@ export const budgetRepository = {
 
         return querySQL<Budget>(
             `
-      WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )
       SELECT
         b.*,
         t.name as tag,
         (
           SELECT COALESCE(SUM(
             CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * (tb.amount * cd.divisor) / (tb.rate * cd.divisor)
-            * power(10, def.decimal_places)
+            * (tb.amount_int + tb.amount_frac * 1e-18)
+            / (tb.rate_int + tb.rate_frac * 1e-18)
           ), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
-          JOIN account a ON tb.account_id = a.id
-          JOIN curr_dec cd ON a.currency_id = cd.currency_id
-          CROSS JOIN (SELECT decimal_places FROM currency
-            JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
-            WHERE tag_id = ? LIMIT 1) def
           WHERE tb.tag_id = b.tag_id
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
-            AND tb.rate > 0
+            AND (tb.rate_int > 0 OR tb.rate_frac > 0)
         ) as actual
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
       WHERE b.start >= ? AND b.start < ?
       ORDER BY t.name ASC
     `,
-            [SYSTEM_TAGS.DEFAULT, startTimestamp, endTimestamp]
+            [startTimestamp, endTimestamp]
         )
     },
 
@@ -121,36 +111,27 @@ export const budgetRepository = {
     async findWithActual(id: Uint8Array): Promise<Budget | null> {
         return queryOne<Budget>(
             `
-      WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )
       SELECT
         b.*,
         t.name as tag,
         (
           SELECT COALESCE(SUM(
             CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * (tb.amount * cd.divisor) / (tb.rate * cd.divisor)
-            * power(10, def.decimal_places)
+            * (tb.amount_int + tb.amount_frac * 1e-18)
+            / (tb.rate_int + tb.rate_frac * 1e-18)
           ), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
-          JOIN account a ON tb.account_id = a.id
-          JOIN curr_dec cd ON a.currency_id = cd.currency_id
-          CROSS JOIN (SELECT decimal_places FROM currency
-            JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
-            WHERE tag_id = ? LIMIT 1) def
           WHERE tb.tag_id = b.tag_id
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
-            AND tb.rate > 0
+            AND (tb.rate_int > 0 OR tb.rate_frac > 0)
         ) as actual
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
       WHERE hex(b.id) = ?
     `,
-            [SYSTEM_TAGS.DEFAULT, toHex(id)]
+            [toHex(id)]
         )
     },
 
@@ -182,8 +163,8 @@ export const budgetRepository = {
         }
 
         await execSQL(
-            `INSERT INTO budget (tag_id, amount, start, end) VALUES (?, ?, ?, ?)`,
-            [input.tag_id, input.amount, start, end]
+            `INSERT INTO budget (tag_id, amount_int, amount_frac, start, end) VALUES (?, ?, ?, ?, ?)`,
+            [input.tag_id, input.amount_int, input.amount_frac, start, end]
         )
 
         // Get the newly created budget by finding it with tag_id, start, end
@@ -216,9 +197,13 @@ export const budgetRepository = {
             fields.push('tag_id = ?')
             values.push(input.tag_id)
         }
-        if (input.amount !== undefined) {
-            fields.push('amount = ?')
-            values.push(input.amount)
+        if (input.amount_int !== undefined) {
+            fields.push('amount_int = ?')
+            values.push(input.amount_int)
+        }
+        if (input.amount_frac !== undefined) {
+            fields.push('amount_frac = ?')
+            values.push(input.amount_frac)
         }
         if (input.start !== undefined) {
             fields.push('start = ?')
@@ -247,7 +232,6 @@ export const budgetRepository = {
         if (!budget) {
             return { canDelete: false, reason: 'Budget not found' }
         }
-        // Budgets can always be deleted - they don't have foreign key constraints
         return { canDelete: true }
     },
 
@@ -266,37 +250,28 @@ export const budgetRepository = {
 
         return querySQL<Budget>(
             `
-      WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )
       SELECT
         b.*,
         t.name as tag,
         (
           SELECT COALESCE(SUM(
             CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * (tb.amount * cd.divisor) / (tb.rate * cd.divisor)
-            * power(10, def.decimal_places)
+            * (tb.amount_int + tb.amount_frac * 1e-18)
+            / (tb.rate_int + tb.rate_frac * 1e-18)
           ), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
-          JOIN account a ON tb.account_id = a.id
-          JOIN curr_dec cd ON a.currency_id = cd.currency_id
-          CROSS JOIN (SELECT decimal_places FROM currency
-            JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
-            WHERE tag_id = ? LIMIT 1) def
           WHERE tb.tag_id = b.tag_id
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
-            AND tb.rate > 0
+            AND (tb.rate_int > 0 OR tb.rate_frac > 0)
         ) as actual
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
       WHERE b.start <= ? AND b.end > ?
       ORDER BY t.name ASC
     `,
-            [SYSTEM_TAGS.DEFAULT, now, now]
+            [now, now]
         )
     },
 }

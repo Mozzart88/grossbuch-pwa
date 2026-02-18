@@ -36,9 +36,8 @@ describe('accountRepository', () => {
     id: 1,
     wallet_id: 1,
     currency_id: 1,
-    real_balance: 100000, // 1000.00 (integer, divide by 100)
-    actual_balance: 100000,
-    created_at: 1704067200,
+    balance_int: 1000,
+    balance_frac: 0,
     updated_at: 1704067200,
     wallet: 'Main Wallet',
     currency: 'USD',
@@ -48,7 +47,7 @@ describe('accountRepository', () => {
   describe('findAll', () => {
     it('returns all accounts from accounts view', async () => {
       const accounts = [
-        { id: 1, wallet: 'Main', currency: 'USD', tags: 'default', real_balance: 100000, actual_balance: 100000, created_at: 0, updated_at: 0 },
+        { id: 1, wallet: 'Main', currency: 'USD', tags: 'default', balance_int: 1000, balance_frac: 0, updated_at: 0 },
       ]
       mockQuerySQL.mockResolvedValue(accounts)
 
@@ -259,20 +258,15 @@ describe('accountRepository', () => {
 
   describe('getTotalBalance', () => {
     it('returns sum of all account balances with rate conversion', async () => {
-      mockQueryOne.mockResolvedValue({ total: 250000 })
+      mockQueryOne.mockResolvedValue({ total: 2500.00 })
 
       const result = await accountRepository.getTotalBalance()
 
-      // Should use (balance * divisor) / (rate * divisor) * 10^def_decimal_places formula
+      // Should use balance_int + balance_frac formula (no bind params)
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('a.balance * cd.divisor'),
-        expect.anything()
+        expect.stringContaining('balance_int'),
       )
-      expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('exchange_rate'),
-        expect.anything()
-      )
-      expect(result).toBe(250000)
+      expect(result).toBe(2500.00)
     })
 
     it('returns 0 for empty accounts', async () => {
@@ -286,7 +280,7 @@ describe('accountRepository', () => {
 
   describe('getWalletBalance', () => {
     it('returns sum of balances for specific wallet', async () => {
-      mockQueryOne.mockResolvedValue({ total: 150000 })
+      mockQueryOne.mockResolvedValue({ total: 1500.00 })
 
       const result = await accountRepository.getWalletBalance(1)
 
@@ -294,7 +288,7 @@ describe('accountRepository', () => {
         expect.stringContaining('WHERE wallet_id = ?'),
         [1]
       )
-      expect(result).toBe(150000)
+      expect(result).toBe(1500.00)
     })
 
     it('returns 0 for empty wallet', async () => {
@@ -308,32 +302,33 @@ describe('accountRepository', () => {
 
   describe('convertAmount', () => {
     it('returns same amount when currencies match', async () => {
-      const result = await accountRepository.convertAmount(10000, 1, 1)
+      const result = await accountRepository.convertAmount(100, 0, 1, 1)
 
-      expect(result).toBe(10000)
+      expect(result).toEqual({ int: 100, frac: 0 })
       expect(mockGetExchangeRate).not.toHaveBeenCalled()
     })
 
     it('converts using exchange rates', async () => {
-      const fromRate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 0 } // EUR rate
-      const toRate: ExchangeRate = { currency_id: 1, rate: 10000, updated_at: 0 } // USD rate (base)
+      const fromRate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 0 } // 1.15
+      const toRate: ExchangeRate = { currency_id: 1, rate_int: 1, rate_frac: 0, updated_at: 0 } // 1.0
 
       mockGetExchangeRate
         .mockResolvedValueOnce(fromRate)
         .mockResolvedValueOnce(toRate)
 
-      const result = await accountRepository.convertAmount(10000, 2, 1)
+      const result = await accountRepository.convertAmount(100, 0, 2, 1)
 
-      // 10000 * 11500 / 10000 = 11500
-      expect(result).toBe(11500)
+      // 100 * 1.15 / 1.0 ≈ 115 (allow minor floating point variance)
+      const resultFloat = result.int + result.frac / 1e18
+      expect(resultFloat).toBeCloseTo(115, 5)
     })
 
     it('returns original amount when no exchange rates available', async () => {
       mockGetExchangeRate.mockResolvedValue(null)
 
-      const result = await accountRepository.convertAmount(10000, 2, 1)
+      const result = await accountRepository.convertAmount(100, 0, 2, 1)
 
-      expect(result).toBe(10000)
+      expect(result).toEqual({ int: 100, frac: 0 })
     })
   })
 })

@@ -53,9 +53,9 @@ const mockCurrencies: Currency[] = [
 ]
 
 const mockExchangeRates: ExchangeRate[] = [
-  { currency_id: 1, rate: 100, updated_at: 1704067200 }, // USD (default)
-  { currency_id: 2, rate: 92, updated_at: 1704067200 },  // EUR
-  { currency_id: 3, rate: 9000, updated_at: 1704067200 }, // RUB
+  { currency_id: 1, rate_int: 1, rate_frac: 0, updated_at: 1704067200 }, // USD (default) = 1.0
+  { currency_id: 2, rate_int: 0, rate_frac: 920000000000000000, updated_at: 1704067200 },  // EUR = 0.92
+  { currency_id: 3, rate_int: 90, rate_frac: 0, updated_at: 1704067200 }, // RUB = 90.0
 ]
 
 describe('ExchangeRatesPage', () => {
@@ -92,12 +92,12 @@ describe('ExchangeRatesPage', () => {
     })
   })
 
-  it('displays rate of 1.0000 for default currency', async () => {
+  it('displays rate of 1.00 for default currency', async () => {
     render(<ExchangeRatesPage />)
 
     await waitFor(() => {
-      // USD should show 1.0000
-      const rates = screen.getAllByText('1.0000')
+      // USD should show 1.00
+      const rates = screen.getAllByText('1.00')
       expect(rates.length).toBeGreaterThan(0)
     })
   })
@@ -106,9 +106,9 @@ describe('ExchangeRatesPage', () => {
     render(<ExchangeRatesPage />)
 
     await waitFor(() => {
-      // EUR rate 92 with 2 decimals = 92/100 = 0.92 displayed as 0.9200
+      // EUR rate fromIntFrac(0, 920000000000000000) = 0.92 displayed as 0.9200
       expect(screen.getByText('0.9200')).toBeInTheDocument()
-      // RUB rate 9000 with 2 decimals = 9000/100 = 90.00 displayed as 90.0000
+      // RUB rate fromIntFrac(90, 0) = 90.0 displayed as 90.0000
       expect(screen.getByText('90.0000')).toBeInTheDocument()
     })
   })
@@ -116,7 +116,7 @@ describe('ExchangeRatesPage', () => {
   it('only shows currencies with exchange rates', async () => {
     // Only EUR has a rate
     mockCurrencyRepository.getAllExchangeRates.mockResolvedValue([
-      { currency_id: 2, rate: 92, updated_at: 1704067200 },
+      { currency_id: 2, rate_int: 0, rate_frac: 920000000000000000, updated_at: 1704067200 },
     ])
 
     render(<ExchangeRatesPage />)
@@ -193,8 +193,8 @@ describe('ExchangeRatesPage', () => {
     fireEvent.click(saveButton)
 
     await waitFor(() => {
-      // Rate 1.15 * 100 = 115
-      expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 115)
+      // toIntFrac(1.15) = {int: 1, frac: ~150000000000000000}
+      expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 1, expect.any(Number))
     })
   })
 
@@ -259,7 +259,7 @@ describe('ExchangeRatesPage', () => {
     }
 
     await waitFor(() => {
-      // Should show existing rate (92/100 = 0.92) in input
+      // Should show existing rate (fromIntFrac(0, 920000000000000000) = 0.92) in input
       const rateInput = screen.getByRole('spinbutton')
       expect(rateInput).toHaveValue(0.92)
     })

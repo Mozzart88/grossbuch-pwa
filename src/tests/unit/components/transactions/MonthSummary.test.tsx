@@ -76,7 +76,7 @@ describe('MonthSummary', () => {
     // Use different value to avoid conflict with expense display
     renderWithRouter(<MonthSummary income={1000} expenses={500} totalBalance={-200} displayCurrencySymbol="$" />)
 
-    const totalAmount = screen.getByText('$200.00')
+    const totalAmount = screen.getByText('-$200.00')
     expect(totalAmount.className).toContain('text-red-600')
   })
 

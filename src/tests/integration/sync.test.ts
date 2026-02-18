@@ -43,7 +43,7 @@ describe('Sync Integration', () => {
 
       const pkg = await exportSyncPackage(0, 'sender-1')
 
-      expect(pkg.version).toBe(1)
+      expect(pkg.version).toBe(2)
       expect(pkg.sender_id).toBe('sender-1')
       expect(pkg.since).toBe(0)
       // Icons created during migrations + our new one
@@ -115,8 +115,8 @@ describe('Sync Integration', () => {
         account_id: accountId,
         tag_id: SYSTEM_TAGS.EXPENSE,
         sign: '-',
-        amount: 1000,
-        rate: 100,
+        amount_int: 10,
+        rate_int: 1,
         counterparty_id: cpId,
         note: 'Groceries',
       })
@@ -131,19 +131,21 @@ describe('Sync Integration', () => {
       expect(trx.lines[0].account).toBe(accountId)
       expect(trx.lines[0].tag).toBe(SYSTEM_TAGS.EXPENSE)
       expect(trx.lines[0].sign).toBe('-')
-      expect(trx.lines[0].amount).toBe(1000)
+      expect(trx.lines[0].amount_int).toBe(10)
+      expect(trx.lines[0].amount_frac).toBe(0)
     })
 
     it('exports budgets with tag id', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
-      insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount: 50000 })
+      insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount_int: 500 })
 
       const pkg = await exportSyncPackage(0, 'sender-1')
 
       expect(pkg.budgets.length).toBeGreaterThan(0)
       expect(pkg.budgets[0].tag).toBe(SYSTEM_TAGS.FOOD)
-      expect(pkg.budgets[0].amount).toBe(50000)
+      expect(pkg.budgets[0].amount_int).toBe(500)
+      expect(pkg.budgets[0].amount_frac).toBe(0)
     })
 
     it('exports deletions since timestamp', async () => {
@@ -228,7 +230,7 @@ describe('Sync Integration', () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -255,7 +257,7 @@ describe('Sync Integration', () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -286,7 +288,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -314,7 +316,7 @@ describe('Sync Integration', () => {
       const walletId = insertWallet({ name: 'FreshWallet', color: '#111111' })
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1,
         since: 0,
@@ -340,7 +342,7 @@ describe('Sync Integration', () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -369,7 +371,7 @@ describe('Sync Integration', () => {
       const usdId = getCurrencyIdByCode('USD')
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -396,13 +398,13 @@ describe('Sync Integration', () => {
 
       const walletId = insertWallet({ name: 'TrxWallet' })
       const usdId = getCurrencyIdByCode('USD')
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId, balance: 0 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId, balance_int: 0 })
 
       const trxId = 'AABBCCDDEE001122'
       const lineId = '1122334455667788'
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -423,8 +425,10 @@ describe('Sync Integration', () => {
             account: accountId,
             tag: SYSTEM_TAGS.EXPENSE,
             sign: '-',
-            amount: 5000,
-            rate: 100,
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 1,
+            rate_frac: 0,
           }],
         }],
         budgets: [],
@@ -439,8 +443,8 @@ describe('Sync Integration', () => {
       expect(trx[0]?.values).toHaveLength(1)
 
       // Verify balance recalculated
-      const balance = db.exec(`SELECT balance FROM account WHERE id = ${accountId}`)
-      expect(balance[0]?.values[0]?.[0]).toBe(-5000)
+      const balance = db.exec(`SELECT balance_int, balance_frac FROM account WHERE id = ${accountId}`)
+      expect(balance[0]?.values[0]?.[0]).toBe(-50)
     })
 
     it('imports transactions with counterparty link', async () => {
@@ -452,7 +456,7 @@ describe('Sync Integration', () => {
       const cpId = insertCounterparty({ name: 'LinkedCP' })
 
       await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -473,8 +477,10 @@ describe('Sync Integration', () => {
             account: accountId,
             tag: SYSTEM_TAGS.INCOME,
             sign: '+',
-            amount: 2000,
-            rate: 100,
+            amount_int: 20,
+            amount_frac: 0,
+            rate_int: 1,
+            rate_frac: 0,
           }],
         }],
         budgets: [],
@@ -495,7 +501,7 @@ describe('Sync Integration', () => {
       const budgetId = 'BB00BB00BB00BB00'
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -511,7 +517,8 @@ describe('Sync Integration', () => {
           start: 1000,
           end: 2000,
           tag: SYSTEM_TAGS.FOOD,
-          amount: 100000,
+          amount_int: 1000,
+          amount_frac: 0,
           updated_at: 1000,
         }],
         deletions: [],
@@ -520,8 +527,9 @@ describe('Sync Integration', () => {
       expect(result.imported.budgets).toBe(1)
 
       const db = getTestDatabase()
-      const budget = db.exec(`SELECT amount FROM budget WHERE hex(id) = '${budgetId}'`)
-      expect(budget[0]?.values[0]?.[0]).toBe(100000)
+      const budget = db.exec(`SELECT amount_int, amount_frac FROM budget WHERE hex(id) = '${budgetId}'`)
+      expect(budget[0]?.values[0]?.[0]).toBe(1000)
+      expect(budget[0]?.values[0]?.[1]).toBe(0)
     })
 
     it('applies deletions with delete-vs-modify conflict', async () => {
@@ -532,7 +540,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -561,7 +569,7 @@ describe('Sync Integration', () => {
 
       // Old deletion timestamp - should not delete
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1,
         since: 0,
@@ -589,13 +597,13 @@ describe('Sync Integration', () => {
       const walletId = insertWallet({ name: 'DW' })
       const usdId = getCurrencyIdByCode('USD')
       const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
-      const trxId = insertTransaction({ account_id: accountId, tag_id: SYSTEM_TAGS.EXPENSE, sign: '-', amount: 100 })
+      const trxId = insertTransaction({ account_id: accountId, tag_id: SYSTEM_TAGS.EXPENSE, sign: '-', amount_int: 1 })
 
       const hexId = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -623,7 +631,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -645,7 +653,7 @@ describe('Sync Integration', () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -670,7 +678,7 @@ describe('Sync Integration', () => {
       const iconId = insertIcon({ value: 'tag-icon-test' })
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -706,7 +714,7 @@ describe('Sync Integration', () => {
       const iconId = insertIcon({ value: 'updated-icon' })
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -731,7 +739,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -763,7 +771,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -787,14 +795,14 @@ describe('Sync Integration', () => {
       const walletId = insertWallet({ name: 'TrxUpd' })
       const usdId = getCurrencyIdByCode('USD')
       const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
-      const trxId = insertTransaction({ account_id: accountId, tag_id: SYSTEM_TAGS.EXPENSE, sign: '-', amount: 100 })
+      const trxId = insertTransaction({ account_id: accountId, tag_id: SYSTEM_TAGS.EXPENSE, sign: '-', amount_int: 1 })
 
       const hexId = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
       const lineId = 'CC00CC00CC00CC00'
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -815,8 +823,10 @@ describe('Sync Integration', () => {
             account: accountId,
             tag: SYSTEM_TAGS.INCOME,
             sign: '+',
-            amount: 9999,
-            rate: 100,
+            amount_int: 99,
+            amount_frac: 990000000000000000, // 99.99
+            rate_int: 1,
+            rate_frac: 0,
           }],
         }],
         budgets: [],
@@ -826,20 +836,24 @@ describe('Sync Integration', () => {
       expect(result.imported.transactions).toBe(1)
 
       const db = getTestDatabase()
-      const balance = db.exec(`SELECT balance FROM account WHERE id = ${accountId}`)
-      expect(balance[0]?.values[0]?.[0]).toBe(9999)
+      const balance = db.exec(`SELECT balance_int, balance_frac FROM account WHERE id = ${accountId}`)
+      // balance should be 99.99 (int=99, frac≈990000000000000000)
+      expect(balance[0]?.values[0]?.[0]).toBe(99)
+      const frac = balance[0]?.values[0]?.[1] as number
+      const fullValue = 99 + frac / 1e18
+      expect(fullValue).toBeCloseTo(99.99, 10)
     })
 
     it('updates existing budget with last-write-wins', async () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
-      const budgetId = insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount: 50000 })
+      const budgetId = insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount_int: 500 })
       const hexId = Array.from(budgetId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
 
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -855,7 +869,8 @@ describe('Sync Integration', () => {
           start: 3000,
           end: 4000,
           tag: SYSTEM_TAGS.FOOD,
-          amount: 99999,
+          amount_int: 999,
+          amount_frac: 0,
           updated_at: futureTs,
         }],
         deletions: [],
@@ -864,8 +879,8 @@ describe('Sync Integration', () => {
       expect(result.imported.budgets).toBe(1)
 
       const db = getTestDatabase()
-      const budget = db.exec(`SELECT amount FROM budget WHERE hex(id) = '${hexId}'`)
-      expect(budget[0]?.values[0]?.[0]).toBe(99999)
+      const budget = db.exec(`SELECT amount_int FROM budget WHERE hex(id) = '${hexId}'`)
+      expect(budget[0]?.values[0]?.[0]).toBe(999)
     })
 
     it('deletes tag via deletion import', async () => {
@@ -875,7 +890,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -900,7 +915,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -925,7 +940,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -950,7 +965,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -971,12 +986,12 @@ describe('Sync Integration', () => {
     it('deletes budget via deletion import', async () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
-      const budgetId = insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount: 10000 })
+      const budgetId = insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount_int: 100 })
       const hexId = Array.from(budgetId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -998,7 +1013,7 @@ describe('Sync Integration', () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,
@@ -1023,7 +1038,7 @@ describe('Sync Integration', () => {
       const futureTs = Math.floor(Date.now() / 1000) + 10000
 
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: futureTs,
         since: 0,
@@ -1055,7 +1070,7 @@ describe('Sync Integration', () => {
 
       // Force an error by providing a wallet insert that fails (null name violates NOT NULL)
       const result = await importSyncPackage({
-        version: 1,
+        version: 2,
         sender_id: 'other',
         created_at: 1000,
         since: 0,

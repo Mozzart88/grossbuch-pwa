@@ -275,15 +275,15 @@ async function importCurrencies(currencies: SyncCurrency[]): Promise<number> {
     }
 
     // Import exchange rate if sender has one and we don't
-    if (cur.rate != null) {
-      const localRate = await queryOne<{ rate: number }>(
-        `SELECT rate FROM exchange_rate WHERE currency_id = ? ORDER BY updated_at DESC LIMIT 1`,
+    if (cur.rate_int != null && cur.rate_frac != null) {
+      const localRate = await queryOne<{ rate_int: number }>(
+        `SELECT rate_int FROM exchange_rate WHERE currency_id = ? ORDER BY updated_at DESC LIMIT 1`,
         [cur.id]
       )
       if (!localRate) {
         await execSQL(
-          `INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)`,
-          [cur.id, cur.rate]
+          `INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)`,
+          [cur.id, cur.rate_int, cur.rate_frac]
         )
       }
     }
@@ -329,12 +329,24 @@ async function importTransactions(transactions: SyncTransaction[]): Promise<numb
   if (affectedAccountIds.size > 0) {
     const ids = Array.from(affectedAccountIds)
     const placeholders = ids.map(() => '?').join(',')
+    // Recalculate as float then split into int/frac
     await execSQL(
-      `UPDATE account SET balance = (
-        SELECT COALESCE(SUM(
-          CASE WHEN sign = '+' THEN amount ELSE -amount END
-        ), 0) FROM trx_base WHERE account_id = account.id
-      ) WHERE id IN (${placeholders})`,
+      `UPDATE account SET
+        balance_int = CAST((
+          SELECT COALESCE(SUM(
+            CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END
+          ), 0) FROM trx_base WHERE account_id = account.id
+        ) AS INTEGER),
+        balance_frac = CAST(((
+          SELECT COALESCE(SUM(
+            CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END
+          ), 0) FROM trx_base WHERE account_id = account.id
+        ) - CAST((
+          SELECT COALESCE(SUM(
+            CASE WHEN sign = '+' THEN (amount_int + amount_frac * 1e-18) ELSE -(amount_int + amount_frac * 1e-18) END
+          ), 0) FROM trx_base WHERE account_id = account.id
+        ) AS INTEGER)) * 1000000000000000000 AS INTEGER)
+      WHERE id IN (${placeholders})`,
       ids
     )
   }
@@ -356,13 +368,19 @@ async function restoreBalanceTriggers(): Promise<void> {
     AFTER INSERT ON trx_base
     FOR EACH ROW
     BEGIN
-      UPDATE account
-      SET balance = (
-        CASE
-          WHEN NEW.sign = '-' THEN balance - NEW.amount
-          ELSE balance + NEW.amount
+      UPDATE account SET
+        balance_int = CASE
+          WHEN NEW.sign = '+'
+          THEN balance_int + NEW.amount_int + (balance_frac + NEW.amount_frac) / 1000000000000000000
+          ELSE balance_int - NEW.amount_int - IIF(balance_frac < NEW.amount_frac, 1, 0)
+        END,
+        balance_frac = CASE
+          WHEN NEW.sign = '+'
+          THEN (balance_frac + NEW.amount_frac) % 1000000000000000000
+          ELSE IIF(balance_frac < NEW.amount_frac,
+               balance_frac - NEW.amount_frac + 1000000000000000000,
+               balance_frac - NEW.amount_frac)
         END
-      )
       WHERE id = NEW.account_id;
     END
   `)
@@ -371,39 +389,54 @@ async function restoreBalanceTriggers(): Promise<void> {
     AFTER DELETE ON trx_base
     FOR EACH ROW
     BEGIN
-      UPDATE account
-      SET balance = (
-        CASE
-          WHEN OLD.sign = '+' THEN balance - OLD.amount
-          ELSE balance + OLD.amount
+      UPDATE account SET
+        balance_int = CASE
+          WHEN OLD.sign = '+'
+          THEN balance_int - OLD.amount_int - IIF(balance_frac < OLD.amount_frac, 1, 0)
+          ELSE balance_int + OLD.amount_int + (balance_frac + OLD.amount_frac) / 1000000000000000000
+        END,
+        balance_frac = CASE
+          WHEN OLD.sign = '+'
+          THEN IIF(balance_frac < OLD.amount_frac,
+               balance_frac - OLD.amount_frac + 1000000000000000000,
+               balance_frac - OLD.amount_frac)
+          ELSE (balance_frac + OLD.amount_frac) % 1000000000000000000
         END
-      )
       WHERE id = OLD.account_id;
     END
   `)
   await execSQL(`
     CREATE TRIGGER IF NOT EXISTS trg_update_trx_base
-    AFTER UPDATE OF sign, amount ON trx_base
-    WHEN 0 != NEW.amount
+    AFTER UPDATE OF sign, amount_int, amount_frac ON trx_base
+    WHEN NEW.amount_int != 0 OR NEW.amount_frac != 0
     BEGIN
-      UPDATE account
-      SET balance = (
-        CASE
-        WHEN OLD.sign != NEW.sign
-        THEN (
-          CASE
-          WHEN NEW.sign = '+' THEN balance + OLD.amount + NEW.amount
-          ELSE balance - OLD.amount - NEW.amount
-          END
-        )
-        ELSE (
-          CASE
-          WHEN NEW.sign = '+' THEN balance - OLD.amount + NEW.amount
-          ELSE balance + OLD.amount - NEW.amount
-          END
-        )
+      UPDATE account SET
+        balance_int = CASE
+          WHEN OLD.sign = '+'
+          THEN balance_int - OLD.amount_int - IIF(balance_frac < OLD.amount_frac, 1, 0)
+          ELSE balance_int + OLD.amount_int + (balance_frac + OLD.amount_frac) / 1000000000000000000
+        END,
+        balance_frac = CASE
+          WHEN OLD.sign = '+'
+          THEN IIF(balance_frac < OLD.amount_frac,
+               balance_frac - OLD.amount_frac + 1000000000000000000,
+               balance_frac - OLD.amount_frac)
+          ELSE (balance_frac + OLD.amount_frac) % 1000000000000000000
         END
-      )
+      WHERE id = OLD.account_id;
+      UPDATE account SET
+        balance_int = CASE
+          WHEN NEW.sign = '+'
+          THEN balance_int + NEW.amount_int + (balance_frac + NEW.amount_frac) / 1000000000000000000
+          ELSE balance_int - NEW.amount_int - IIF(balance_frac < NEW.amount_frac, 1, 0)
+        END,
+        balance_frac = CASE
+          WHEN NEW.sign = '+'
+          THEN (balance_frac + NEW.amount_frac) % 1000000000000000000
+          ELSE IIF(balance_frac < NEW.amount_frac,
+               balance_frac - NEW.amount_frac + 1000000000000000000,
+               balance_frac - NEW.amount_frac)
+        END
       WHERE id = NEW.account_id;
     END
   `)
@@ -419,8 +452,8 @@ async function insertTrxRelations(
   for (const line of trx.lines) {
     affectedAccountIds.add(line.account)
     await execSQL(
-      `INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount, rate) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [hexToBlob(line.id), trxBlob, line.account, line.tag, line.sign, line.amount, line.rate]
+      `INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [hexToBlob(line.id), trxBlob, line.account, line.tag, line.sign, line.amount_int, line.amount_frac, line.rate_int, line.rate_frac]
     )
   }
 
@@ -453,14 +486,14 @@ async function importBudgets(budgets: SyncBudget[]): Promise<number> {
 
     if (!local) {
       await execSQL(
-        `INSERT INTO budget (id, start, end, tag_id, amount, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-        [hexToBlob(b.id), b.start, b.end, b.tag, b.amount, b.updated_at]
+        `INSERT INTO budget (id, start, end, tag_id, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(b.id), b.start, b.end, b.tag, b.amount_int, b.amount_frac, b.updated_at]
       )
       count++
     } else if (b.updated_at > local.updated_at) {
       await execSQL(
-        `UPDATE budget SET start = ?, end = ?, tag_id = ?, amount = ?, updated_at = ? WHERE hex(id) = ?`,
-        [b.start, b.end, b.tag, b.amount, b.updated_at, b.id]
+        `UPDATE budget SET start = ?, end = ?, tag_id = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?`,
+        [b.start, b.end, b.tag, b.amount_int, b.amount_frac, b.updated_at, b.id]
       )
       count++
     }

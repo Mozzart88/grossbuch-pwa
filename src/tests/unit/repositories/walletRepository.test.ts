@@ -17,6 +17,11 @@ vi.mock('../../../services/repositories/transactionRepository', () => ({
   },
 }))
 
+// Mock toIntFrac for addAccount
+vi.mock('../../../utils/amount', () => ({
+  toIntFrac: vi.fn((value: number) => ({ int: Math.floor(value), frac: Math.round((value - Math.floor(value)) * 1e18) })),
+}))
+
 import { walletRepository } from '../../../services/repositories/walletRepository'
 import { execSQL, querySQL, queryOne, getLastInsertId } from '../../../services/database'
 import { transactionRepository } from '../../../services/repositories/transactionRepository'
@@ -45,7 +50,8 @@ describe('walletRepository', () => {
     id: 1,
     wallet_id: 1,
     currency_id: 1,
-    balance: 100000,
+    balance_int: 1000,
+    balance_frac: 0,
     updated_at: 1704067200,
     currency: 'USD',
     is_default: true,
@@ -434,15 +440,17 @@ describe('walletRepository', () => {
         .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2, currency: 'EUR' })
       mockGetLastInsertId.mockResolvedValue(2)
 
-      await walletRepository.addAccount(1, 2, 10000)
+      await walletRepository.addAccount(1, 2, 100)
 
       expect(mockTransactionRepository.create).toHaveBeenCalledWith({
         lines: [{
           account_id: 2,
           tag_id: SYSTEM_TAGS.INITIAL,
           sign: '+',
-          amount: 10000,
-          rate: 0
+          amount_int: 100,
+          amount_frac: 0,
+          rate_int: 0,
+          rate_frac: 0,
         }]
       })
     })
@@ -587,7 +595,7 @@ describe('walletRepository', () => {
       expect(result).toEqual(sampleAccount)
     })
 
-    it('creates virtual account when not in same wallet (skips findAnyAccountByCurrency)', async () => {
+    it('creates virtual account when not in same wallet', async () => {
       const virtualAccount = { ...sampleAccount, id: 30, wallet_id: 10, currency_id: 1 }
       const virtualWallet: Wallet = {
         id: 10,
@@ -621,7 +629,6 @@ describe('walletRepository', () => {
 
       mockQueryOne
         .mockResolvedValueOnce(null) // findAccountByCurrency
-        .mockResolvedValueOnce(null) // findAnyAccountByCurrency
         .mockResolvedValueOnce(virtualWallet) // createVirtualAccount - find virtual wallet
         .mockResolvedValueOnce(null) // No existing virtual account
         .mockResolvedValueOnce(virtualAccount) // Created virtual account

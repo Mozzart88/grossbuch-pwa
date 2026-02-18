@@ -40,6 +40,7 @@ vi.mock('../../../services/repositories', () => ({
     findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
     getExchangeRate: vi.fn(),
+    getRateForCurrency: vi.fn(),
     findUsedInAccounts: vi.fn(),
   },
   walletRepository: {
@@ -103,8 +104,10 @@ const mockTransaction: Transaction = {
       account_id: 1,
       tag_id: 10,
       sign: '-' as const,
-      amount: 5000,
-      rate: 0,
+      amount_int: 50,
+      amount_frac: 0,
+      rate_int: 0,
+      rate_frac: 0,
     },
   ],
 }
@@ -180,7 +183,8 @@ describe('EditTransactionPage', () => {
       is_system: true,
       is_fiat: true,
     })
-    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate_int: 1, rate_frac: 0, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 1, frac: 0 })
     mockWalletRepository.findAll.mockResolvedValue([
       {
         id: 1,
@@ -194,7 +198,8 @@ describe('EditTransactionPage', () => {
             currency_id: 1,
             wallet: 'Cash',
             currency: 'USD',
-            balance: 10000,
+            balance_int: 100,
+            balance_frac: 0,
             tags: undefined,
             updated_at: 1704067200,
           },

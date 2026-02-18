@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TransactionItem } from '../../../../components/transactions/TransactionItem'
 import type { TransactionLog } from '../../../../types'
@@ -12,8 +12,11 @@ describe('TransactionItem', () => {
     wallet_color: null,
     currency: 'USD',
     tags: 'food',
-    amount: -5000, // -50.00
-    rate: 0,
+    sign: '-',
+    amount_int: 50,
+    amount_frac: 0,
+    rate_int: 1,
+    rate_frac: 0,
     symbol: '$',
     decimal_places: 2
   }
@@ -23,14 +26,16 @@ describe('TransactionItem', () => {
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
     expect(screen.getByText('Food')).toBeInTheDocument()
-    expect(screen.getByText('$50.00')).toBeInTheDocument()
+    expect(screen.getByText('-$50.00')).toBeInTheDocument()
   })
 
   it('renders income transaction (positive amount)', () => {
     const incomeTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'sale',
-      amount: 100000,
+      sign: '+',
+      amount_int: 1000,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
@@ -44,13 +49,17 @@ describe('TransactionItem', () => {
       {
         ...baseTransaction,
         tags: 'transfer',
-        amount: -5000,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
       },
       {
         ...baseTransaction,
         wallet: 'Bank',
         tags: 'transfer',
-        amount: 5000,
+        sign: '+',
+        amount_int: 50,
+        amount_frac: 0,
       },
     ]
     const onClick = vi.fn()
@@ -67,7 +76,9 @@ describe('TransactionItem', () => {
       {
         ...baseTransaction,
         tags: 'transfer',
-        amount: -5000,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
       },
       {
         ...baseTransaction,
@@ -75,7 +86,9 @@ describe('TransactionItem', () => {
         currency: 'ARS',
         symbol: 'AR$',
         tags: 'transfer',
-        amount: 5000,
+        sign: '+',
+        amount_int: 50,
+        amount_frac: 0,
       },
     ]
     const onClick = vi.fn()
@@ -95,14 +108,18 @@ describe('TransactionItem', () => {
       {
         ...baseTransaction,
         tags: 'exchange',
-        amount: -5000,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
       },
       {
         ...baseTransaction,
         tags: 'exchange',
         currency: 'ARS',
         symbol: 'AR$',
-        amount: 50,
+        sign: '+',
+        amount_int: 0,
+        amount_frac: 500000000000000000, // 0.50
       },
     ]
     const onClick = vi.fn()
@@ -118,7 +135,9 @@ describe('TransactionItem', () => {
       {
         ...baseTransaction,
         tags: 'exchange',
-        amount: -5000,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
       },
       {
         ...baseTransaction,
@@ -126,7 +145,9 @@ describe('TransactionItem', () => {
         wallet: 'Bank',
         currency: 'ARS',
         symbol: 'AR$',
-        amount: 50,
+        sign: '+',
+        amount_int: 0,
+        amount_frac: 500000000000000000, // 0.50
       },
     ]
     const onClick = vi.fn()
@@ -139,7 +160,7 @@ describe('TransactionItem', () => {
       return element?.textContent === 'Cash:$ → Bank:AR$'
     })
     expect(description).toBeInTheDocument()
-    expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
+    expect(screen.getByText('-$50.00 → AR$0.50')).toBeInTheDocument()
   })
 
   it('renders multi-currency expense', () => {
@@ -147,7 +168,9 @@ describe('TransactionItem', () => {
       {
         ...baseTransaction,
         tags: 'exchange',
-        amount: -5000,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
       },
       {
         ...baseTransaction,
@@ -155,7 +178,9 @@ describe('TransactionItem', () => {
         wallet: 'Bank',
         currency: 'ARS',
         symbol: 'AR$',
-        amount: 50,
+        sign: '+',
+        amount_int: 0,
+        amount_frac: 500000000000000000, // 0.50
       },
       {
         ...baseTransaction,
@@ -163,7 +188,9 @@ describe('TransactionItem', () => {
         wallet: 'Bank',
         currency: 'ARS',
         symbol: 'AR$',
-        amount: -50,
+        sign: '-',
+        amount_int: 0,
+        amount_frac: 500000000000000000, // 0.50
       },
     ]
     const onClick = vi.fn()
@@ -185,7 +212,9 @@ describe('TransactionItem', () => {
           {
             ...baseTransaction,
             tags: 'exchange',
-            amount: -5000,
+            sign: '-',
+            amount_int: 50,
+            amount_frac: 0,
           },
           {
             ...baseTransaction,
@@ -193,7 +222,9 @@ describe('TransactionItem', () => {
             wallet: 'Bank',
             currency: 'ARS',
             symbol: 'AR$',
-            amount: 50,
+            sign: '+',
+            amount_int: 0,
+            amount_frac: 500000000000000000, // 0.50
           })
     })
 
@@ -205,7 +236,9 @@ describe('TransactionItem', () => {
           wallet: 'Bank',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: -50,
+          sign: '-',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
         })
 
       const onClick = vi.fn()
@@ -226,7 +259,9 @@ describe('TransactionItem', () => {
           wallet: 'Bank',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: -50,
+          sign: '-',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
         })
 
       const onClick = vi.fn()
@@ -244,7 +279,9 @@ describe('TransactionItem', () => {
           wallet: 'Bank',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: -50,
+          sign: '-',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
         })
       transaction.reverse()
 
@@ -266,7 +303,9 @@ describe('TransactionItem', () => {
           wallet: 'Bank',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: -50,
+          sign: '-',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
         })
       transaction.reverse()
 
@@ -283,7 +322,9 @@ describe('TransactionItem', () => {
       {
         ...baseTransaction,
         tags: 'exchange',
-        amount: -5000,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
         counterparty: 'Amazon',
       },
       {
@@ -292,7 +333,9 @@ describe('TransactionItem', () => {
         wallet: 'Bank',
         currency: 'ARS',
         symbol: 'AR$',
-        amount: 50,
+        sign: '+',
+        amount_int: 0,
+        amount_frac: 500000000000000000, // 0.50
         counterparty: 'Amazon',
       },
       {
@@ -301,7 +344,9 @@ describe('TransactionItem', () => {
         wallet: 'Bank',
         currency: 'ARS',
         symbol: 'AR$',
-        amount: -50,
+        sign: '-',
+        amount_int: 0,
+        amount_frac: 500000000000000000, // 0.50
         counterparty: 'Amazon',
       },
     ]
@@ -326,7 +371,9 @@ describe('TransactionItem', () => {
     const incomeTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'sale',
-      amount: 5000,
+      sign: '+',
+      amount_int: 50,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
@@ -360,31 +407,20 @@ describe('TransactionItem', () => {
     expect(screen.getByText('Cash')).toBeInTheDocument()
   })
 
-  // it('uses provided currency symbol', () => {
-  //   const onClick = vi.fn()
-  //   render(
-  //     <TransactionItem
-  //       transaction={baseTransaction}
-  //       onClick={onClick}
-  //       currencySymbol="€"
-  //     />
-  //   )
-  //
-  //   expect(screen.getByText('-€50.00')).toBeInTheDocument()
-  // })
-
   it('uses default currency symbol when not provided', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
-    expect(screen.getByText('$50.00')).toBeInTheDocument()
+    expect(screen.getByText('-$50.00')).toBeInTheDocument()
   })
 
   it('applies green color for income (positive amount)', () => {
     const incomeTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'sale',
-      amount: 5000,
+      sign: '+',
+      amount_int: 50,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
@@ -397,7 +433,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('$50.00')
+    const amount = screen.getByText('-$50.00')
     expect(amount.className).toContain('text-gray-600')
   })
 
@@ -436,7 +472,9 @@ describe('TransactionItem', () => {
     const initialTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'initial',
-      amount: 100000,
+      sign: '+',
+      amount_int: 1000,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
@@ -449,7 +487,9 @@ describe('TransactionItem', () => {
     const adjustmentTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'adjustment',
-      amount: 5000,
+      sign: '+',
+      amount_int: 50,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
@@ -462,7 +502,9 @@ describe('TransactionItem', () => {
     const initialTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'initial',
-      amount: 100000,
+      sign: '+',
+      amount_int: 1000,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
@@ -475,12 +517,14 @@ describe('TransactionItem', () => {
     const adjustmentTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'adjustment',
-      amount: -5000,
+      sign: '-',
+      amount_int: 50,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('$50.00')
+    const amount = screen.getByText('-$50.00')
     expect(amount.className).toContain('text-slate-500')
   })
 
@@ -488,7 +532,9 @@ describe('TransactionItem', () => {
     const initialTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'initial',
-      amount: 100000,
+      sign: '+',
+      amount_int: 1000,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
@@ -501,7 +547,9 @@ describe('TransactionItem', () => {
     const adjustmentTransaction: TransactionLog = {
       ...baseTransaction,
       tags: 'adjustment',
-      amount: 5000,
+      sign: '+',
+      amount_int: 50,
+      amount_frac: 0,
     }
     const onClick = vi.fn()
     render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
@@ -545,14 +593,18 @@ describe('TransactionItem', () => {
           ...baseTransaction,
           tags: 'transfer',
           wallet_color: '#FF5733',
-          amount: -5000,
+          sign: '-',
+          amount_int: 50,
+          amount_frac: 0,
         },
         {
           ...baseTransaction,
           wallet: 'Bank',
           wallet_color: '#3498DB',
           tags: 'transfer',
-          amount: 5000,
+          sign: '+',
+          amount_int: 50,
+          amount_frac: 0,
         },
       ]
       const onClick = vi.fn()
@@ -570,14 +622,18 @@ describe('TransactionItem', () => {
           ...baseTransaction,
           tags: 'transfer',
           wallet_color: '#FF5733',
-          amount: -5000,
+          sign: '-',
+          amount_int: 50,
+          amount_frac: 0,
         },
         {
           ...baseTransaction,
           wallet: 'Bank',
           wallet_color: null,
           tags: 'transfer',
-          amount: 5000,
+          sign: '+',
+          amount_int: 50,
+          amount_frac: 0,
         },
       ]
       const onClick = vi.fn()
@@ -627,7 +683,9 @@ describe('TransactionItem', () => {
           ...baseTransaction,
           tags: 'exchange',
           wallet_color: '#FF5733',
-          amount: -5000,
+          sign: '-',
+          amount_int: 50,
+          amount_frac: 0,
         },
         {
           ...baseTransaction,
@@ -635,7 +693,9 @@ describe('TransactionItem', () => {
           wallet_color: '#FF5733',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: 50,
+          sign: '+',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
         },
       ]
       const onClick = vi.fn()
@@ -653,7 +713,9 @@ describe('TransactionItem', () => {
           ...baseTransaction,
           tags: 'exchange',
           wallet_color: '#FF5733',
-          amount: -5000,
+          sign: '-',
+          amount_int: 50,
+          amount_frac: 0,
           counterparty: 'Amazon',
         },
         {
@@ -663,7 +725,9 @@ describe('TransactionItem', () => {
           wallet_color: '#3498DB',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: 50,
+          sign: '+',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
           counterparty: 'Amazon',
         },
         {
@@ -673,7 +737,9 @@ describe('TransactionItem', () => {
           wallet_color: '#3498DB',
           currency: 'ARS',
           symbol: 'AR$',
-          amount: -50,
+          sign: '-',
+          amount_int: 0,
+          amount_frac: 500000000000000000, // 0.50
           counterparty: 'Amazon',
         },
       ]
@@ -691,7 +757,9 @@ describe('TransactionItem', () => {
       const initialTransaction: TransactionLog = {
         ...baseTransaction,
         tags: 'initial',
-        amount: 100000,
+        sign: '+',
+        amount_int: 1000,
+        amount_frac: 0,
       }
       const onClick = vi.fn()
       render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
@@ -710,7 +778,9 @@ describe('TransactionItem', () => {
       const adjustmentTransaction: TransactionLog = {
         ...baseTransaction,
         tags: 'adjustment',
-        amount: 5000,
+        sign: '+',
+        amount_int: 50,
+        amount_frac: 0,
       }
       const onClick = vi.fn()
       render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
@@ -729,7 +799,9 @@ describe('TransactionItem', () => {
       const initialTransaction: TransactionLog = {
         ...baseTransaction,
         tags: 'initial',
-        amount: 100000,
+        sign: '+',
+        amount_int: 1000,
+        amount_frac: 0,
       }
       const onClick = vi.fn()
       render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
