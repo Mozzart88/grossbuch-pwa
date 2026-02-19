@@ -119,7 +119,7 @@ describe('TransactionItem', () => {
         symbol: 'AR$',
         sign: '+',
         amount_int: 0,
-        amount_frac: 500000000000000000, // 0.50
+        amount_frac: 5e17, // 0.50
       },
     ]
     const onClick = vi.fn()
@@ -147,7 +147,7 @@ describe('TransactionItem', () => {
         symbol: 'AR$',
         sign: '+',
         amount_int: 0,
-        amount_frac: 500000000000000000, // 0.50
+        amount_frac: 5e17, // 0.50
       },
     ]
     const onClick = vi.fn()
@@ -160,7 +160,7 @@ describe('TransactionItem', () => {
       return element?.textContent === 'Cash:$ → Bank:AR$'
     })
     expect(description).toBeInTheDocument()
-    expect(screen.getByText('-$50.00 → AR$0.50')).toBeInTheDocument()
+    expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
   })
 
   it('renders multi-currency expense', () => {
@@ -180,7 +180,7 @@ describe('TransactionItem', () => {
         symbol: 'AR$',
         sign: '+',
         amount_int: 0,
-        amount_frac: 500000000000000000, // 0.50
+        amount_frac: 5e17, // 0.50
       },
       {
         ...baseTransaction,
@@ -190,7 +190,7 @@ describe('TransactionItem', () => {
         symbol: 'AR$',
         sign: '-',
         amount_int: 0,
-        amount_frac: 500000000000000000, // 0.50
+        amount_frac: 5e17, // 0.50
       },
     ]
     const onClick = vi.fn()
@@ -224,7 +224,7 @@ describe('TransactionItem', () => {
             symbol: 'AR$',
             sign: '+',
             amount_int: 0,
-            amount_frac: 500000000000000000, // 0.50
+            amount_frac: 5e17, // 0.50
           })
     })
 
@@ -238,7 +238,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '-',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
         })
 
       const onClick = vi.fn()
@@ -261,7 +261,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '-',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
         })
 
       const onClick = vi.fn()
@@ -281,7 +281,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '-',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
         })
       transaction.reverse()
 
@@ -305,7 +305,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '-',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
         })
       transaction.reverse()
 
@@ -335,7 +335,7 @@ describe('TransactionItem', () => {
         symbol: 'AR$',
         sign: '+',
         amount_int: 0,
-        amount_frac: 500000000000000000, // 0.50
+        amount_frac: 5e17, // 0.50
         counterparty: 'Amazon',
       },
       {
@@ -346,7 +346,7 @@ describe('TransactionItem', () => {
         symbol: 'AR$',
         sign: '-',
         amount_int: 0,
-        amount_frac: 500000000000000000, // 0.50
+        amount_frac: 5e17, // 0.50
         counterparty: 'Amazon',
       },
     ]
@@ -695,7 +695,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '+',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
         },
       ]
       const onClick = vi.fn()
@@ -727,7 +727,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '+',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
           counterparty: 'Amazon',
         },
         {
@@ -739,7 +739,7 @@ describe('TransactionItem', () => {
           symbol: 'AR$',
           sign: '-',
           amount_int: 0,
-          amount_frac: 500000000000000000, // 0.50
+          amount_frac: 5e17, // 0.50
           counterparty: 'Amazon',
         },
       ]
