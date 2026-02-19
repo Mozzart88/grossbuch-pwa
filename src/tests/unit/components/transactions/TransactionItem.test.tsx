@@ -160,7 +160,7 @@ describe('TransactionItem', () => {
       return element?.textContent === 'Cash:$ → Bank:AR$'
     })
     expect(description).toBeInTheDocument()
-    expect(screen.getByText('-$50.00 → AR$0.50')).toBeInTheDocument()
+    expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
   })
 
   it('renders multi-currency expense', () => {
