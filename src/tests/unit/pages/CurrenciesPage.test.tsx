@@ -11,7 +11,7 @@ vi.mock('../../../services/repositories', () => ({
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
-    setDefault: vi.fn(),
+    setSystem: vi.fn(),
   },
 }))
 
@@ -35,9 +35,7 @@ const mockCurrencies: Currency[] = [
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
-    is_default: true,
+    is_system: true,
     is_fiat: true,
   },
   {
@@ -46,8 +44,6 @@ const mockCurrencies: Currency[] = [
     name: 'Euro',
     symbol: '€',
     decimal_places: 2,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_fiat: true,
   },
   {
@@ -56,8 +52,6 @@ const mockCurrencies: Currency[] = [
     name: 'Bitcoin',
     symbol: '₿',
     decimal_places: 8,
-    created_at: 1704067200,
-    updated_at: 1704067200,
     is_crypto: true,
   },
 ]
@@ -78,7 +72,7 @@ describe('CurrenciesPage', () => {
   }
 
   it('displays loading spinner initially', () => {
-    mockCurrencyRepository.findAll.mockImplementation(() => new Promise(() => {}))
+    mockCurrencyRepository.findAll.mockImplementation(() => new Promise(() => { }))
 
     const { container } = renderWithRouter()
 
@@ -189,7 +183,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('handles set default', async () => {
-    mockCurrencyRepository.setDefault.mockResolvedValue()
+    mockCurrencyRepository.setSystem.mockResolvedValue()
 
     renderWithRouter()
 
@@ -200,7 +194,7 @@ describe('CurrenciesPage', () => {
     fireEvent.click(screen.getAllByText('Set Default')[0])
 
     await waitFor(() => {
-      expect(mockCurrencyRepository.setDefault).toHaveBeenCalled()
+      expect(mockCurrencyRepository.setSystem).toHaveBeenCalled()
     })
   })
 
@@ -235,7 +229,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('creates new currency via form', async () => {
-    mockCurrencyRepository.create.mockResolvedValue(4)
+    mockCurrencyRepository.create.mockResolvedValue(mockCurrencies[2])
 
     renderWithRouter()
 
@@ -265,7 +259,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('converts code to uppercase', async () => {
-    mockCurrencyRepository.create.mockResolvedValue(4)
+    mockCurrencyRepository.create.mockResolvedValue(mockCurrencies[2])
 
     renderWithRouter()
 
@@ -297,7 +291,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('allows selecting fiat or crypto type', async () => {
-    mockCurrencyRepository.create.mockResolvedValue(4)
+    mockCurrencyRepository.create.mockResolvedValue(mockCurrencies[2])
 
     renderWithRouter()
 
@@ -356,7 +350,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('handles load error gracefully', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
     mockCurrencyRepository.findAll.mockRejectedValue(new Error('Load failed'))
 
     renderWithRouter()
@@ -369,7 +363,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('handles delete error', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
     mockCurrencyRepository.delete.mockRejectedValue(new Error('Delete failed'))
 
     renderWithRouter()
@@ -388,7 +382,7 @@ describe('CurrenciesPage', () => {
   })
 
   it('handles save error', async () => {
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
     mockCurrencyRepository.create.mockRejectedValue(new Error('Save failed'))
 
     renderWithRouter()

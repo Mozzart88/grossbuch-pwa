@@ -30,7 +30,8 @@ const mockAccount: Account = {
   id: 1,
   wallet_id: 1,
   currency_id: 1,
-  balance: 150000, // $1,500.00
+  balance_int: 1500,
+  balance_frac: 0,
   updated_at: Date.now(),
   wallet: 'Main Wallet',
   currency: 'USD',
@@ -47,8 +48,12 @@ const createMockTransaction = (overrides: Partial<TransactionLog> = {}): Transac
   symbol: '$',
   decimal_places: 2,
   tags: 'expense',
-  amount: -5000, // -$50.00
-  rate: 100,
+  sign: '-',
+  amount_int: 50,
+  amount_frac: 0,
+  rate_int: 1,
+  rate_frac: 0,
+  wallet_color: null,
   ...overrides,
 })
 
@@ -122,7 +127,7 @@ describe('AccountTransactionList', () => {
     it('shows positive end balance in green', async () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue([])
 
-      renderComponent({ ...mockAccount, balance: 100000 })
+      renderComponent({ ...mockAccount, balance_int: 1000, balance_frac: 0 })
 
       await waitFor(() => {
         // End balance is shown with green color for positive values
@@ -135,11 +140,11 @@ describe('AccountTransactionList', () => {
     it('shows negative end balance in red', async () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue([])
 
-      renderComponent({ ...mockAccount, balance: -50000 })
+      renderComponent({ ...mockAccount, balance_int: -500, balance_frac: 0 })
 
       await waitFor(() => {
         // End balance is shown with red color for negative values
-        const balanceElements = screen.getAllByText('$500.00')
+        const balanceElements = screen.getAllByText('-$500.00')
         const endBalanceElement = balanceElements.find(el => el.classList.contains('text-red-600'))
         expect(endBalanceElement).toBeInTheDocument()
       })
@@ -210,7 +215,7 @@ describe('AccountTransactionList', () => {
         }),
       ]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       renderComponent()
 
@@ -224,7 +229,7 @@ describe('AccountTransactionList', () => {
     it('shows day summary with net change and currency symbol', async () => {
       const transactions = [createMockTransaction()]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       renderComponent()
 
@@ -237,7 +242,7 @@ describe('AccountTransactionList', () => {
     it('shows running balance for each day', async () => {
       const transactions = [createMockTransaction()]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       renderComponent()
 
@@ -255,7 +260,7 @@ describe('AccountTransactionList', () => {
       const today = new Date().toISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       renderComponent()
 
@@ -269,7 +274,7 @@ describe('AccountTransactionList', () => {
       const today = new Date().toISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       const { container } = renderComponent()
 
@@ -292,7 +297,7 @@ describe('AccountTransactionList', () => {
       // Use a date that isn't today so it's not auto-expanded
       const transactions = [createMockTransaction({ date_time: '2026-01-15 10:30:00' })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       const { container } = renderComponent()
 
@@ -321,7 +326,7 @@ describe('AccountTransactionList', () => {
       const today = new Date().toISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       renderComponent()
 
@@ -408,7 +413,7 @@ describe('AccountTransactionList', () => {
       const today = new Date().toISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-5000)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
 
       renderComponent()
 
@@ -440,7 +445,8 @@ describe('AccountTransactionList', () => {
         ...mockAccount,
         symbol: '€',
         decimal_places: 2,
-        balance: 100050, // €1,000.50
+        balance_int: 1000,
+        balance_frac: 500000000000000000, // 0.50 => 1000.50
       }
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue([])
 

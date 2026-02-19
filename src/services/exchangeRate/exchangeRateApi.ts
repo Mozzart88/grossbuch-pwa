@@ -1,5 +1,4 @@
 const API_URL = import.meta.env.VITE_EXCHANGE_API_URL
-const API_KEY = import.meta.env.VITE_EXCHANGE_API_KEY
 const TIMEOUT_MS = 5000
 
 export interface ExchangeRateItem {
@@ -19,6 +18,7 @@ export interface CurrencyListApiResponse {
 
 async function fetchWithTimeout(
   url: string,
+  token: string,
   options: RequestInit = {}
 ): Promise<Response> {
   const controller = new AbortController()
@@ -29,7 +29,7 @@ async function fetchWithTimeout(
       ...options,
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `Bearer ${token}`,
         ...options.headers,
       },
     })
@@ -40,7 +40,8 @@ async function fetchWithTimeout(
 }
 
 export async function getLatestRates(
-  currencies?: string[]
+  currencies: string[] | undefined,
+  token: string
 ): Promise<ExchangeRateApiResponse> {
   const params = new URLSearchParams()
   if (currencies?.length) {
@@ -48,7 +49,7 @@ export async function getLatestRates(
   }
 
   const url = `${API_URL}/latest${params.toString() ? `?${params}` : ''}`
-  const response = await fetchWithTimeout(url)
+  const response = await fetchWithTimeout(url, token)
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`)
@@ -58,7 +59,8 @@ export async function getLatestRates(
 }
 
 export async function getSupportedCurrencies(
-  includeCrypto = false
+  includeCrypto: boolean,
+  token: string
 ): Promise<CurrencyListApiResponse> {
   const params = new URLSearchParams()
   if (includeCrypto) {
@@ -66,7 +68,7 @@ export async function getSupportedCurrencies(
   }
 
   const url = `${API_URL}/currencies${params.toString() ? `?${params}` : ''}`
-  const response = await fetchWithTimeout(url)
+  const response = await fetchWithTimeout(url, token)
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`)
@@ -77,7 +79,8 @@ export async function getSupportedCurrencies(
 
 export async function getHistoricalRates(
   date: string,
-  currencies?: string[]
+  currencies: string[] | undefined,
+  token: string
 ): Promise<ExchangeRateApiResponse> {
   const params = new URLSearchParams()
   params.set('date', date)
@@ -86,7 +89,7 @@ export async function getHistoricalRates(
   }
 
   const url = `${API_URL}/historical?${params}`
-  const response = await fetchWithTimeout(url)
+  const response = await fetchWithTimeout(url, token)
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status} ${response.statusText}`)

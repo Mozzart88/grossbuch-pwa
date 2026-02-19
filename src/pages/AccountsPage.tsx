@@ -6,12 +6,15 @@ import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
 import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
+import { fromIntFrac, toIntFrac } from '../utils/amount'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
+import { useDataRefresh } from '../hooks/useDataRefresh'
 
 export function AccountsPage() {
   const navigate = useNavigate()
   const layoutContext = useLayoutContextSafe()
+  const dataVersion = useDataRefresh()
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -46,7 +49,7 @@ export function AccountsPage() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [dataVersion])
 
   const loadData = async () => {
     try {
@@ -163,23 +166,16 @@ export function AccountsPage() {
       // Parse initial balance (HTML5 input type="number" min="0" ensures valid non-negative input)
       const balanceValue = initialBalance.trim() ? parseFloat(initialBalance) : 0
 
-      // Get decimal places for selected currency to convert to integer
       const currencyId = parseInt(selectedCurrencyId)
       const selectedCurrency = currencies.find(c => c.id === currencyId)
-      const decimalPlaces = selectedCurrency?.decimal_places ?? 2
 
-      // Convert to integer (smallest currency unit)
-      const balanceInteger = balanceValue > 0
-        ? Math.round(balanceValue * Math.pow(10, decimalPlaces))
-        : undefined
-
-      await walletRepository.addAccount(targetWallet.id, currencyId, balanceInteger)
+      await walletRepository.addAccount(targetWallet.id, currencyId, balanceValue > 0 ? balanceValue : undefined)
       showToast('Currency added to wallet', 'success')
       closeCurrencyModal()
       loadData()
 
       // Check if this currency needs an exchange rate
-      const defaultCurrency = currencies.find(c => c.is_default)
+      const defaultCurrency = currencies.find(c => c.is_system)
       if (defaultCurrency && currencyId !== defaultCurrency.id) {
         const existingRate = await currencyRepository.getExchangeRate(currencyId)
         if (!existingRate) {
@@ -255,14 +251,11 @@ export function AccountsPage() {
 
     setSubmitting(true)
     try {
-      const currency = getCurrency(adjustingAccount.currency_id)
-      const decimalPlaces = currency?.decimal_places ?? 2
-
-      // Convert target balance from user input to integer
+      // Convert target balance from user input to IntFrac
       const targetBalanceFloat = parseFloat(targetBalance)
-      const targetBalanceInt = Math.round(targetBalanceFloat * Math.pow(10, decimalPlaces))
+      const { int: targetInt, frac: targetFrac } = toIntFrac(targetBalanceFloat)
 
-      if (targetBalanceInt === adjustingAccount.balance) {
+      if (targetInt === adjustingAccount.balance_int && targetFrac === adjustingAccount.balance_frac) {
         showToast('Balance already matches target', 'info')
         closeAdjustBalanceModal()
         return
@@ -270,8 +263,10 @@ export function AccountsPage() {
 
       await transactionRepository.createBalanceAdjustment(
         adjustingAccount.id,
-        adjustingAccount.balance,
-        targetBalanceInt
+        adjustingAccount.balance_int,
+        adjustingAccount.balance_frac,
+        targetInt,
+        targetFrac,
       )
 
       showToast('Balance adjusted', 'success')
@@ -300,11 +295,9 @@ export function AccountsPage() {
     setSubmitting(true)
     try {
       const rateValue = parseFloat(manualRate)
-      const currency = currencies.find(c => c.id === rateCurrencyId)
-      const decimalPlaces = currency?.decimal_places ?? 2
-      const storedRate = Math.round(rateValue * Math.pow(10, decimalPlaces))
+      const { int: rateInt, frac: rateFrac } = toIntFrac(rateValue)
 
-      await currencyRepository.setExchangeRate(rateCurrencyId, storedRate)
+      await currencyRepository.setExchangeRate(rateCurrencyId, rateInt, rateFrac)
       showToast('Exchange rate saved', 'success')
       closeRateModal()
     } catch (error) {
@@ -315,12 +308,12 @@ export function AccountsPage() {
     }
   }
 
-  const formatBalance = (balance: number, currency: Currency | undefined) => {
-    if (!currency) return balance.toString()
+  const formatBalance = (balanceInt: number, balanceFrac: number, currency: Currency | undefined) => {
+    const value = fromIntFrac(balanceInt, balanceFrac)
+    if (!currency) return value.toString()
     const decimals = currency.decimal_places
-    const displayAmount = Math.abs(balance) / Math.pow(10, decimals)
-    const sign = balance < 0 ? '-' : ''
-    return `${sign}${currency.symbol}${displayAmount.toFixed(decimals)}`
+    const sign = value < 0 ? '-' : ''
+    return `${sign}${currency.symbol}${Math.abs(value).toFixed(decimals)}`
   }
 
   const getCurrency = (currencyId: number) => currencies.find(c => c.id === currencyId)
@@ -399,8 +392,8 @@ export function AccountsPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className={`text-sm font-semibold ${account.balance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {formatBalance(account.balance, currency)}
+                          <p className={`text-sm font-semibold ${fromIntFrac(account.balance_int, account.balance_frac) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {formatBalance(account.balance_int, account.balance_frac, currency)}
                           </p>
                           <div onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu
@@ -503,7 +496,7 @@ export function AccountsPage() {
           {adjustingAccount && (
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Current balance: <strong>{formatBalance(adjustingAccount.balance, getCurrency(adjustingAccount.currency_id))}</strong>
+                Current balance: <strong>{formatBalance(adjustingAccount.balance_int, adjustingAccount.balance_frac, getCurrency(adjustingAccount.currency_id))}</strong>
               </p>
               <Input
                 label="Target Balance"
@@ -534,7 +527,7 @@ export function AccountsPage() {
       <Modal isOpen={rateModalOpen} onClose={closeRateModal} title="Enter Exchange Rate">
         <form onSubmit={handleManualRateSubmit} className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Enter exchange rate for <strong>{rateCurrencyCode}</strong> (in <strong>{currencies.find(c => c.is_default)?.code || 'default currency'}</strong>)
+            Enter exchange rate for <strong>{rateCurrencyCode}</strong> (in <strong>{currencies.find(c => c.is_system)?.code || 'default currency'}</strong>)
           </p>
           <Input
             label="Exchange Rate"

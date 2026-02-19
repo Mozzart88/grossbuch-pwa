@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Set up environment before importing module
 vi.stubEnv('VITE_EXCHANGE_API_URL', 'https://api.example.com')
-vi.stubEnv('VITE_EXCHANGE_API_KEY', 'test-api-key')
 
 // Dynamic import to pick up stubbed env vars
 const { getLatestRates, getSupportedCurrencies, getHistoricalRates } =
@@ -40,13 +39,13 @@ describe('exchangeRateApi', () => {
       }
       mockFetch.mockReturnValue(mockResponse(responseData))
 
-      const result = await getLatestRates()
+      const result = await getLatestRates(undefined, 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/latest',
         expect.objectContaining({
           headers: expect.objectContaining({
-            Authorization: 'Bearer test-api-key',
+            Authorization: 'Bearer my-jwt-token',
           }),
         })
       )
@@ -56,7 +55,7 @@ describe('exchangeRateApi', () => {
     it('includes currencies parameter when provided', async () => {
       mockFetch.mockReturnValue(mockResponse({ rates: [] }))
 
-      await getLatestRates(['EUR', 'GBP'])
+      await getLatestRates(['EUR', 'GBP'], 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/latest?currencies=EUR%2CGBP',
@@ -67,13 +66,13 @@ describe('exchangeRateApi', () => {
     it('throws error on non-ok response', async () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 401))
 
-      await expect(getLatestRates()).rejects.toThrow('API error: 401 Error')
+      await expect(getLatestRates(undefined, 'my-jwt-token')).rejects.toThrow('API error: 401 Error')
     })
 
     it('passes abort signal to fetch', async () => {
       mockFetch.mockReturnValue(mockResponse({ rates: [] }))
 
-      await getLatestRates()
+      await getLatestRates(undefined, 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.any(String),
@@ -89,7 +88,7 @@ describe('exchangeRateApi', () => {
       const responseData = { currencies: { USD: 'US Dollar', EUR: 'Euro' } }
       mockFetch.mockReturnValue(mockResponse(responseData))
 
-      const result = await getSupportedCurrencies()
+      const result = await getSupportedCurrencies(false, 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/currencies',
@@ -101,7 +100,7 @@ describe('exchangeRateApi', () => {
     it('includes crypto parameter when true', async () => {
       mockFetch.mockReturnValue(mockResponse({ currencies: {} }))
 
-      await getSupportedCurrencies(true)
+      await getSupportedCurrencies(true, 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/currencies?crypto=true',
@@ -112,7 +111,7 @@ describe('exchangeRateApi', () => {
     it('throws error on non-ok response', async () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 500))
 
-      await expect(getSupportedCurrencies()).rejects.toThrow('API error: 500')
+      await expect(getSupportedCurrencies(false, 'my-jwt-token')).rejects.toThrow('API error: 500')
     })
   })
 
@@ -125,7 +124,7 @@ describe('exchangeRateApi', () => {
       }
       mockFetch.mockReturnValue(mockResponse(responseData))
 
-      const result = await getHistoricalRates('2025-01-01')
+      const result = await getHistoricalRates('2025-01-01', undefined, 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         'https://api.example.com/historical?date=2025-01-01',
@@ -137,7 +136,7 @@ describe('exchangeRateApi', () => {
     it('includes currencies parameter when provided', async () => {
       mockFetch.mockReturnValue(mockResponse({ rates: [] }))
 
-      await getHistoricalRates('2025-01-01', ['EUR', 'JPY'])
+      await getHistoricalRates('2025-01-01', ['EUR', 'JPY'], 'my-jwt-token')
 
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('date=2025-01-01'),
@@ -152,7 +151,7 @@ describe('exchangeRateApi', () => {
     it('throws error on non-ok response', async () => {
       mockFetch.mockReturnValue(mockResponse({}, false, 404))
 
-      await expect(getHistoricalRates('2025-01-01')).rejects.toThrow(
+      await expect(getHistoricalRates('2025-01-01', undefined, 'my-jwt-token')).rejects.toThrow(
         'API error: 404'
       )
     })

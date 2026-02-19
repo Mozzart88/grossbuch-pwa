@@ -2,6 +2,7 @@ import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Wallet, WalletInput, Account } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { transactionRepository } from './transactionRepository'
+import { toIntFrac } from '../../utils/amount'
 
 export const walletRepository = {
   async findAll(): Promise<Wallet[]> {
@@ -224,13 +225,16 @@ export const walletRepository = {
 
     // Create INITIAL transaction if initialBalance > 0
     if (initialBalance && initialBalance > 0) {
+      const { int: amount_int, frac: amount_frac } = toIntFrac(initialBalance)
       await transactionRepository.create({
         lines: [{
           account_id: account.id,
           tag_id: SYSTEM_TAGS.INITIAL,
           sign: '+',
-          amount: initialBalance,
-          rate: 0  // Will auto-populate from currency rate
+          amount_int,
+          amount_frac,
+          rate_int: 0,
+          rate_frac: 0,  // Will auto-populate from currency rate
         }]
       })
     }

@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { TransactionLog, Account } from '../../types'
 import { transactionRepository } from '../../services/repositories'
 import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
-import { formatCurrency } from '../../utils/formatters'
+import { formatCurrencyValue } from '../../utils/formatters'
+import { fromIntFrac } from '../../utils/amount'
 import { MonthNavigator } from './MonthNavigator'
 import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
 import { useNavigate } from 'react-router-dom'
 import { blobToHex } from '../../utils/blobUtils'
+import { useDataRefresh } from '../../hooks/useDataRefresh'
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -50,6 +52,7 @@ interface AccountTransactionListProps {
 
 export function AccountTransactionList({ account, initialMonth, onMonthChange }: AccountTransactionListProps) {
   const navigate = useNavigate()
+  const dataVersion = useDataRefresh()
   const [month, setMonth] = useState(initialMonth || getCurrentMonth())
   const [transactions, setTransactions] = useState<TransactionLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -62,9 +65,7 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
     return new Set([today])
   })
 
-  const decimalPlaces = account.decimal_places ?? 2
   const symbol = account.symbol ?? '$'
-  const divisor = useMemo(() => Math.pow(10, decimalPlaces), [decimalPlaces])
   const isCurrentMonth = month === getCurrentMonth()
 
   const toggleDate = (date: string) => {
@@ -93,7 +94,7 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
 
   useEffect(() => {
     loadData()
-  }, [month, account.id])
+  }, [month, account.id, dataVersion])
 
   const loadData = async () => {
     setLoading(true)
@@ -119,11 +120,12 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
       // For previous months: endOfMonth = account.balance + (sum of transactions after this month)
       const currentMonth = getCurrentMonth()
       let calculatedEndOfMonth: number
+      const accountBalance = fromIntFrac(account.balance_int, account.balance_frac)
       if (month === currentMonth) {
-        calculatedEndOfMonth = account.balance
+        calculatedEndOfMonth = accountBalance
       } else {
         const transactionsAfterMonth = await transactionRepository.getAccountTransactionsAfterMonth(account.id, month)
-        calculatedEndOfMonth = account.balance - transactionsAfterMonth
+        calculatedEndOfMonth = accountBalance - transactionsAfterMonth
       }
 
       // Calculate start of month balance
@@ -167,16 +169,16 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
         <div className="flex justify-between">
           <div className="flex flex-col">
             <span className="text-xs text-gray-500 dark:text-gray-400">Start of month:</span>
-            <span className={`text-base font-semibold ${startOfMonthBalance / divisor >= 0 ? 'text-gray-700 dark:text-gray-300' : 'text-red-600 dark:text-red-400'}`}>
-              {formatCurrency(startOfMonthBalance / divisor, symbol)}
+            <span className={`text-base font-semibold ${startOfMonthBalance >= 0 ? 'text-gray-700 dark:text-gray-300' : 'text-red-600 dark:text-red-400'}`}>
+              {formatCurrencyValue(startOfMonthBalance, symbol)}
             </span>
           </div>
           <div className="flex flex-col items-end">
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {isCurrentMonth ? 'Current:' : 'End of month:'}
             </span>
-            <span className={`text-base font-semibold ${endOfMonthBalance / divisor >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {formatCurrency(endOfMonthBalance / divisor, symbol)}
+            <span className={`text-base font-semibold ${endOfMonthBalance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+              {formatCurrencyValue(endOfMonthBalance, symbol)}
             </span>
           </div>
         </div>
@@ -196,8 +198,8 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
       ) : (
         <div className="flex-1 overflow-auto">
           {Array.from(groupedTransactions.entries()).map(([date, txns]) => {
-            const daySummary = (daySummaries.get(date) ?? 0) / divisor
-            const runningBalance = (runningBalances.get(date) ?? 0) / divisor
+            const daySummary = daySummaries.get(date) ?? 0
+            const runningBalance = runningBalances.get(date) ?? 0
             const isExpanded = expandedDates.has(date)
 
             return (
@@ -215,11 +217,11 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
                   <div className="flex items-center gap-4">
                     {/* Day balance (net change) */}
                     <span className={`text-sm font-medium ${daySummary > 0 ? 'text-green-600 dark:text-green-400' : daySummary < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
-                      {daySummary > 0 ? '+' : daySummary < 0 ? '-' : ''}{formatCurrency(Math.abs(daySummary), symbol)}
+                      {daySummary > 0 ? '+' : daySummary < 0 ? '-' : ''}{formatCurrencyValue(Math.abs(daySummary), symbol)}
                     </span>
                     {/* Running balance (account balance at end of day) */}
                     <span className={`text-sm font-semibold ${runningBalance >= 0 ? 'text-gray-700 dark:text-gray-300' : 'text-red-600 dark:text-red-400'}`}>
-                      {formatCurrency(runningBalance, symbol)}
+                      {formatCurrencyValue(runningBalance, symbol)}
                     </span>
                   </div>
                 </div>

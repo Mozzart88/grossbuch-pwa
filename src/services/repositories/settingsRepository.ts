@@ -7,8 +7,12 @@ export const settingsRepository = {
     if (!result) return null
 
     // Type conversion based on key
-    if (key === 'default_currency_id' || key === 'default_payment_currency_id') {
-      return parseInt(result.value, 10) as Settings[K]
+    if (key === 'installation_id') {
+      try {
+        return JSON.parse(result.value) as Settings[K]
+      } catch {
+        return result.value as Settings[K]
+      }
     }
     return result.value as Settings[K]
   },
@@ -22,16 +26,6 @@ export const settingsRepository = {
 
   async getAll(): Promise<Partial<Settings>> {
     const settings: Partial<Settings> = {}
-
-    const defaultCurrencyId = await this.get('default_currency_id')
-    if (defaultCurrencyId !== null) {
-      settings.default_currency_id = defaultCurrencyId
-    }
-
-    const defaultPaymentCurrencyId = await this.get('default_payment_currency_id')
-    if (defaultPaymentCurrencyId !== null) {
-      settings.default_payment_currency_id = defaultPaymentCurrencyId
-    }
 
     const theme = await this.get('theme')
     if (theme !== null) {

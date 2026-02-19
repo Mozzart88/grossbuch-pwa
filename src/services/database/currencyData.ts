@@ -37,7 +37,7 @@ const CRYPTO_SYMBOLS: Record<string, string> = {
   BTC: '₿',
   ETH: 'Ξ',
   LTC: 'Ł',
-  USDT: '$T',
+  USDT: '₮',
   USDC: '$C',
   DAI: '$D',
   USDE: '$E',

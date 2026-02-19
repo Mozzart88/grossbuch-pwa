@@ -20,9 +20,9 @@ vi.mock('../../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
-    findDefault: vi.fn(),
+    findSystem: vi.fn(),
     setExchangeRate: vi.fn(),
-    getExchangeRate: vi.fn(),
+    getRateForCurrency: vi.fn(),
     findUsedInAccounts: vi.fn(),
   },
   transactionRepository: {
@@ -47,7 +47,6 @@ import {
   counterpartyRepository,
   currencyRepository,
   transactionRepository,
-  settingsRepository,
 } from '../../../../services/repositories'
 
 const mockWalletRepository = vi.mocked(walletRepository)
@@ -55,13 +54,13 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
-const mockSettingsRepository = vi.mocked(settingsRepository)
 
 const mockAccount: Account = {
   id: 1,
   wallet_id: 1,
   currency_id: 1,
-  balance: 15000,
+  balance_int: 150,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Cash',
   currency: 'USD',
@@ -74,7 +73,8 @@ const mockAccount2: Account = {
   id: 2,
   wallet_id: 2,
   currency_id: 2,
-  balance: 20000,
+  balance_int: 200,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Bank',
   currency: 'EUR',
@@ -86,7 +86,8 @@ const mockVirtualAccount: Account = {
   id: 3,
   wallet_id: 3,
   currency_id: 1,
-  balance: 20000,
+  balance_int: 200,
+  balance_frac: 0,
   updated_at: 1704067200,
   wallet: 'Virtual',
   currency: 'USD',
@@ -117,15 +118,15 @@ const mockWallets: Wallet[] = [
 ]
 
 const mockExpenseTags: Tag[] = [
-  { id: 10, name: 'Food' },
+  { id: 10, name: 'Food', sort_order: 10 },
 ]
 
 const mockIncomeTags: Tag[] = [
-  { id: 20, name: 'Salary' },
+  { id: 20, name: 'Salary', sort_order: 8 },
 ]
 
 const mockCurrencies: Currency[] = [
-  { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_default: true },
+  { id: 1, code: 'USD', name: 'US Dollar', symbol: '$', decimal_places: 2, is_system: true },
   { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2 },
 ]
 
@@ -141,12 +142,11 @@ describe('TransactionForm Editing mode', () => {
     mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
     mockCounterpartyRepository.findAll.mockResolvedValue([])
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
-    mockCurrencyRepository.findDefault.mockResolvedValue(mockCurrencies[0]) // USD is default
-    mockCurrencyRepository.getExchangeRate.mockResolvedValue({ rate: 100, currency_id: 1, updated_at: Date.now() })
+    mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0]) // USD is default
+    mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 1, frac: 0 })
     mockCurrencyRepository.findUsedInAccounts.mockResolvedValue([mockCurrencies[0], mockCurrencies[1]]) // USD and EUR
     mockTransactionRepository.create.mockResolvedValue({} as any)
     mockTransactionRepository.update.mockResolvedValue({} as any)
-    mockSettingsRepository.get.mockResolvedValue(null) // No default payment currency
   })
 
   const renderForm = (initialData?: Transaction) => {
@@ -170,8 +170,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: 10,
           sign: '-',
-          amount: 5000,
-          rate: 0,
+          amount_int: 50,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
           wallet: 'Cash',
           currency: 'USD',
           tag: 'Food',
@@ -201,8 +203,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: 20,
           sign: '+',
-          amount: 100000,
-          rate: 0,
+          amount_int: 1000,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
           wallet: 'Cash',
           currency: 'USD',
           tag: 'Salary',
@@ -231,8 +235,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '-',
-          amount: 2000,
-          rate: 0,
+          amount_int: 20,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
         {
           id: new Uint8Array(8),
@@ -240,8 +246,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1, // To account (simplifying mock wallets)
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '+',
-          amount: 2000,
-          rate: 0,
+          amount_int: 20,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
       ],
     }
@@ -265,8 +273,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: 10,
           sign: '-',
-          amount: 5000,
-          rate: 0,
+          amount_int: 50,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
       ],
     }
@@ -297,8 +307,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: 20,
           sign: '+',
-          amount: 100000,
-          rate: 0,
+          amount_int: 1000,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
       ],
     }
@@ -325,8 +337,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '-',
-          amount: 2000,
-          rate: 0,
+          amount_int: 20,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
         {
           id: new Uint8Array(8),
@@ -334,8 +348,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 2,
           tag_id: SYSTEM_TAGS.TRANSFER,
           sign: '+',
-          amount: 2000,
-          rate: 0,
+          amount_int: 20,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
       ],
     }
@@ -362,8 +378,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 1,
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '-',
-          amount: 10000,
-          rate: 0,
+          amount_int: 100,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
         {
           id: new Uint8Array(8),
@@ -371,8 +389,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 2,
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+',
-          amount: 9200,
-          rate: 0,
+          amount_int: 92,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
       ],
     }
@@ -436,8 +456,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 2,
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '-',
-          amount: 2000,
-          rate: 0,
+          amount_int: 20,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
         {
           id: new Uint8Array(8),
@@ -445,8 +467,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 3, // To account (simplifying mock wallets)
           tag_id: SYSTEM_TAGS.EXCHANGE,
           sign: '+',
-          amount: 2100,
-          rate: 0,
+          amount_int: 21,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
         },
         {
           id: new Uint8Array(8),
@@ -454,8 +478,10 @@ describe('TransactionForm Editing mode', () => {
           account_id: 3, // Virtual account
           tag_id: 10,
           sign: '-',
-          amount: 2100,
-          rate: 0,
+          amount_int: 21,
+          amount_frac: 0,
+          rate_int: 1,
+          rate_frac: 0,
           currency: 'USD', // Payment currency
         },
       ],

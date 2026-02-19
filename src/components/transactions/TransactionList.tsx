@@ -8,6 +8,7 @@ import { TransactionItem } from './TransactionItem'
 import { Spinner } from '../ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { blobToHex } from '../../utils/blobUtils'
+import { useDataRefresh } from '../../hooks/useDataRefresh'
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -52,6 +53,7 @@ export function TransactionList() {
   const tagParam = searchParams.get('tag')
   const counterpartyParam = searchParams.get('counterparty')
   const typeParam = searchParams.get('type') as 'income' | 'expense' | null
+  const dataVersion = useDataRefresh()
 
   const [month, setMonth] = useState(monthParam)
   const [transactions, setTransactions] = useState<TransactionLog[]>([])
@@ -113,13 +115,13 @@ export function TransactionList() {
 
   useEffect(() => {
     loadData()
-  }, [month, tagParam, counterpartyParam, typeParam])
+  }, [month, tagParam, counterpartyParam, typeParam, dataVersion])
 
   const loadData = async () => {
     setLoading(true)
     try {
       // Get default currency for display
-      const defaultCurrency = await currencyRepository.findDefault()
+      const defaultCurrency = await currencyRepository.findSystem()
       const displayCurrencySymbol = defaultCurrency?.symbol ?? '$'
       const decimals = defaultCurrency?.decimal_places ?? 2
 
@@ -152,9 +154,9 @@ export function TransactionList() {
       setTransactions(txns)
       setDecimalPlaces(decimals)
       setSummary({
-        income: monthSum.income / Math.pow(10, decimals),
-        expenses: monthSum.expenses / Math.pow(10, decimals),
-        totalBalance: totalBalance / Math.pow(10, decimals),
+        income: monthSum.income,
+        expenses: monthSum.expenses,
+        totalBalance: totalBalance,
         displayCurrencySymbol,
       })
 
@@ -163,7 +165,7 @@ export function TransactionList() {
       const summaries = await Promise.all(
         dates.map(async (date) => {
           const net = await transactionRepository.getDaySummary(date, filter)
-          return [date, net / Math.pow(10, decimals)] as const
+          return [date, net] as const
         })
       )
       setDaySummaries(new Map(summaries))

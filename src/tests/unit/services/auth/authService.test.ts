@@ -16,6 +16,7 @@ vi.mock('../../../../services/auth/crypto', () => ({
   deriveEncryptionKey: vi.fn().mockResolvedValue({ key: 'mockkey123', salt: 'mocksalt456' }),
   hashPin: vi.fn().mockResolvedValue({ key: 'mockhash789', salt: 'mocksalt456' }),
   generateJwtSalt: vi.fn().mockReturnValue('mockjwtsalt'),
+  generateRSAKeyPair: vi.fn().mockResolvedValue({ publicKey: 'mockpubkey', privateKey: 'mockprivkey' }),
 }))
 
 // Mock sessionToken module
@@ -42,7 +43,7 @@ vi.mock('../../../../services/database/migrations', () => ({
   runMigrations: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { deriveEncryptionKey, hashPin, generateJwtSalt } from '../../../../services/auth/crypto'
+import { deriveEncryptionKey, hashPin, generateJwtSalt, generateRSAKeyPair } from '../../../../services/auth/crypto'
 import { createSessionToken, validateSessionToken, storeSessionToken, getStoredSessionToken, clearSessionToken } from '../../../../services/auth/sessionToken'
 import { checkDatabaseExists, initEncryptedDatabase, rekeyDatabase, wipeDatabase, execSQL, queryOne } from '../../../../services/database/connection'
 import { runMigrations } from '../../../../services/database/migrations'
@@ -50,6 +51,7 @@ import { runMigrations } from '../../../../services/database/migrations'
 const mockDeriveEncryptionKey = vi.mocked(deriveEncryptionKey)
 const mockHashPin = vi.mocked(hashPin)
 const mockGenerateJwtSalt = vi.mocked(generateJwtSalt)
+const mockGenerateRSAKeyPair = vi.mocked(generateRSAKeyPair)
 const mockCreateSessionToken = vi.mocked(createSessionToken)
 const mockValidateSessionToken = vi.mocked(validateSessionToken)
 const mockStoreSessionToken = vi.mocked(storeSessionToken)
@@ -65,7 +67,7 @@ const mockRunMigrations = vi.mocked(runMigrations)
 
 describe('authService', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     localStorage.clear()
     sessionStorage.clear()
 
@@ -73,6 +75,7 @@ describe('authService', () => {
     mockDeriveEncryptionKey.mockResolvedValue({ key: 'mockkey123', salt: 'mocksalt456' })
     mockHashPin.mockResolvedValue({ key: 'mockhash789', salt: 'mocksalt456' })
     mockGenerateJwtSalt.mockReturnValue('mockjwtsalt')
+    mockGenerateRSAKeyPair.mockResolvedValue({ publicKey: 'mockpubkey', privateKey: 'mockprivkey' })
     mockCreateSessionToken.mockResolvedValue('mocktoken')
     mockValidateSessionToken.mockResolvedValue({ iat: Date.now(), exp: Date.now() + 900000 })
     mockGetStoredSessionToken.mockReturnValue('mocktoken')
@@ -185,6 +188,20 @@ describe('authService', () => {
       expect(mockCreateSessionToken).toHaveBeenCalledWith('mockjwtsalt')
       expect(mockStoreSessionToken).toHaveBeenCalledWith('mocktoken')
     })
+
+    it('generates and saves RSA key pair', async () => {
+      await setupPin('mypin123')
+
+      expect(mockGenerateRSAKeyPair).toHaveBeenCalled()
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('public_key'),
+        expect.arrayContaining(['mockpubkey', expect.any(Number)])
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('private_key'),
+        expect.arrayContaining(['mockprivkey', expect.any(Number)])
+      )
+    })
   })
 
   describe('login', () => {
@@ -195,6 +212,7 @@ describe('authService', () => {
         .mockResolvedValueOnce({ value: 'mockhash789' })  // pin_hash - matches hashPin result
         .mockResolvedValueOnce({ value: 'mockjwtsalt' })  // jwt_salt
         .mockResolvedValueOnce({ value: 'mocksalt456' })  // pbkdf2_salt
+        .mockResolvedValueOnce(null)                       // public_key (getPublicKey check)
     })
 
     it('throws error when no salt found', async () => {
@@ -218,6 +236,30 @@ describe('authService', () => {
     it('returns true on successful login', async () => {
       const result = await login('mypin123')
       expect(result).toBe(true)
+    })
+
+    it('generates key pair if not present on login', async () => {
+      await login('mypin123')
+
+      expect(mockGenerateRSAKeyPair).toHaveBeenCalled()
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('public_key'),
+        expect.arrayContaining(['mockpubkey', expect.any(Number)])
+      )
+    })
+
+    it('skips key pair generation if already present on login', async () => {
+      mockQueryOne
+        .mockReset()
+        .mockResolvedValueOnce({ value: 'mockhash789' })  // pin_hash
+        .mockResolvedValueOnce({ value: 'mockjwtsalt' })  // jwt_salt
+        .mockResolvedValueOnce({ value: 'mocksalt456' })  // pbkdf2_salt
+        .mockResolvedValueOnce({ value: 'existing-pub-key' })  // public_key exists
+        .mockResolvedValue(null)
+
+      await login('mypin123')
+
+      expect(mockGenerateRSAKeyPair).not.toHaveBeenCalled()
     })
 
     it('returns false on wrong PIN', async () => {

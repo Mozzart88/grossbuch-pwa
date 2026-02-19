@@ -11,7 +11,8 @@ interface AccountView {
   symbol: string
   decimal_places: number
   tags: string | null
-  balance: number
+  balance_int: number
+  balance_frac: number
   updated_at: number
 }
 
@@ -122,7 +123,6 @@ export const accountRepository = {
     }
 
     // Delete any INITIAL transactions for this account (allowed)
-    // First get the trx_ids to delete the parent trx records
     const initialTrxIds = await querySQL<{ trx_id: Uint8Array }>(
       'SELECT trx_id FROM trx_base WHERE account_id = ? AND tag_id = ?',
       [id, SYSTEM_TAGS.INITIAL]
@@ -136,30 +136,21 @@ export const accountRepository = {
   },
 
   // Calculate total balance across all accounts in default currency
-  // Rate stored as: value * 10^decimal_places (integer)
-  // Conversion: (balance * divisor) / (rate * divisor) * 10^def_decimal_places
   async getTotalBalance(): Promise<number> {
     const result = await queryOne<{ total: number }>(`
-      WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )
       SELECT
         COALESCE(SUM(
-          (a.balance * cd.divisor) / (COALESCE(
-            (SELECT er.rate FROM exchange_rate er
+          (a.balance_int + a.balance_frac * 1e-18)
+          / (COALESCE(
+            (SELECT (er.rate_int + er.rate_frac * 1e-18) FROM exchange_rate er
              WHERE er.currency_id = a.currency_id
              ORDER BY er.updated_at DESC LIMIT 1),
-            power(10, c.decimal_places)
-          ) * cd.divisor) * power(10, def.decimal_places)
+            1.0
+          ))
         ), 0) as total
       FROM account a
       JOIN currency c ON a.currency_id = c.id
-      JOIN curr_dec cd ON a.currency_id = cd.currency_id
-      CROSS JOIN (SELECT decimal_places FROM currency
-        JOIN currency_to_tags ON currency.id = currency_to_tags.currency_id
-        WHERE tag_id = ? LIMIT 1) def
-    `, [SYSTEM_TAGS.DEFAULT])
+    `)
 
     return result?.total ?? 0
   },
@@ -168,7 +159,7 @@ export const accountRepository = {
   async getWalletBalance(walletId: number): Promise<number> {
     const result = await queryOne<{ total: number }>(`
       SELECT
-        COALESCE(SUM(balance), 0) as total
+        COALESCE(SUM(balance_int + balance_frac * 1e-18), 0) as total
       FROM account
       WHERE wallet_id = ?
     `, [walletId])
@@ -178,23 +169,28 @@ export const accountRepository = {
 
   // Convert amount from one currency to another using exchange rates
   async convertAmount(
-    amount: number,
+    amountInt: number,
+    amountFrac: number,
     fromCurrencyId: number,
     toCurrencyId: number
-  ): Promise<number> {
+  ): Promise<{ int: number; frac: number }> {
     if (fromCurrencyId === toCurrencyId) {
-      return amount
+      return { int: amountInt, frac: amountFrac }
     }
 
     const fromRate = await currencyRepository.getExchangeRate(fromCurrencyId)
     const toRate = await currencyRepository.getExchangeRate(toCurrencyId)
 
     if (!fromRate || !toRate) {
-      // No exchange rate available, return original amount
-      return amount
+      return { int: amountInt, frac: amountFrac }
     }
 
-    // Convert: amount * (fromRate / toRate)
-    return Math.round((amount * fromRate.rate) / toRate.rate)
+    const amount = amountInt + amountFrac / 1e18
+    const fromRateVal = fromRate.rate_int + fromRate.rate_frac / 1e18
+    const toRateVal = toRate.rate_int + toRate.rate_frac / 1e18
+    const converted = amount * fromRateVal / toRateVal
+    const resultInt = Math.floor(converted)
+    const resultFrac = Math.round((converted - resultInt) * 1e18)
+    return { int: resultInt, frac: resultFrac }
   },
 }

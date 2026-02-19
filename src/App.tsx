@@ -5,7 +5,13 @@ import { ThemeProvider } from './store/ThemeContext'
 import { LayoutProvider } from './store/LayoutContext'
 import { ToastProvider, Spinner } from './components/ui'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
+import { useSyncPull } from './hooks/useSyncPull'
+import { useSyncInit } from './hooks/useSyncInit'
+import { SyncProvider } from './contexts/SyncContext'
+import { useInstallation } from './hooks/useInstallation'
+import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
+import { ShareLinkCapture } from './components/ShareLinkCapture'
 import {
   TransactionsPage,
   AddTransactionPage,
@@ -27,7 +33,19 @@ import {
   PinLoginPage,
   ChangePinPage,
   MigrationPage,
+  InstallPage,
+  SharePage,
 } from './pages'
+
+function InstallGate({ children }: { children: React.ReactNode }) {
+  const { isInstalled } = useInstallation()
+
+  if (!isInstalled) {
+    return <InstallPage />
+  }
+
+  return <>{children}</>
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { status } = useAuth()
@@ -66,6 +84,15 @@ function AppContent() {
 
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
+
+  // Register installation with backend API
+  useInstallationRegistration({ enabled: isReady })
+
+  // Pull sync data on route changes
+  useSyncPull({ enabled: isReady })
+
+  // Poll for init handshake packages on route changes
+  useSyncInit({ enabled: isReady })
 
   if (error) {
     return (
@@ -112,6 +139,7 @@ function AppContent() {
         <Route path="/settings/tags" element={<TagsPage />} />
         <Route path="/settings/budgets" element={<BudgetsPage />} />
         <Route path="/settings/security" element={<ChangePinPage />} />
+        <Route path="/settings/share" element={<SharePage />} />
       </Routes>
     </AppLayout>
   )
@@ -122,15 +150,21 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <ToastProvider>
-          <DatabaseProvider>
-            <AuthProvider>
-              <AuthGate>
-                <LayoutProvider>
-                  <AppContent />
-                </LayoutProvider>
-              </AuthGate>
-            </AuthProvider>
-          </DatabaseProvider>
+          <ShareLinkCapture>
+          <InstallGate>
+            <DatabaseProvider>
+              <AuthProvider>
+                <AuthGate>
+                  <LayoutProvider>
+                    <SyncProvider>
+                      <AppContent />
+                    </SyncProvider>
+                  </LayoutProvider>
+                </AuthGate>
+              </AuthProvider>
+            </DatabaseProvider>
+          </InstallGate>
+          </ShareLinkCapture>
         </ToastProvider>
       </ThemeProvider>
     </BrowserRouter>

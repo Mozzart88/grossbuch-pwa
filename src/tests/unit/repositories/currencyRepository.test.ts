@@ -29,14 +29,14 @@ describe('currencyRepository', () => {
     name: 'US Dollar',
     symbol: '$',
     decimal_places: 2,
-    is_default: true,
+    is_system: true,
     is_fiat: true,
     is_crypto: false,
   }
 
   describe('findAll', () => {
     it('returns all currencies with tag info ordered by default status and name', async () => {
-      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR', is_default: false }]
+      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR', is_system: false }]
       mockQuerySQL.mockResolvedValue(currencies)
 
       const result = await currencyRepository.findAll()
@@ -58,7 +58,7 @@ describe('currencyRepository', () => {
 
   describe('findUsedInAccounts', () => {
     it('returns currencies linked to accounts with tag info', async () => {
-      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR', is_default: false }]
+      const currencies = [sampleCurrency, { ...sampleCurrency, id: 2, code: 'EUR', is_system: false }]
       mockQuerySQL.mockResolvedValue(currencies)
 
       const result = await currencyRepository.findUsedInAccounts()
@@ -134,22 +134,43 @@ describe('currencyRepository', () => {
     })
   })
 
-  describe('findDefault', () => {
-    it('returns default currency', async () => {
+  describe('findSystem', () => {
+    it('returns system currency', async () => {
       mockQueryOne.mockResolvedValue(sampleCurrency)
 
-      const result = await currencyRepository.findDefault()
+      const result = await currencyRepository.findSystem()
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE is_default = 1')
+        expect.stringContaining('WHERE is_system = 1')
       )
       expect(result).toEqual(sampleCurrency)
     })
 
-    it('returns null when no default currency', async () => {
+    it('returns null when no system currency', async () => {
       mockQueryOne.mockResolvedValue(null)
 
-      const result = await currencyRepository.findDefault()
+      const result = await currencyRepository.findSystem()
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('findPaymentDefault', () => {
+    it('returns payment default currency', async () => {
+      mockQueryOne.mockResolvedValue(sampleCurrency)
+
+      const result = await currencyRepository.findPaymentDefault()
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE is_payment_default = 1')
+      )
+      expect(result).toEqual(sampleCurrency)
+    })
+
+    it('returns null when no payment default currency', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.findPaymentDefault()
 
       expect(result).toBeNull()
     })
@@ -322,13 +343,43 @@ describe('currencyRepository', () => {
     })
   })
 
-  describe('setDefault', () => {
-    it('sets currency as default via tag', async () => {
-      await currencyRepository.setDefault(2)
+  describe('setSystem', () => {
+    it('sets currency as system via tag and also sets payment default', async () => {
+      await currencyRepository.setSystem(2)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [2, SYSTEM_TAGS.SYSTEM]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [2, SYSTEM_TAGS.DEFAULT]
+      )
+    })
+  })
+
+  describe('setPaymentDefault', () => {
+    it('sets currency as payment default via tag', async () => {
+      await currencyRepository.setPaymentDefault(2)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
         [2, SYSTEM_TAGS.DEFAULT]
+      )
+    })
+  })
+
+  describe('clearPaymentDefault', () => {
+    it('removes payment default tag and re-adds to system currency', async () => {
+      await currencyRepository.clearPaymentDefault()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM currency_to_tags WHERE tag_id = ?',
+        [SYSTEM_TAGS.DEFAULT]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO currency_to_tags (currency_id, tag_id) SELECT currency_id, ? FROM currency_to_tags WHERE tag_id = ?',
+        [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.SYSTEM]
       )
     })
   })
@@ -364,7 +415,7 @@ describe('currencyRepository', () => {
 
   describe('getExchangeRate', () => {
     it('returns latest exchange rate for currency', async () => {
-      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
+      const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
       mockQueryOne.mockResolvedValue(rate)
 
       const result = await currencyRepository.getExchangeRate(2)
@@ -388,8 +439,8 @@ describe('currencyRepository', () => {
   describe('getAllExchangeRates', () => {
     it('returns latest exchange rate for each currency', async () => {
       const rates: ExchangeRate[] = [
-        { currency_id: 2, rate: 11500, updated_at: 1704067200 },
-        { currency_id: 3, rate: 12800, updated_at: 1704067200 },
+        { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 },
+        { currency_id: 3, rate_int: 1, rate_frac: 280000000000000000, updated_at: 1704067200 },
       ]
       mockQuerySQL.mockResolvedValue(rates)
 
@@ -401,62 +452,53 @@ describe('currencyRepository', () => {
   })
 
   describe('setExchangeRate', () => {
-    it('inserts new exchange rate', async () => {
-      await currencyRepository.setExchangeRate(2, 11500)
+    it('inserts new exchange rate with int and frac', async () => {
+      await currencyRepository.setExchangeRate(2, 1, 150000000000000000)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO exchange_rate (currency_id, rate) VALUES (?, ?)',
-        [2, 11500]
+        'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
+        [2, 1, 150000000000000000]
       )
     })
   })
 
   describe('getRateForCurrency', () => {
-    it('returns latest exchange rate for currency', async () => {
-      const rate: ExchangeRate = { currency_id: 2, rate: 11500, updated_at: 1704067200 }
-      mockQueryOne.mockResolvedValue(rate)
+    it('returns latest exchange rate for currency as IntFrac', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
+      // First call: findById returns non-system currency
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, is_system: false })
+      // Second call: getExchangeRate returns rate
+      mockQueryOne.mockResolvedValueOnce(rate)
 
       const result = await currencyRepository.getRateForCurrency(2)
 
-      expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('FROM exchange_rate'),
-        [2]
-      )
-      expect(result).toEqual(rate.rate)
+      expect(result).toEqual({ int: 1, frac: 150000000000000000 })
     })
 
-    it('returns 100 when currency is default', async () => {
-      mockQueryOne.mockResolvedValue({ is_default: true, decimal_places: 2 })
+    it('returns {int: 1, frac: 0} when currency is system', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleCurrency, is_system: true })
 
       const result = await currencyRepository.getRateForCurrency(1)
 
-      expect(result).toEqual(100)
+      expect(result).toEqual({ int: 1, frac: 0 })
     })
 
-    it('returns 100 when no currency', async () => {
+    it('returns {int: 1, frac: 0} when no currency found', async () => {
       mockQueryOne.mockResolvedValue(null)
 
       const result = await currencyRepository.getRateForCurrency(1)
 
-      expect(result).toEqual(100)
+      expect(result).toEqual({ int: 1, frac: 0 })
     })
 
-    it('returns 100 when no rate for currency', async () => {
-      mockQueryOne.mockResolvedValueOnce({ decimal_places: 2 })
+    it('returns {int: 1, frac: 0} when no rate for currency', async () => {
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, is_system: false })
       mockQueryOne.mockResolvedValueOnce(null)
 
-      const result = await currencyRepository.getRateForCurrency(1)
+      const result = await currencyRepository.getRateForCurrency(2)
 
       expect(mockQueryOne).toHaveBeenCalledTimes(2)
-      expect(mockQueryOne).toHaveBeenLastCalledWith(
-        expect.stringContaining('FROM exchange_rate'),
-        [1]
-      )
-
-      // expect(mockQueryOne.mock.results[1]).toBeNull()
-      expect(mockQueryOne).toHaveLastResolvedWith(null)
-
-      expect(result).toEqual(100)
+      expect(result).toEqual({ int: 1, frac: 0 })
     })
   })
 

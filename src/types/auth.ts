@@ -37,10 +37,20 @@ export interface AuthSettings {
   pin_hash: string      // PBKDF2 hash of PIN for verification
   jwt_salt: string      // Salt for JWT token signing
   pbkdf2_salt: string   // Salt for PBKDF2 key derivation
+  public_key?: string   // base64url-encoded RSA public key (SPKI)
+  private_key?: string  // base64url-encoded RSA private key (PKCS8)
+}
+
+// RSA key pair for asymmetric encryption
+export interface KeyPair {
+  publicKey: string   // base64url-encoded SPKI
+  privateKey: string  // base64url-encoded PKCS8
 }
 
 // Storage keys
 export const AUTH_STORAGE_KEYS = {
   PBKDF2_SALT: 'gb_pbkdf2_salt',
   SESSION_TOKEN: 'gb_session_token',
+  SHARED_UUID: 'gb_shared_uuid',
+  SHARED_PUBLIC_KEY: 'gb_shared_public_key',
 } as const

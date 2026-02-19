@@ -25,8 +25,10 @@ const sampleBudget: Budget = {
     start: 1704067200, // Jan 1, 2024
     end: 1706745600, // Feb 1, 2024
     tag_id: SYSTEM_TAGS.FOOD,
-    amount: 50000, // $500.00
+    amount_int: 500,
+    amount_frac: 0,
     tag: 'food',
+    actual: 0,
 }
 
 describe('budgetRepository', () => {
@@ -90,41 +92,30 @@ describe('budgetRepository', () => {
 
     describe('findByMonth', () => {
         it('returns budgets for specified month', async () => {
-            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 25000 }])
+            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 250.00 }])
 
             const result = await budgetRepository.findByMonth('2024-01')
 
             expect(mockQuerySQL).toHaveBeenCalledWith(
                 expect.stringContaining('WHERE b.start >= ? AND b.start < ?'),
-                expect.arrayContaining([SYSTEM_TAGS.DEFAULT, expect.any(Number), expect.any(Number)])
+                expect.arrayContaining([expect.any(Number), expect.any(Number)])
             )
-            expect(result[0].actual).toBe(25000)
+            expect(result[0].actual).toBe(250.00)
         })
 
-        it('calculates actual spending with currency conversion', async () => {
+        it('calculates actual spending with int/frac conversion', async () => {
             mockQuerySQL.mockResolvedValue([])
 
             await budgetRepository.findByMonth('2024-01')
 
-            // Verify currency conversion formula is used
+            // Verify int/frac conversion formula is used
             expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('curr_dec'),
+                expect.stringContaining('amount_int'),
                 expect.anything()
             )
             expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('tb.rate'),
+                expect.stringContaining('rate_int'),
                 expect.anything()
-            )
-        })
-
-        it('passes SYSTEM_TAGS.DEFAULT for default currency lookup', async () => {
-            mockQuerySQL.mockResolvedValue([])
-
-            await budgetRepository.findByMonth('2024-01')
-
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('currency_to_tags'),
-                expect.arrayContaining([SYSTEM_TAGS.DEFAULT])
             )
         })
     })
@@ -145,44 +136,44 @@ describe('budgetRepository', () => {
 
     describe('findActive', () => {
         it('returns budgets for current period', async () => {
-            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 10000 }])
+            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 100.00 }])
 
             const result = await budgetRepository.findActive()
 
             expect(mockQuerySQL).toHaveBeenCalledWith(
                 expect.stringContaining('WHERE b.start <= ? AND b.end > ?'),
-                expect.arrayContaining([SYSTEM_TAGS.DEFAULT, expect.any(Number), expect.any(Number)])
+                expect.arrayContaining([expect.any(Number), expect.any(Number)])
             )
             expect(result).toHaveLength(1)
         })
 
         it('includes actual spending in results', async () => {
-            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 30000 }])
+            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 300.00 }])
 
             const result = await budgetRepository.findActive()
 
-            expect(result[0].actual).toBe(30000)
+            expect(result[0].actual).toBe(300.00)
         })
 
-        it('uses currency conversion formula for actual calculation', async () => {
+        it('uses int/frac conversion formula for actual calculation', async () => {
             mockQuerySQL.mockResolvedValue([])
 
             await budgetRepository.findActive()
 
             expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('curr_dec'),
+                expect.stringContaining('amount_int'),
                 expect.anything()
             )
             expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('currency_to_tags'),
-                expect.arrayContaining([SYSTEM_TAGS.DEFAULT])
+                expect.stringContaining('rate_int'),
+                expect.anything()
             )
         })
     })
 
     describe('getSummary', () => {
         it('returns budget summary from view', async () => {
-            const summary: BudgetSummary[] = [{ tag: 'food', amount: 50000, actual: 25000 }]
+            const summary: BudgetSummary[] = [{ tag: 'food', amount_int: 500, amount_frac: 0, actual: 250.00 }]
             mockQuerySQL.mockResolvedValue(summary)
 
             const result = await budgetRepository.getSummary()
@@ -196,7 +187,8 @@ describe('budgetRepository', () => {
         it('creates a new budget', async () => {
             const input: BudgetInput = {
                 tag_id: SYSTEM_TAGS.FOOD,
-                amount: 50000,
+                amount_int: 500,
+                amount_frac: 0,
             }
 
             mockQueryOne
@@ -207,15 +199,16 @@ describe('budgetRepository', () => {
 
             expect(mockExecSQL).toHaveBeenCalledWith(
                 expect.stringContaining('INSERT INTO budget'),
-                expect.arrayContaining([SYSTEM_TAGS.FOOD, 50000])
+                expect.arrayContaining([SYSTEM_TAGS.FOOD, 500, 0])
             )
-            expect(result.amount).toBe(50000)
+            expect(result.amount_int).toBe(500)
         })
 
         it('uses provided start and end dates', async () => {
             const input: BudgetInput = {
                 tag_id: SYSTEM_TAGS.FOOD,
-                amount: 50000,
+                amount_int: 500,
+                amount_frac: 0,
                 start: 1704067200,
                 end: 1706745600,
             }
@@ -228,14 +221,15 @@ describe('budgetRepository', () => {
 
             expect(mockExecSQL).toHaveBeenCalledWith(
                 expect.stringContaining('INSERT INTO budget'),
-                [SYSTEM_TAGS.FOOD, 50000, 1704067200, 1706745600]
+                [SYSTEM_TAGS.FOOD, 500, 0, 1704067200, 1706745600]
             )
         })
 
         it('throws error when budget already exists for tag and period', async () => {
             const input: BudgetInput = {
                 tag_id: SYSTEM_TAGS.FOOD,
-                amount: 50000,
+                amount_int: 500,
+                amount_frac: 0,
             }
 
             mockQueryOne.mockResolvedValueOnce(sampleBudget) // existing found
@@ -248,7 +242,8 @@ describe('budgetRepository', () => {
         it('throws error when creation fails', async () => {
             const input: BudgetInput = {
                 tag_id: SYSTEM_TAGS.FOOD,
-                amount: 50000,
+                amount_int: 500,
+                amount_frac: 0,
             }
 
             mockQueryOne
@@ -262,20 +257,20 @@ describe('budgetRepository', () => {
     })
 
     describe('update', () => {
-        it('updates budget amount', async () => {
-            mockQueryOne.mockResolvedValue({ ...sampleBudget, amount: 75000 })
+        it('updates budget amount_int', async () => {
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, amount_int: 750, actual: 0 })
 
-            const result = await budgetRepository.update(mockId(), { amount: 75000 })
+            const result = await budgetRepository.update(mockId(), { amount_int: 750 })
 
             expect(mockExecSQL).toHaveBeenCalledWith(
-                expect.stringContaining('amount = ?'),
-                expect.arrayContaining([75000, mockHexId])
+                expect.stringContaining('amount_int = ?'),
+                expect.arrayContaining([750, mockHexId])
             )
-            expect(result.amount).toBe(75000)
+            expect(result.amount_int).toBe(750)
         })
 
         it('updates budget tag_id', async () => {
-            mockQueryOne.mockResolvedValue({ ...sampleBudget, tag_id: SYSTEM_TAGS.TRANSPORT })
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, tag_id: SYSTEM_TAGS.TRANSPORT, actual: 0 })
 
             await budgetRepository.update(mockId(), { tag_id: SYSTEM_TAGS.TRANSPORT })
 
@@ -286,7 +281,7 @@ describe('budgetRepository', () => {
         })
 
         it('updates budget date range', async () => {
-            mockQueryOne.mockResolvedValue(sampleBudget)
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 0 })
 
             await budgetRepository.update(mockId(), { start: 1707350400, end: 1709856000 })
 
@@ -300,7 +295,7 @@ describe('budgetRepository', () => {
             mockQueryOne.mockResolvedValue(null)
 
             await expect(
-                budgetRepository.update(mockId(), { amount: 75000 })
+                budgetRepository.update(mockId(), { amount_int: 750 })
             ).rejects.toThrow('Budget not found')
         })
     })
@@ -336,35 +331,35 @@ describe('budgetRepository', () => {
 
     describe('findWithActual', () => {
         it('returns budget with actual spending', async () => {
-            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 35000 })
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 350.00 })
 
             const result = await budgetRepository.findWithActual(mockId())
 
-            expect(result?.actual).toBe(35000)
+            expect(result?.actual).toBe(350.00)
         })
 
-        it('calculates actual from trx_base with currency conversion', async () => {
+        it('calculates actual from trx_base with int/frac conversion', async () => {
             mockQueryOne.mockResolvedValue(sampleBudget)
 
             await budgetRepository.findWithActual(mockId())
 
             expect(mockQueryOne).toHaveBeenCalledWith(
                 expect.stringContaining('FROM trx_base tb'),
-                [SYSTEM_TAGS.DEFAULT, mockHexId]
+                [mockHexId]
             )
         })
 
-        it('uses currency conversion formula', async () => {
+        it('uses int/frac conversion formula', async () => {
             mockQueryOne.mockResolvedValue(sampleBudget)
 
             await budgetRepository.findWithActual(mockId())
 
             expect(mockQueryOne).toHaveBeenCalledWith(
-                expect.stringContaining('curr_dec'),
+                expect.stringContaining('amount_int'),
                 expect.anything()
             )
             expect(mockQueryOne).toHaveBeenCalledWith(
-                expect.stringContaining('tb.rate'),
+                expect.stringContaining('rate_int'),
                 expect.anything()
             )
         })

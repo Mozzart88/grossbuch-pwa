@@ -3,19 +3,19 @@ import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Card, Select } from '../components/ui'
 import { useTheme } from '../store/ThemeContext'
-import { currencyRepository, settingsRepository } from '../services/repositories'
+import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 
 const settingsLinks = [
   { to: '/settings/accounts', label: 'Accounts', icon: '🏦', description: 'Manage your wallets and accounts' },
   { to: '/settings/tags', label: 'Tags', icon: '🏷️', description: 'Organize your transactions' },
   { to: '/settings/counterparties', label: 'Counterparties', icon: '👥', description: 'Track who you transact with' },
-  { to: '/settings/currencies', label: 'Currencies', icon: '💱', description: 'Manage currency options' },
-  { to: '/settings/exchange-rates', label: 'Exchange Rates', icon: '📈', description: 'Set currency exchange rates' },
+{ to: '/settings/exchange-rates', label: 'Exchange Rates', icon: '📈', description: 'Set currency exchange rates' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
   { to: '/settings/import', label: 'Import Data', icon: '📥', description: 'Import transactions from CSV' },
   { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
   { to: '/settings/security', label: 'Security', icon: '🔒', description: 'Change PIN and security settings' },
+  { to: '/settings/share', label: 'Share', icon: '🔗', description: 'Share app with a link or QR code' },
 ]
 
 export function SettingsPage() {
@@ -31,21 +31,19 @@ export function SettingsPage() {
 
   const loadSettings = async () => {
     try {
-      const [currencyList, settings] = await Promise.all([
-        currencyRepository.findAll(),
-        settingsRepository.getAll(),
-      ])
+      const currencyList = await currencyRepository.findAll()
       setCurrencies(currencyList)
 
-      // Find default display currency
-      const defaultCurrency = currencyList.find(c => c.is_default)
-      if (defaultCurrency) {
-        setDisplayCurrencyId(defaultCurrency.id.toString())
+      // Find system currency
+      const systemCurrency = currencyList.find(c => c.is_system)
+      if (systemCurrency) {
+        setDisplayCurrencyId(systemCurrency.id.toString())
       }
 
-      // Load payment currency setting
-      if (settings.default_payment_currency_id) {
-        setPaymentCurrencyId(settings.default_payment_currency_id.toString())
+      // Find payment default currency
+      const paymentDefault = currencyList.find(c => c.is_payment_default)
+      if (paymentDefault && !paymentDefault.is_system) {
+        setPaymentCurrencyId(paymentDefault.id.toString())
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -58,9 +56,9 @@ export function SettingsPage() {
     const newId = e.target.value
     setDisplayCurrencyId(newId)
     try {
-      await currencyRepository.setDefault(parseInt(newId))
+      await currencyRepository.setSystem(parseInt(newId))
     } catch (error) {
-      console.error('Failed to set default currency:', error)
+      console.error('Failed to set system currency:', error)
     }
   }
 
@@ -69,9 +67,9 @@ export function SettingsPage() {
     setPaymentCurrencyId(newId)
     try {
       if (newId) {
-        await settingsRepository.set('default_payment_currency_id', parseInt(newId))
+        await currencyRepository.setPaymentDefault(parseInt(newId))
       } else {
-        await settingsRepository.delete('default_payment_currency_id')
+        await currencyRepository.clearPaymentDefault()
       }
     } catch (error) {
       console.error('Failed to set payment currency:', error)

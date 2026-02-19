@@ -22,7 +22,8 @@ vi.mock('../../../services/repositories/accountRepository', () => ({
     findById: vi.fn().mockResolvedValue({
       id: 1,
       currency_id: 1,
-      balance: 0,
+      balance_int: 0,
+      balance_frac: 0,
     }),
   },
 }))
@@ -30,7 +31,7 @@ vi.mock('../../../services/repositories/accountRepository', () => ({
 // Mock the currencyRepository (used by addLine for rate lookup)
 vi.mock('../../../services/repositories/currencyRepository', () => ({
   currencyRepository: {
-    getRateForCurrency: vi.fn().mockResolvedValue(100),
+    getRateForCurrency: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
   },
 }))
 
@@ -54,8 +55,11 @@ const sampleTransactionLog: TransactionLog = {
   wallet_color: '#fff',
   currency: 'USD',
   tags: 'food',
-  amount: -5000,
-  rate: 0,
+  amount_int: 50,
+  amount_frac: 0,
+  sign: '-',
+  rate_int: 1,
+  rate_frac: 0,
   symbol: '$',
   decimal_places: 2
 }
@@ -67,8 +71,10 @@ const sampleLine: TransactionLine = {
   account_id: 1,
   tag_id: 10, // food
   sign: '-',
-  amount: 5000,
-  rate: 0,
+  amount_int: 50,
+  amount_frac: 0,
+  rate_int: 1,
+  rate_frac: 0,
   wallet: 'Cash',
   currency: 'USD',
   tag: 'food',
@@ -268,17 +274,18 @@ describe('transactionRepository', () => {
     it('returns MonthlyTagsSummary ', async () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
 
+      const startTs = Math.floor(new Date(`2025-01-01T00:00:00`).getTime() / 1000)
+      const endDate = new Date(`2025-01-01`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const endTs = Math.floor(endDate.getTime() / 1000)
+
       const result = await transactionRepository.getMonthlyTagsSummary('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining(`WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )`),
+        expect.stringContaining('amount_int'),
         expect.arrayContaining([
-
-          1735700400,
-          1738368000,
+          startTs,
+          endTs,
         ])
       )
 
@@ -287,20 +294,21 @@ describe('transactionRepository', () => {
   })
 
   describe('getMonthlyCounterpartiesSummary', () => {
-    it('returns MonthlyTagsSummary ', async () => {
+    it('returns MonthlyCounterpartiesSummary ', async () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
+
+      const startTs = Math.floor(new Date(`2025-01-01T00:00:00`).getTime() / 1000)
+      const endDate = new Date(`2025-01-01`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const endTs = Math.floor(endDate.getTime() / 1000)
 
       const result = await transactionRepository.getMonthlyCounterpartiesSummary('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining(`WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )`),
+        expect.stringContaining('amount_int'),
         expect.arrayContaining([
-
-          1735700400,
-          1738368000,
+          startTs,
+          endTs,
         ])
       )
 
@@ -308,21 +316,22 @@ describe('transactionRepository', () => {
     })
   })
 
-  describe('getMonthlyCounterpartiesSummary', () => {
-    it('returns MonthlyTagsSummary ', async () => {
+  describe('getMonthlyCategoryBreakdown', () => {
+    it('returns MonthlyCategoryBreakdown ', async () => {
       mockQuerySQL.mockResolvedValue(mockMonthlyTagSummary)
+
+      const startTs = Math.floor(new Date(`2025-01-01T00:00:00`).getTime() / 1000)
+      const endDate = new Date(`2025-01-01`)
+      endDate.setMonth(endDate.getMonth() + 1)
+      const endTs = Math.floor(endDate.getTime() / 1000)
 
       const result = await transactionRepository.getMonthlyCategoryBreakdown('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining(`WITH curr_dec AS (
-        SELECT c.id as currency_id, power(10.0, -c.decimal_places) as divisor
-        FROM currency c
-      )`),
+        expect.stringContaining('amount_int'),
         expect.arrayContaining([
-
-          1735700400,
-          1738368000,
+          startTs,
+          endTs,
         ])
       )
 
@@ -407,11 +416,11 @@ describe('transactionRepository', () => {
 
   describe('getMonthSummary', () => {
     it('returns income and expenses for month', async () => {
-      mockQueryOne.mockResolvedValue({ income: 100000, expenses: 50000 })
+      mockQueryOne.mockResolvedValue({ income: 1000.00, expenses: 500.00 })
 
       const result = await transactionRepository.getMonthSummary('2025-01')
 
-      expect(result).toEqual({ income: 100000, expenses: 50000 })
+      expect(result).toEqual({ income: 1000.00, expenses: 500.00 })
     })
 
     it('returns zero values when no transactions', async () => {
@@ -423,7 +432,7 @@ describe('transactionRepository', () => {
     })
 
     it('excludes system tags (initial, transfer, exchange) from summary', async () => {
-      mockQueryOne.mockResolvedValue({ income: 100000, expenses: 50000 })
+      mockQueryOne.mockResolvedValue({ income: 1000.00, expenses: 500.00 })
 
       await transactionRepository.getMonthSummary('2025-01')
 
@@ -437,25 +446,29 @@ describe('transactionRepository', () => {
       )
     })
 
-    it('uses rate-based conversion to default currency', async () => {
-      mockQueryOne.mockResolvedValue({ income: 100000, expenses: 50000 })
+    it('uses int/frac-based conversion to default currency', async () => {
+      mockQueryOne.mockResolvedValue({ income: 1000.00, expenses: 500.00 })
 
       await transactionRepository.getMonthSummary('2025-01')
 
-      // Should use (amount * divisor) / (rate * divisor) formula for float conversion
+      // Should use (amount_int + amount_frac * 1e-18) / (rate_int + rate_frac * 1e-18) formula
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('(tb.amount * cd.divisor) / (tb.rate * cd.divisor)'),
+        expect.stringContaining('amount_int'),
+        expect.anything()
+      )
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('rate_int'),
         expect.anything()
       )
     })
 
     it('filters out transactions with zero rate', async () => {
-      mockQueryOne.mockResolvedValue({ income: 100000, expenses: 50000 })
+      mockQueryOne.mockResolvedValue({ income: 1000.00, expenses: 500.00 })
 
       await transactionRepository.getMonthSummary('2025-01')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('tb.rate > 0'),
+        expect.stringContaining('rate_int > 0 OR tb.rate_frac > 0'),
         expect.anything()
       )
     })
@@ -466,19 +479,19 @@ describe('transactionRepository', () => {
       await transactionRepository.getMonthSummary('2025-01')
 
       const call = mockQueryOne.mock.calls[0]
-      // Params: 6 system tags + DEFAULT tag + 2 timestamps = 9 total
-      // Start timestamp is at index 7
-      expect(call![1]![7]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
+      // Params: 6 system tags + 2 timestamps = 8 total
+      // Start timestamp is at index 6
+      expect(call![1]![6]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
     })
   })
 
   describe('getDaySummary', () => {
     it('returns net amount for a specific date', async () => {
-      mockQueryOne.mockResolvedValue({ net: 50000 })
+      mockQueryOne.mockResolvedValue({ net: 500.00 })
 
       const result = await transactionRepository.getDaySummary('2025-01-09')
 
-      expect(result).toBe(50000)
+      expect(result).toBe(500.00)
     })
 
     it('returns zero when no transactions', async () => {
@@ -490,7 +503,7 @@ describe('transactionRepository', () => {
     })
 
     it('excludes system tags (initial, transfer, exchange) from summary', async () => {
-      mockQueryOne.mockResolvedValue({ net: 50000 })
+      mockQueryOne.mockResolvedValue({ net: 500.00 })
 
       await transactionRepository.getDaySummary('2025-01-09')
 
@@ -504,24 +517,28 @@ describe('transactionRepository', () => {
       )
     })
 
-    it('uses rate-based conversion to default currency', async () => {
-      mockQueryOne.mockResolvedValue({ net: 50000 })
+    it('uses int/frac-based conversion to default currency', async () => {
+      mockQueryOne.mockResolvedValue({ net: 500.00 })
 
       await transactionRepository.getDaySummary('2025-01-09')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('(tb.amount * cd.divisor) / (tb.rate * cd.divisor)'),
+        expect.stringContaining('amount_int'),
+        expect.anything()
+      )
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('rate_int'),
         expect.anything()
       )
     })
 
     it('filters out transactions with zero rate', async () => {
-      mockQueryOne.mockResolvedValue({ net: 50000 })
+      mockQueryOne.mockResolvedValue({ net: 500.00 })
 
       await transactionRepository.getDaySummary('2025-01-09')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('tb.rate > 0'),
+        expect.stringContaining('rate_int > 0 OR tb.rate_frac > 0'),
         expect.anything()
       )
     })
@@ -532,9 +549,9 @@ describe('transactionRepository', () => {
       await transactionRepository.getDaySummary('2025-01-09')
 
       const call = mockQueryOne.mock.calls[0]
-      // Params: 3 system tags + DEFAULT tag + 2 timestamps = 6 total
-      const startTs = call![1]![4] as number
-      const endTs = call![1]![5] as number
+      // Params: 3 system tags + 2 timestamps = 5 base (indices 3 and 4)
+      const startTs = call![1]![3] as number
+      const endTs = call![1]![4] as number
 
       // Start should be beginning of day
       expect(startTs).toBe(Math.floor(new Date('2025-01-09T00:00:00').getTime() / 1000))
@@ -543,7 +560,7 @@ describe('transactionRepository', () => {
     })
 
     it('calculates net as income minus expenses', async () => {
-      mockQueryOne.mockResolvedValue({ net: 50000 })
+      mockQueryOne.mockResolvedValue({ net: 500.00 })
 
       await transactionRepository.getDaySummary('2025-01-09')
 
@@ -555,56 +572,56 @@ describe('transactionRepository', () => {
     })
 
     it('calculates net filtered by tag', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getDaySummary('2025-01-09', { tagId: 10 })
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('AND tb.tag_id = ?'),
+        expect.stringContaining('tb.tag_id = ?'),
         expect.arrayContaining([10])
       )
     })
 
     it('calculates net filtered by counterparty', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getDaySummary('2025-01-09', { counterpartyId: 10 })
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('AND t2c.counterparty_id = ?'),
+        expect.stringContaining('t2c.counterparty_id = ?'),
         expect.arrayContaining([10])
       )
     })
 
     it('calculates net filtered by counterparty = 0', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getDaySummary('2025-01-09', { counterpartyId: 0 })
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('AND t2c.counterparty_id IS NULL'),
+        expect.stringContaining('t2c.counterparty_id IS NULL'),
         expect.anything()
       )
     })
 
     it('calculates net filtered by type = expense', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getDaySummary('2025-01-09', { type: 'expense' })
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('AND tb.sign = ?'),
+        expect.stringContaining('tb.sign = ?'),
         expect.arrayContaining(['-'])
       )
     })
 
     it('calculates net filtered by type = income', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getDaySummary('2025-01-09', { type: 'income' })
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining('AND tb.sign = ?'),
+        expect.stringContaining('tb.sign = ?'),
         expect.arrayContaining(['+'])
       )
     })
@@ -626,8 +643,10 @@ describe('transactionRepository', () => {
             account_id: 1,
             tag_id: 10,
             sign: '-' as const,
-            amount: 5000,
-            rate: 0
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 0,
+            rate_frac: 0,
           },
         ],
       }
@@ -656,8 +675,10 @@ describe('transactionRepository', () => {
             account_id: 1,
             tag_id: 10,
             sign: '-' as const,
-            amount: 5000,
-            rate: 0
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 0,
+            rate_frac: 0,
           },
         ],
       }
@@ -674,7 +695,7 @@ describe('transactionRepository', () => {
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([1, 10, '-', 5000])
+        expect.arrayContaining([1, 10, '-', 50])
       )
     })
 
@@ -686,8 +707,8 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce(sampleLine) // first line result
         .mockResolvedValueOnce({ id: mockId() }) // second line id
         .mockResolvedValueOnce(sampleLine) // second line result
-        .mockResolvedValueOnce({ id: mockId() }) // second line id
-        .mockResolvedValueOnce(sampleLine) // second line result
+        .mockResolvedValueOnce({ id: mockId() }) // third line id
+        .mockResolvedValueOnce(sampleLine) // third line result
         .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
       mockQuerySQL.mockResolvedValue([sampleLine])
 
@@ -696,7 +717,7 @@ describe('transactionRepository', () => {
       }
       await transactionRepository.create(input)
 
-      // Should create two lines with SYSTEM_TAGS.TRANSFER
+      // Should create three lines
       const insertCalls = mockExecSQL.mock.calls.filter(
         call => call[0].includes('INSERT INTO trx_base')
       )
@@ -711,8 +732,10 @@ describe('transactionRepository', () => {
             account_id: 1,
             tag_id: 10,
             sign: '-' as const,
-            amount: 5000,
-            rate: 0
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 0,
+            rate_frac: 0,
           },
         ],
       }
@@ -741,8 +764,10 @@ describe('transactionRepository', () => {
             account_id: 1,
             tag_id: 10,
             sign: '-' as const,
-            amount: 5000,
-            rate: 0
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 0,
+            rate_frac: 0,
           },
         ],
       }
@@ -771,8 +796,10 @@ describe('transactionRepository', () => {
             account_id: 1,
             tag_id: 10,
             sign: '-' as const,
-            amount: 5000,
-            rate: 0
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 0,
+            rate_frac: 0,
           },
         ],
       }
@@ -808,8 +835,10 @@ describe('transactionRepository', () => {
               account_id: 1,
               tag_id: 10,
               sign: '-',
-              amount: 5000,
-              rate: 0
+              amount_int: 50,
+              amount_frac: 0,
+              rate_int: 0,
+              rate_frac: 0,
             },
           ],
         })
@@ -822,7 +851,7 @@ describe('transactionRepository', () => {
 
       await expect(
         transactionRepository.create({
-          lines: [{ account_id: 1, tag_id: 10, sign: '-', amount: 5000, rate: 0 }],
+          lines: [{ account_id: 1, tag_id: 10, sign: '-', amount_int: 50, amount_frac: 0, rate_int: 0, rate_frac: 0 }],
         })
       ).rejects.toThrow('Failed to create transaction')
     })
@@ -834,8 +863,10 @@ describe('transactionRepository', () => {
         account_id: 1,
         tag_id: 10,
         sign: '-',
-        amount: 5000,
-        rate: 0
+        amount_int: 50,
+        amount_frac: 0,
+        rate_int: 0,
+        rate_frac: 0,
       }
 
       mockQueryOne
@@ -846,7 +877,7 @@ describe('transactionRepository', () => {
 
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([1, 10, '-', 5000])
+        expect.arrayContaining([1, 10, '-', 50])
       )
     })
 
@@ -855,8 +886,10 @@ describe('transactionRepository', () => {
         account_id: 1,
         tag_id: 10,
         sign: '-',
-        amount: 5000,
-        rate: 0
+        amount_int: 50,
+        amount_frac: 0,
+        rate_int: 0,
+        rate_frac: 0,
       }
 
       mockQueryOne
@@ -880,8 +913,10 @@ describe('transactionRepository', () => {
           account_id: 1,
           tag_id: 10,
           sign: '-',
-          amount: 5000,
-          rate: 0
+          amount_int: 50,
+          amount_frac: 0,
+          rate_int: 0,
+          rate_frac: 0,
         })
       ).rejects.toThrow('Failed to create transaction line')
     })
@@ -896,8 +931,10 @@ describe('transactionRepository', () => {
           account_id: 1,
           tag_id: 10,
           sign: '-',
-          amount: 5000,
-          rate: 0
+          amount_int: 50,
+          amount_frac: 0,
+          rate_int: 0,
+          rate_frac: 0,
         })
       ).rejects.toThrow('Failed to retrieve transaction line')
     })
@@ -937,32 +974,32 @@ describe('transactionRepository', () => {
       )
     })
 
-    it('updates amount', async () => {
+    it('updates amount_int', async () => {
       mockQueryOne.mockResolvedValue(sampleLine)
 
-      await transactionRepository.updateLine(mockId(), { amount: 10000 })
+      await transactionRepository.updateLine(mockId(), { amount_int: 100 })
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('amount = ?'),
-        expect.arrayContaining([10000])
+        expect.stringContaining('amount_int = ?'),
+        expect.arrayContaining([100])
       )
     })
 
-    it('updates rate', async () => {
+    it('updates rate_int', async () => {
       mockQueryOne.mockResolvedValue(sampleLine)
 
-      await transactionRepository.updateLine(mockId(), { rate: 10000 })
+      await transactionRepository.updateLine(mockId(), { rate_int: 1 })
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('rate = ?'),
-        expect.arrayContaining([10000])
+        expect.stringContaining('rate_int = ?'),
+        expect.arrayContaining([1])
       )
     })
 
     it('does not handle notes (notes are at transaction level)', async () => {
       mockQueryOne.mockResolvedValue(sampleLine)
 
-      await transactionRepository.updateLine(mockId(), { amount: 6000 })
+      await transactionRepository.updateLine(mockId(), { amount_int: 60 })
 
       // Note operations should not happen at line level
       const noteDeleteCalls = mockExecSQL.mock.calls.filter(
@@ -979,7 +1016,7 @@ describe('transactionRepository', () => {
       mockQueryOne.mockResolvedValue(null)
 
       await expect(
-        transactionRepository.updateLine(mockId(), { amount: 10000 })
+        transactionRepository.updateLine(mockId(), { amount_int: 100 })
       ).rejects.toThrow('Transaction line not found')
     })
   })
@@ -1034,8 +1071,10 @@ describe('transactionRepository', () => {
           account_id: 1,
           tag_id: 10,
           sign: '-' as const,
-          amount: 5000,
-          rate: 0
+          amount_int: 50,
+          amount_frac: 0,
+          rate_int: 0,
+          rate_frac: 0,
         },
       ],
     }
@@ -1079,7 +1118,7 @@ describe('transactionRepository', () => {
       )
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([mockId(), 1, 10, '-', 5000])
+        expect.arrayContaining([mockId(), 1, 10, '-', 50])
       )
     })
 
@@ -1135,7 +1174,7 @@ describe('transactionRepository', () => {
         wallet: 'Checking',
         currency: 'USD',
         tag: 'exchange',
-        amount: -10000,
+        amount: -100.00,
       }
       mockQuerySQL.mockResolvedValue([exchangeView])
 
@@ -1173,7 +1212,7 @@ describe('transactionRepository', () => {
         wallet: 'Checking',
         currency: 'USD',
         tag: 'transfer',
-        amount: -10000,
+        amount: -100.00,
       }
       mockQuerySQL.mockResolvedValue([transferView])
 
@@ -1321,11 +1360,11 @@ describe('transactionRepository', () => {
 
   describe('getAccountDaySummary', () => {
     it('returns net amount for a specific account and date', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       const result = await transactionRepository.getAccountDaySummary(1, '2025-01-09')
 
-      expect(result).toBe(5000)
+      expect(result).toBe(50.00)
     })
 
     it('returns zero when no transactions', async () => {
@@ -1337,7 +1376,7 @@ describe('transactionRepository', () => {
     })
 
     it('filters by account_id', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getAccountDaySummary(42, '2025-01-09')
 
@@ -1363,13 +1402,13 @@ describe('transactionRepository', () => {
     })
 
     it('calculates net as sum of signed amounts', async () => {
-      mockQueryOne.mockResolvedValue({ net: 5000 })
+      mockQueryOne.mockResolvedValue({ net: 50.00 })
 
       await transactionRepository.getAccountDaySummary(1, '2025-01-09')
 
-      // SQL should sum amounts with signs
+      // SQL should sum amounts with signs using int/frac
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringContaining("CASE WHEN tb.sign = '+' THEN tb.amount ELSE -tb.amount END"),
+        expect.stringContaining("CASE WHEN tb.sign = '+'"),
         expect.anything()
       )
     })
@@ -1442,7 +1481,7 @@ describe('transactionRepository', () => {
 
     it('throws error when no adjustment needed (difference is 0)', async () => {
       await expect(
-        transactionRepository.createBalanceAdjustment(1, 10000, 10000)
+        transactionRepository.createBalanceAdjustment(1, 100, 0, 100, 0)
       ).rejects.toThrow('No adjustment needed')
     })
 
@@ -1456,12 +1495,12 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce({ id: mockId(), timestamp: Math.floor(Date.now() / 1000) }) // findById
       mockQuerySQL.mockResolvedValue([sampleLine])
 
-      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
 
       // Should use ADJUSTMENT tag when account already has INITIAL
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([SYSTEM_TAGS.ADJUSTMENT, '+', 5000])
+        expect.arrayContaining([SYSTEM_TAGS.ADJUSTMENT, '+', 50])
       )
     })
 
@@ -1475,12 +1514,12 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) }) // findById
       mockQuerySQL.mockResolvedValue([sampleLine])
 
-      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
 
       // Should use INITIAL tag when account has no INITIAL
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining([SYSTEM_TAGS.INITIAL, '+', 5000])
+        expect.arrayContaining([SYSTEM_TAGS.INITIAL, '+', 50])
       )
     })
 
@@ -1494,7 +1533,7 @@ describe('transactionRepository', () => {
       mockQuerySQL.mockResolvedValue([sampleLine])
 
       const before = Math.floor(Date.now() / 1000)
-      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
       const after = Math.floor(Date.now() / 1000)
 
       // Timestamp should be roughly current time
@@ -1519,7 +1558,7 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce({ id: mockId(), timestamp: expectedTimestamp })
       mockQuerySQL.mockResolvedValue([sampleLine])
 
-      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
 
       // Timestamp should be start of day of first transaction
       const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
@@ -1537,7 +1576,7 @@ describe('transactionRepository', () => {
       mockQuerySQL.mockResolvedValue([sampleLine])
 
       const before = Math.floor(Date.now() / 1000)
-      await transactionRepository.createBalanceAdjustment(1, 10000, 15000)
+      await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
       const after = Math.floor(Date.now() / 1000)
 
       // Should use current timestamp when no transactions exist
@@ -1555,12 +1594,12 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) })
       mockQuerySQL.mockResolvedValue([sampleLine])
 
-      await transactionRepository.createBalanceAdjustment(1, 5000, 8000)
+      await transactionRepository.createBalanceAdjustment(1, 50, 0, 80, 0)
 
-      // Difference is 3000, sign is +
+      // Difference is 30, sign is +
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining(['+', 3000])
+        expect.arrayContaining(['+', 30])
       )
     })
 
@@ -1573,12 +1612,12 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce({ id: mockId(), timestamp: expect.any(Number) })
       mockQuerySQL.mockResolvedValue([sampleLine])
 
-      await transactionRepository.createBalanceAdjustment(1, 8000, 5000)
+      await transactionRepository.createBalanceAdjustment(1, 80, 0, 50, 0)
 
-      // Difference is -3000, sign is -, amount is 3000
+      // Difference is -30, sign is -, amount is 30
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
-        expect.arrayContaining(['-', 3000])
+        expect.arrayContaining(['-', 30])
       )
     })
   })

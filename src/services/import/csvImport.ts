@@ -2,6 +2,7 @@ import { hexToBlob } from '../../utils/blobUtils'
 import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository, accountRepository } from '../repositories'
 import { execSQL } from '../database'
 import { SYSTEM_TAGS } from '../../types'
+import { toIntFrac } from '../../utils/amount'
 
 export interface ImportResult {
   totalRows: number
@@ -194,7 +195,7 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
   const currencyCache = new Map<string, { id: number; decimal_places: number }>()
 
   // Track latest rate per currency for exchange_rate table
-  const latestRates = new Map<number, number>() // currencyId -> rate
+  const latestRates = new Map<number, { int: number; frac: number }>() // currencyId -> rate IntFrac
 
   // Track signs used for newly created tags (to assign parent relationships)
   const newTagSigns = new Map<number, Set<string>>() // tagId -> set of '+'/'-'
@@ -310,7 +311,7 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
           }
 
           const sign: '+' | '-' = amountFloat < 0 ? '-' : '+'
-          const intAmount = Math.round(Math.abs(amountFloat) * Math.pow(10, currency.decimal_places))
+          const { int: amount_int, frac: amount_frac } = toIntFrac(Math.abs(amountFloat))
 
           // Track sign usage for newly created tags
           if (createdTagNames.has(row.tag)) {
@@ -319,21 +320,24 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
             newTagSigns.set(tagId, signs)
           }
 
-          // Parse rate
-          const rate = row.rate ? parseInt(row.rate, 10) : 0
-          const safeRate = isNaN(rate) ? 0 : rate
+          // Parse rate as float and convert to IntFrac
+          const rateFloat = row.rate ? parseFloat(row.rate) : 0
+          const safeRateFloat = isNaN(rateFloat) ? 0 : rateFloat
+          const { int: rate_int, frac: rate_frac } = toIntFrac(safeRateFloat)
 
           // Track latest rate per currency for exchange_rate table
-          if (safeRate > 0) {
-            latestRates.set(currency.id, safeRate)
+          if (safeRateFloat > 0) {
+            latestRates.set(currency.id, { int: rate_int, frac: rate_frac })
           }
 
           await transactionRepository.addImportLine(trxIdBlob, {
             account_id: accountId,
             tag_id: tagId,
             sign,
-            amount: intAmount,
-            rate: safeRate,
+            amount_int,
+            amount_frac,
+            rate_int,
+            rate_frac,
           })
 
           // Track counterparty-tag association
@@ -355,7 +359,7 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
 
   // Populate exchange_rate table with latest rates from CSV
   for (const [currencyId, rate] of latestRates) {
-    await currencyRepository.setExchangeRate(currencyId, rate)
+    await currencyRepository.setExchangeRate(currencyId, rate.int, rate.frac)
   }
 
   // Assign parent relationships for newly created tags based on sign usage
