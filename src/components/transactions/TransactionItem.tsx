@@ -11,6 +11,10 @@ interface TransactionItemProps {
 
 type transactionT = 'exchange' | 'transfer' | 'expense' | 'income' | 'initial' | 'adjustment'
 
+function getUnsignedAmount(l: TransactionLog): number {
+  return fromIntFrac(l.amount_int, l.amount_frac)
+}
+
 /** Get the signed float amount from a TransactionLog line */
 function getSignedAmount(l: TransactionLog): number {
   const abs = fromIntFrac(l.amount_int, l.amount_frac)
@@ -97,7 +101,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         const from = transaction.find(l => getSignedAmount(l) < 0 && l.tags.includes('exchange'))!
         const to = transaction.find(l => getSignedAmount(l) >= 0 && l.tags.includes('exchange'))!
         return {
-          text: `${formatCurrencyValue(getSignedAmount(from), from.symbol)} → ${formatCurrencyValue(getSignedAmount(to), to.symbol)}`,
+          text: `${formatCurrencyValue(getUnsignedAmount(from), from.symbol)} → ${formatCurrencyValue(getSignedAmount(to), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
         }
       }
