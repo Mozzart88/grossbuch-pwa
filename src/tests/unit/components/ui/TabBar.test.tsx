@@ -51,10 +51,16 @@ describe('TabBar', () => {
       expect(screen.getByText('Transactions')).toBeInTheDocument()
     })
 
-    it('renders Settings tab', () => {
+    it('renders Wallets tab', () => {
       renderWithRouter()
 
-      expect(screen.getByText('Settings')).toBeInTheDocument()
+      expect(screen.getByText('Wallets')).toBeInTheDocument()
+    })
+
+    it('does not render Settings tab', () => {
+      renderWithRouter()
+
+      expect(screen.queryByText('Settings')).not.toBeInTheDocument()
     })
 
     it('renders Add button', () => {
@@ -83,11 +89,11 @@ describe('TabBar', () => {
       expect(transactionsLink).toHaveAttribute('href', '/')
     })
 
-    it('links to settings page', () => {
+    it('links to accounts/wallets page', () => {
       renderWithRouter()
 
-      const settingsLink = screen.getByRole('link', { name: /settings/i })
-      expect(settingsLink).toHaveAttribute('href', '/settings')
+      const walletsLink = screen.getByRole('link', { name: /wallets/i })
+      expect(walletsLink).toHaveAttribute('href', '/settings/accounts')
     })
   })
 
@@ -99,18 +105,25 @@ describe('TabBar', () => {
       expect(transactionsLink.className).toContain('text-primary-600')
     })
 
-    it('applies active styles to settings when on settings route', () => {
-      renderWithRouter('/settings')
+    it('applies active styles to wallets when on accounts route', () => {
+      renderWithRouter('/settings/accounts')
 
-      const settingsLink = screen.getByRole('link', { name: /settings/i })
-      expect(settingsLink.className).toContain('text-primary-600')
+      const walletsLink = screen.getByRole('link', { name: /wallets/i })
+      expect(walletsLink.className).toContain('text-primary-600')
     })
 
-    it('applies inactive styles to transactions when on settings route', () => {
-      renderWithRouter('/settings')
+    it('applies inactive styles to transactions when on accounts route', () => {
+      renderWithRouter('/settings/accounts')
 
       const transactionsLink = screen.getByRole('link', { name: /transactions/i })
       expect(transactionsLink.className).toContain('text-gray-500')
+    })
+
+    it('applies inactive styles to wallets when on home route', () => {
+      renderWithRouter('/')
+
+      const walletsLink = screen.getByRole('link', { name: /wallets/i })
+      expect(walletsLink.className).toContain('text-gray-500')
     })
   })
 
@@ -183,7 +196,7 @@ describe('TabBar', () => {
       renderWithRouter()
 
       expect(screen.getByText('Transactions')).toBeInTheDocument()
-      expect(screen.getByText('Settings')).toBeInTheDocument()
+      expect(screen.getByText('Wallets')).toBeInTheDocument()
     })
 
     it('Add button has aria-label', () => {

@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
@@ -328,11 +327,6 @@ export function AccountsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Wallets & Accounts"
-        showBack
-      />
-
       <div className="p-4 space-y-4">
         {wallets.length === 0 ? (
           <div className="text-center py-12 text-gray-500 dark:text-gray-400">

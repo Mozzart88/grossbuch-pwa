@@ -7,15 +7,12 @@ import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 
 const settingsLinks = [
-  { to: '/settings/accounts', label: 'Accounts', icon: '🏦', description: 'Manage your wallets and accounts' },
-  { to: '/settings/tags', label: 'Tags', icon: '🏷️', description: 'Organize your transactions' },
-  { to: '/settings/counterparties', label: 'Counterparties', icon: '👥', description: 'Track who you transact with' },
-{ to: '/settings/exchange-rates', label: 'Exchange Rates', icon: '📈', description: 'Set currency exchange rates' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
   { to: '/settings/import', label: 'Import Data', icon: '📥', description: 'Import transactions from CSV' },
   { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
   { to: '/settings/security', label: 'Security', icon: '🔒', description: 'Change PIN and security settings' },
   { to: '/settings/share', label: 'Share', icon: '🔗', description: 'Share app with a link or QR code' },
+  { to: '/settings/linked-devices', label: 'Linked Devices', icon: '📱', description: 'Manage paired devices' },
 ]
 
 export function SettingsPage() {

@@ -35,6 +35,7 @@ import {
   MigrationPage,
   InstallPage,
   SharePage,
+  LinkedDevicesPage,
 } from './pages'
 
 function SyncGate({ children }: { children: React.ReactNode }) {
@@ -155,6 +156,7 @@ function AppContent() {
         <Route path="/settings/budgets" element={<BudgetsPage />} />
         <Route path="/settings/security" element={<ChangePinPage />} />
         <Route path="/settings/share" element={<SharePage />} />
+        <Route path="/settings/linked-devices" element={<LinkedDevicesPage />} />
       </Routes>
     </AppLayout>
   )

@@ -26,6 +26,7 @@ vi.mock('../../pages', () => ({
   MigrationPage: () => <div data-testid="migration-page">Migration</div>,
   InstallPage: () => <div data-testid="install-page">Install</div>,
   SharePage: () => <div data-testid="share-page">Share</div>,
+  LinkedDevicesPage: () => <div data-testid="linked-devices-page">LinkedDevices</div>,
 }))
 
 // Mock TabBar
