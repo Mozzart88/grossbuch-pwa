@@ -28,6 +28,8 @@ interface AuthContextValue extends AuthState {
   changePin: (oldPin: string, newPin: string) => Promise<boolean>
   wipeAndReset: () => Promise<void>
   clearError: () => void
+  isFirstSetup: boolean
+  clearFirstSetup: () => void
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -41,12 +43,15 @@ const AuthContext = createContext<AuthContextValue>({
   changePin: async () => false,
   wipeAndReset: async () => {},
   clearError: () => {},
+  isFirstSetup: false,
+  clearFirstSetup: () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('checking')
   const [failedAttempts, setFailedAttempts] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [isFirstSetup, setIsFirstSetup] = useState(false)
   const { setDatabaseReady, setDatabaseError, reset: resetDatabase } = useDatabase()
 
   // Check auth status on mount
@@ -93,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await authSetupPin(pin)
       setDatabaseReady()
       setStatus('authenticated')
+      setIsFirstSetup(true)
       return true
     } catch (err) {
       console.error('PIN setup failed:', err)
@@ -182,6 +188,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [resetDatabase])
 
+  const clearFirstSetup = useCallback(() => {
+    setIsFirstSetup(false)
+  }, [])
+
   const clearError = useCallback(() => {
     setError(null)
     if (status === 'auth_failed') {
@@ -202,6 +212,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         changePin,
         wipeAndReset,
         clearError,
+        isFirstSetup,
+        clearFirstSetup,
       }}
     >
       {children}

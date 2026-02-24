@@ -12,6 +12,7 @@ import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
 import { ShareLinkCapture } from './components/ShareLinkCapture'
+import { AUTH_STORAGE_KEYS } from './types/auth'
 import {
   TransactionsPage,
   AddTransactionPage,
@@ -36,6 +37,7 @@ import {
   InstallPage,
   SharePage,
   LinkedDevicesPage,
+  OnboardingPage,
 } from './pages'
 
 function SyncGate({ children }: { children: React.ReactNode }) {
@@ -97,6 +99,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const { isReady, error } = useDatabase()
+  const { isFirstSetup, clearFirstSetup } = useAuth()
 
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
@@ -134,6 +137,10 @@ function AppContent() {
         <p className="text-gray-500 dark:text-gray-400">Loading database...</p>
       </div>
     )
+  }
+
+  if (isFirstSetup && !localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)) {
+    return <OnboardingPage onComplete={clearFirstSetup} />
   }
 
   return (

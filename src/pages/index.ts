@@ -20,4 +20,5 @@ export { MigrationPage } from './MigrationPage'
 export { InstallPage } from './InstallPage'
 export { SharePage } from './SharePage'
 export { LinkedDevicesPage } from './LinkedDevicesPage'
+export { OnboardingPage } from './OnboardingPage'
 
