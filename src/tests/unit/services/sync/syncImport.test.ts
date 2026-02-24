@@ -323,6 +323,72 @@ describe('syncImport', () => {
       expect(rateCalls).toHaveLength(0)
     })
 
+    it('syncs currency_to_tags even when local currency is newer (updated_at guard removed)', async () => {
+      mockQueryOne.mockImplementation((sql: string) => {
+        // Local currency has a NEWER timestamp than sender
+        if (sql.includes('FROM currency')) return Promise.resolve({ id: 5, updated_at: 9000 })
+        if (sql.includes('FROM exchange_rate')) return Promise.resolve(null)
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [2, 4], rate_int: null, rate_frac: null }]
+
+      await importSyncPackage(pkg)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM currency_to_tags WHERE currency_id = ?',
+        [5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [5, 2]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [5, 4]
+      )
+    })
+
+    it('does not update currency updated_at when sender timestamp is older', async () => {
+      mockQueryOne.mockImplementation((sql: string) => {
+        // Local currency has a NEWER timestamp
+        if (sql.includes('FROM currency')) return Promise.resolve({ id: 5, updated_at: 9000 })
+        if (sql.includes('FROM exchange_rate')) return Promise.resolve(null)
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [2], rate_int: null, rate_frac: null }]
+
+      await importSyncPackage(pkg)
+
+      const updateCalls = mockExecSQL.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string).startsWith('UPDATE currency')
+      )
+      expect(updateCalls).toHaveLength(0)
+    })
+
+    it('writes payment default tag (tag_id=2) even when local currency is newer', async () => {
+      mockQueryOne.mockImplementation((sql: string) => {
+        // Local currency has a NEWER timestamp (e.g. freshly seeded device B)
+        if (sql.includes('FROM currency')) return Promise.resolve({ id: 5, updated_at: 9000 })
+        if (sql.includes('FROM exchange_rate')) return Promise.resolve(null)
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      // Sender has payment default tag (tag_id=2) on this currency
+      pkg.currencies = [{ id: 5, decimal_places: 2, updated_at: 5000, tags: [2], rate_int: null, rate_frac: null }]
+
+      await importSyncPackage(pkg)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
+        [5, 2]
+      )
+    })
+
     it('skips unknown currencies (not pre-seeded)', async () => {
       // queryOne returns null for unknown currency
       const pkg = emptyPackage()

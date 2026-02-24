@@ -87,6 +87,9 @@ export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> 
   }
 
   // Normal incremental push for all linked installations
+  const pendingInitialSync = await settingsRepository.get('pending_initial_sync')
+  if (pendingInitialSync === '1') return false
+
   const state = await ensureSyncState(installData.id)
   const hasChanges = await checkUnpushed(installData.id)
   if (!hasChanges) return false
@@ -122,35 +125,53 @@ export async function pullSync(): Promise<ImportResult[]> {
 
   if (response.packages.length === 0) return []
 
+  const pullStartedAt = Math.floor(Date.now() / 1000)
+
   const results: ImportResult[] = []
   const ackedIds: string[] = []
 
   setSuppressWriteNotifications(true)
-  await dropUpdatedAtTriggers()
   try {
-    for (const { id, package: encrypted } of response.packages) {
-      try {
-        const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
-        const result = await importSyncPackage(pkg)
-        results.push(result)
-        if (result.errors.length > 0) {
-          console.error('[pullSync] Import errors for package:', id, result.errors)
-          // Don't ack — package stays on server for retry
-        } else {
-          ackedIds.push(id)
+    await dropUpdatedAtTriggers()
+    try {
+      for (const { id, package: encrypted } of response.packages) {
+        try {
+          const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
+          const result = await importSyncPackage(pkg)
+          results.push(result)
+          if (result.errors.length > 0) {
+            console.error('[pullSync] Import errors for package:', id, result.errors)
+            // Don't ack — package stays on server for retry
+          } else {
+            ackedIds.push(id)
+          }
+        } catch (err) {
+          console.error('[pullSync] Failed to process package:', id, err)
         }
-      } catch (err) {
-        console.error('[pullSync] Failed to process package:', id, err)
       }
+    } finally {
+      await restoreUpdatedAtTriggers()
     }
   } finally {
-    await restoreUpdatedAtTriggers()
     setSuppressWriteNotifications(false)
   }
 
   if (ackedIds.length > 0) {
     await syncApi.ack({ package_ids: ackedIds }, installData.jwt)
     await updateSyncTimestamp(installData.id)
+
+    // Always advance last_push_at so imported rows are not re-pushed
+    setSuppressWriteNotifications(true)
+    try {
+      await updatePushTimestamp(installData.id, pullStartedAt)
+    } finally {
+      setSuppressWriteNotifications(false)
+    }
+
+    const pendingInitialSync = await settingsRepository.get('pending_initial_sync')
+    if (pendingInitialSync === '1') {
+      await settingsRepository.delete('pending_initial_sync')
+    }
   }
 
   // Fetch missing exchange rates for newly imported accounts

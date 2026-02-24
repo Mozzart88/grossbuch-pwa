@@ -48,7 +48,7 @@ export default defineConfig({
         navigateFallback: '/index.html',
         runtimeCaching: [
           {
-            urlPattern: /\/sync\//,
+            urlPattern: ({ url }) => url.pathname.startsWith('/sync/'),
             handler: 'NetworkOnly',
           },
           {

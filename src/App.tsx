@@ -7,7 +7,7 @@ import { ToastProvider, Spinner } from './components/ui'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { useSyncPull } from './hooks/useSyncPull'
 import { useSyncInit } from './hooks/useSyncInit'
-import { SyncProvider } from './contexts/SyncContext'
+import { SyncProvider, useSyncContext } from './contexts/SyncContext'
 import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
@@ -36,6 +36,21 @@ import {
   InstallPage,
   SharePage,
 } from './pages'
+
+function SyncGate({ children }: { children: React.ReactNode }) {
+  const { isInitialSyncing } = useSyncContext()
+
+  if (isInitialSyncing) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
+        <Spinner size="lg" />
+        <p className="text-gray-500 dark:text-gray-400">Syncing...</p>
+      </div>
+    )
+  }
+
+  return <>{children}</>
+}
 
 function InstallGate({ children }: { children: React.ReactNode }) {
   const { isInstalled } = useInstallation()
@@ -157,7 +172,9 @@ export default function App() {
                 <AuthGate>
                   <LayoutProvider>
                     <SyncProvider>
-                      <AppContent />
+                      <SyncGate>
+                        <AppContent />
+                      </SyncGate>
                     </SyncProvider>
                   </LayoutProvider>
                 </AuthGate>

@@ -26,5 +26,22 @@ export function useSyncPush() {
     }, DEBOUNCE_MS)
   }, [])
 
-  return { schedulePush }
+  const flushPush = useCallback(async (): Promise<boolean> => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    if (isPushingRef.current) return false
+    isPushingRef.current = true
+    try {
+      return await pushSync()
+    } catch (err) {
+      console.warn('[useSyncPush] Flush push failed:', err)
+      return false
+    } finally {
+      isPushingRef.current = false
+    }
+  }, [])
+
+  return { schedulePush, flushPush }
 }

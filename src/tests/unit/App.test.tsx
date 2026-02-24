@@ -85,6 +85,15 @@ vi.mock('../../hooks/useInstallationRegistration', () => ({
   useInstallationRegistration: vi.fn(),
 }))
 
+// Mock settingsRepository so SyncProvider doesn't touch the DB
+vi.mock('../../services/repositories/settingsRepository', () => ({
+  settingsRepository: {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
+  },
+}))
+
 // Mock theme context
 vi.mock('../../store/ThemeContext', () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
