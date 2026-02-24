@@ -85,7 +85,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     }
 
     const symbol = transaction[0].symbol
-    const amount = transaction.reduce((acc, l) => acc + getSignedAmount(l), 0)
+    const amount = Math.abs(transaction.reduce((acc, l) => acc + getSignedAmount(l), 0))
     switch (transactionType) {
       case 'income':
         return {
@@ -94,14 +94,14 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         }
       case 'transfer':
         return {
-          text: formatCurrencyValue(getSignedAmount(transaction[0]), symbol),
+          text: formatCurrencyValue(getUnsignedAmount(transaction[0]), symbol),
           color: 'text-blue-600 dark:text-blue-400',
         }
       case 'exchange': {
-        const from = transaction.find(l => getSignedAmount(l) < 0 && l.tags.includes('exchange'))!
-        const to = transaction.find(l => getSignedAmount(l) >= 0 && l.tags.includes('exchange'))!
+        const from = transaction.find(l => l.sign === '-' && l.tags.includes('exchange'))!
+        const to = transaction.find(l => l.sign === '+' && l.tags.includes('exchange'))!
         return {
-          text: `${formatCurrencyValue(getUnsignedAmount(from), from.symbol)} → ${formatCurrencyValue(getSignedAmount(to), to.symbol)}`,
+          text: `${formatCurrencyValue(getUnsignedAmount(from), from.symbol)} → ${formatCurrencyValue(getUnsignedAmount(to), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
         }
       }

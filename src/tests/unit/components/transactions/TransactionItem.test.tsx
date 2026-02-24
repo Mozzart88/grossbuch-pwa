@@ -26,7 +26,7 @@ describe('TransactionItem', () => {
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
     expect(screen.getByText('Food')).toBeInTheDocument()
-    expect(screen.getByText('-$50.00')).toBeInTheDocument()
+    expect(screen.getByText('$50.00')).toBeInTheDocument()
   })
 
   it('renders income transaction (positive amount)', () => {
@@ -411,7 +411,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
-    expect(screen.getByText('-$50.00')).toBeInTheDocument()
+    expect(screen.getByText('$50.00')).toBeInTheDocument()
   })
 
   it('applies green color for income (positive amount)', () => {
@@ -433,7 +433,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('-$50.00')
+    const amount = screen.getByText('$50.00')
     expect(amount.className).toContain('text-gray-600')
   })
 
@@ -524,7 +524,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('-$50.00')
+    const amount = screen.getByText('$50.00')
     expect(amount.className).toContain('text-slate-500')
   })
 

@@ -206,7 +206,7 @@ describe('TransactionList', () => {
       // Transaction shows wallet name when no counterparty
       expect(screen.getByText('Cash')).toBeInTheDocument()
       // Transaction amount
-      expect(screen.getByText('-$50.00')).toBeInTheDocument()
+      expect(screen.getByText('$50.00')).toBeInTheDocument()
     })
   })
 
