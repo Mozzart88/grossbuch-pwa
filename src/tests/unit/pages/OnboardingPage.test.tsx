@@ -84,9 +84,8 @@ describe('OnboardingPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Currency Preferences')).toBeInTheDocument()
       })
-      // The display currency select should have USD (id=1) selected
-      const selects = screen.getAllByRole('combobox')
-      expect(selects[0]).toHaveValue('1')
+      const displayInput = screen.getByLabelText('Display currency')
+      await waitFor(() => expect(displayInput).toHaveValue('USD — US Dollar'))
     })
 
     it('pre-selects "Same as display" when no payment default exists', async () => {
@@ -94,8 +93,9 @@ describe('OnboardingPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Currency Preferences')).toBeInTheDocument()
       })
-      const selects = screen.getAllByRole('combobox')
-      expect(selects[1]).toHaveValue('')
+      // LiveSearch shows empty input when the controlled value is '' (empty-string option)
+      const paymentInput = screen.getByLabelText('Payment currency')
+      expect(paymentInput).toHaveValue('')
     })
 
     it('pre-selects payment default when it exists and differs from system', async () => {
@@ -109,8 +109,8 @@ describe('OnboardingPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Currency Preferences')).toBeInTheDocument()
       })
-      const selects = screen.getAllByRole('combobox')
-      expect(selects[1]).toHaveValue('2')
+      const paymentInput = screen.getByLabelText('Payment currency')
+      await waitFor(() => expect(paymentInput).toHaveValue('EUR — Euro'))
     })
 
     it('does not call setSystem when display currency is unchanged, calls clearPaymentDefault', async () => {
@@ -136,8 +136,10 @@ describe('OnboardingPage', () => {
       })
 
       // Change display currency to EUR (id=2)
-      const selects = screen.getAllByRole('combobox')
-      fireEvent.change(selects[0], { target: { value: '2' } })
+      const displayInput = screen.getByLabelText('Display currency')
+      fireEvent.focus(displayInput)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR — Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR — Euro/ }))
 
       await act(async () => {
         fireEvent.click(screen.getByText('Continue'))
@@ -152,8 +154,10 @@ describe('OnboardingPage', () => {
         expect(screen.getByText('Currency Preferences')).toBeInTheDocument()
       })
 
-      const selects = screen.getAllByRole('combobox')
-      fireEvent.change(selects[1], { target: { value: '2' } })
+      const paymentInput = screen.getByLabelText('Payment currency')
+      fireEvent.focus(paymentInput)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR — Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR — Euro/ }))
 
       await act(async () => {
         fireEvent.click(screen.getByText('Continue'))
@@ -307,8 +311,10 @@ describe('OnboardingPage', () => {
       })
 
       // Change display currency to EUR (id=2)
-      const selects = screen.getAllByRole('combobox')
-      fireEvent.change(selects[0], { target: { value: '2' } })
+      const displayInput = screen.getByLabelText('Display currency')
+      fireEvent.focus(displayInput)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR — Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR — Euro/ }))
 
       await act(async () => {
         fireEvent.click(screen.getByText('Continue'))
@@ -318,9 +324,8 @@ describe('OnboardingPage', () => {
         expect(screen.getByText('First Wallet')).toBeInTheDocument()
       })
 
-      // Wallet currency select should be EUR (id=2)
-      const walletSelect = screen.getByRole('combobox')
-      expect(walletSelect).toHaveValue('2')
+      // Wallet currency input should show EUR
+      expect(screen.getByLabelText('Currency')).toHaveValue('EUR — Euro')
     })
   })
 })

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Button, Card, Input, Select, Spinner, useToast } from '../components/ui'
+import { Button, Card, Input, LiveSearch, Spinner, useToast } from '../components/ui'
 import { currencyRepository, walletRepository } from '../services/repositories'
 import type { Currency } from '../types'
 
@@ -149,27 +149,20 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
               </div>
 
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Display currency
-                  </label>
-                  <Select
-                    value={displayCurrencyId}
-                    onChange={(e) => setDisplayCurrencyId(e.target.value)}
-                    options={currencyOptions}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Payment currency
-                  </label>
-                  <Select
-                    value={paymentCurrencyId}
-                    onChange={(e) => setPaymentCurrencyId(e.target.value)}
-                    options={paymentOptions}
-                  />
-                </div>
+                <LiveSearch
+                  label="Display currency"
+                  value={displayCurrencyId}
+                  onChange={(value) => setDisplayCurrencyId(String(value))}
+                  options={currencyOptions}
+                  placeholder="Search currencies"
+                />
+                <LiveSearch
+                  label="Payment currency"
+                  value={paymentCurrencyId}
+                  onChange={(value) => setPaymentCurrencyId(String(value))}
+                  options={paymentOptions}
+                  placeholder="Search currencies"
+                />
               </div>
 
               <Button onClick={handleCurrenciesContinue} className="w-full">
@@ -209,16 +202,13 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Currency
-                  </label>
-                  <Select
-                    value={walletCurrencyId}
-                    onChange={(e) => setWalletCurrencyId(e.target.value)}
-                    options={currencyOptions}
-                  />
-                </div>
+                <LiveSearch
+                  label="Currency"
+                  value={walletCurrencyId}
+                  onChange={(value) => setWalletCurrencyId(String(value))}
+                  options={currencyOptions}
+                  placeholder="Search currencies"
+                />
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

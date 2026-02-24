@@ -284,8 +284,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Display Currency')).toBeInTheDocument()
       })
 
-      const displayCurrencySelect = screen.getByRole('combobox', { name: /display currency/i })
-      fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /display currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(mockCurrencyRepository.setSystem).toHaveBeenCalledWith(2)
@@ -299,8 +301,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Payment Currency')).toBeInTheDocument()
       })
 
-      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
-      fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(mockCurrencyRepository.setPaymentDefault).toHaveBeenCalledWith(2)
@@ -319,8 +323,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Payment Currency')).toBeInTheDocument()
       })
 
-      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
-      fireEvent.change(paymentCurrencySelect, { target: { value: '' } })
+      const input = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Same as account' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: 'Same as account' }))
 
       await waitFor(() => {
         expect(mockCurrencyRepository.clearPaymentDefault).toHaveBeenCalled()
@@ -358,8 +364,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Display Currency')).toBeInTheDocument()
       })
 
-      const displayCurrencySelect = screen.getByRole('combobox', { name: /display currency/i })
-      fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /display currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to set system currency:', expect.any(Error))
@@ -378,8 +386,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Payment Currency')).toBeInTheDocument()
       })
 
-      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
-      fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to set payment currency:', expect.any(Error))

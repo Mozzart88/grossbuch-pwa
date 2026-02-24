@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Modal, Input, Select, Spinner, useToast, DropdownMenu } from '../components/ui'
+import { Button, Card, Modal, Input, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
 import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
@@ -453,16 +453,14 @@ export function AccountsPage() {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Add a new currency account to <strong>{targetWallet?.name}</strong>
           </p>
-          <Select
+          <LiveSearch
             label="Currency"
             value={selectedCurrencyId}
-            onChange={(e) => setSelectedCurrencyId(e.target.value)}
+            onChange={(value) => setSelectedCurrencyId(String(value))}
             options={currencies
               .filter(c => !targetWallet?.accounts?.some(a => a.currency_id === c.id))
-              .map((c) => ({
-                value: c.id,
-                label: `${c.code} - ${c.name}`,
-              }))}
+              .map(c => ({ value: c.id, label: `${c.code} - ${c.name}` }))}
+            placeholder="Search currencies"
           />
           <Input
             label="Initial Balance"

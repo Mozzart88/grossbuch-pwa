@@ -1269,8 +1269,10 @@ describe('AccountsPage', () => {
       })
 
       // Select USD (default currency)
-      const select = screen.getByLabelText('Currency')
-      fireEvent.change(select, { target: { value: '1' } })
+      const currencyInput = screen.getByLabelText('Currency')
+      fireEvent.focus(currencyInput)
+      await waitFor(() => expect(screen.getByRole('option', { name: /USD - US Dollar/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /USD - US Dollar/ }))
 
       const dialog = screen.getByRole('dialog')
       const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
