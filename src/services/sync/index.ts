@@ -158,7 +158,7 @@ export async function pullSync(): Promise<ImportResult[]> {
   for (const currencyId of newCurrencyIds) {
     try {
       const hasRate = await queryOne<{ rate: number }>(
-        'SELECT rate FROM exchange_rate WHERE currency_id = ? LIMIT 1',
+        'SELECT rate_int, rate_frac FROM exchange_rate WHERE currency_id = ? LIMIT 1',
         [currencyId]
       )
       if (!hasRate) {

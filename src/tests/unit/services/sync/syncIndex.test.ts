@@ -18,8 +18,10 @@ vi.mock('../../../../services/repositories/settingsRepository', () => ({
 }))
 
 const mockExportSyncPackage = vi.fn()
+const mockExportChunkedSyncPackages = vi.fn()
 vi.mock('../../../../services/sync/syncExport', () => ({
   exportSyncPackage: (...args: unknown[]) => mockExportSyncPackage(...args),
+  exportChunkedSyncPackages: (...args: unknown[]) => mockExportChunkedSyncPackages(...args),
 }))
 
 const mockImportSyncPackage = vi.fn()
@@ -208,6 +210,43 @@ describe('sync index', () => {
 
       expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
       expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+    })
+
+    it('full-history push: encrypts for target only and skips hasChanges check', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'target-device': 'target-pub-key' })
+        return null
+      })
+
+      const chunk1 = { version: 2, sender_id: 'inst-1' }
+      const chunk2 = { version: 2, sender_id: 'inst-1' }
+      mockExportChunkedSyncPackages.mockResolvedValue([chunk1, chunk2])
+      const mockEncrypted = { sender_id: 'inst-1', iv: 'iv', ciphertext: 'ct', recipient_keys: [{ installation_id: 'target-device', encrypted_key: 'key' }] }
+      mockEncryptSyncPackage.mockResolvedValue(mockEncrypted)
+      mockApiPush.mockResolvedValue({ success: true })
+
+      const result = await pushSync({ targetUuid: 'target-device' })
+
+      expect(result).toBe(true)
+      expect(mockExportChunkedSyncPackages).toHaveBeenCalledWith('inst-1')
+      expect(mockEncryptSyncPackage).toHaveBeenCalledTimes(2)
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(chunk1, [{ installation_id: 'target-device', public_key: 'target-pub-key' }])
+      expect(mockApiPush).toHaveBeenCalledTimes(2)
+      expect(mockHasUnpushedChanges).not.toHaveBeenCalled()
+      expect(mockUpdatePushTimestamp).not.toHaveBeenCalled()
+    })
+
+    it('returns false when targetUuid not in linked installations', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'other-device': 'other-key' })
+        return null
+      })
+
+      const result = await pushSync({ targetUuid: 'unknown-device' })
+      expect(result).toBe(false)
+      expect(mockExportChunkedSyncPackages).not.toHaveBeenCalled()
     })
   })
 
