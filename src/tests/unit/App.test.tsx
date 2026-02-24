@@ -26,6 +26,12 @@ vi.mock('../../pages', () => ({
   MigrationPage: () => <div data-testid="migration-page">Migration</div>,
   InstallPage: () => <div data-testid="install-page">Install</div>,
   SharePage: () => <div data-testid="share-page">Share</div>,
+  LinkedDevicesPage: () => <div data-testid="linked-devices-page">LinkedDevices</div>,
+  OnboardingPage: ({ onComplete }: { onComplete: () => void }) => (
+    <div data-testid="onboarding-page">
+      <button onClick={onComplete}>Complete Onboarding</button>
+    </div>
+  ),
 }))
 
 // Mock TabBar
@@ -63,6 +69,8 @@ let mockAuthState = {
   changePin: vi.fn(),
   wipeAndReset: vi.fn(),
   clearError: vi.fn(),
+  isFirstSetup: false,
+  clearFirstSetup: vi.fn(),
 }
 
 vi.mock('../../store/AuthContext', () => ({
@@ -83,6 +91,15 @@ vi.mock('../../hooks/useInstallation', () => ({
 // Mock installation registration hook
 vi.mock('../../hooks/useInstallationRegistration', () => ({
   useInstallationRegistration: vi.fn(),
+}))
+
+// Mock settingsRepository so SyncProvider doesn't touch the DB
+vi.mock('../../services/repositories/settingsRepository', () => ({
+  settingsRepository: {
+    get: vi.fn().mockResolvedValue(null),
+    set: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
+  },
 }))
 
 // Mock theme context
@@ -112,6 +129,8 @@ describe('App', () => {
       changePin: vi.fn(),
       wipeAndReset: vi.fn(),
       clearError: vi.fn(),
+      isFirstSetup: false,
+      clearFirstSetup: vi.fn(),
     }
   })
 
@@ -203,6 +222,43 @@ describe('App', () => {
       // Should render without errors, indicating all providers are present
       render(<App />)
 
+      expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+    })
+  })
+
+  describe('OnboardingPage gate', () => {
+    beforeEach(() => {
+      localStorage.clear()
+    })
+
+    it('renders OnboardingPage when isFirstSetup=true and no share link', () => {
+      mockAuthState.isFirstSetup = true
+      mockDatabaseState = { isReady: true, error: null }
+
+      render(<App />)
+
+      expect(screen.getByTestId('onboarding-page')).toBeInTheDocument()
+      expect(screen.queryByTestId('transactions-page')).not.toBeInTheDocument()
+    })
+
+    it('skips OnboardingPage when isFirstSetup=false', () => {
+      mockAuthState.isFirstSetup = false
+      mockDatabaseState = { isReady: true, error: null }
+
+      render(<App />)
+
+      expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
+      expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+    })
+
+    it('skips OnboardingPage when share link is present in localStorage', () => {
+      localStorage.setItem('gb_shared_uuid', 'some-uuid')
+      mockAuthState.isFirstSetup = true
+      mockDatabaseState = { isReady: true, error: null }
+
+      render(<App />)
+
+      expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
       expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
     })
   })

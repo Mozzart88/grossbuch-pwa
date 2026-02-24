@@ -1,21 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Card, Select } from '../components/ui'
+import { Card, LiveSearch } from '../components/ui'
 import { useTheme } from '../store/ThemeContext'
 import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 
 const settingsLinks = [
-  { to: '/settings/accounts', label: 'Accounts', icon: '🏦', description: 'Manage your wallets and accounts' },
-  { to: '/settings/tags', label: 'Tags', icon: '🏷️', description: 'Organize your transactions' },
-  { to: '/settings/counterparties', label: 'Counterparties', icon: '👥', description: 'Track who you transact with' },
-{ to: '/settings/exchange-rates', label: 'Exchange Rates', icon: '📈', description: 'Set currency exchange rates' },
   { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
   { to: '/settings/import', label: 'Import Data', icon: '📥', description: 'Import transactions from CSV' },
   { to: '/settings/download', label: 'Download DB', icon: '🗄️', description: 'Download Raw Sqlite DB' },
   { to: '/settings/security', label: 'Security', icon: '🔒', description: 'Change PIN and security settings' },
   { to: '/settings/share', label: 'Share', icon: '🔗', description: 'Share app with a link or QR code' },
+  { to: '/settings/linked-devices', label: 'Linked Devices', icon: '📱', description: 'Manage paired devices' },
 ]
 
 export function SettingsPage() {
@@ -52,8 +49,7 @@ export function SettingsPage() {
     }
   }
 
-  const handleDisplayCurrencyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newId = e.target.value
+  const handleDisplayCurrencyChange = async (newId: string) => {
     setDisplayCurrencyId(newId)
     try {
       await currencyRepository.setSystem(parseInt(newId))
@@ -62,8 +58,7 @@ export function SettingsPage() {
     }
   }
 
-  const handlePaymentCurrencyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newId = e.target.value
+  const handlePaymentCurrencyChange = async (newId: string) => {
     setPaymentCurrencyId(newId)
     try {
       if (newId) {
@@ -104,28 +99,24 @@ export function SettingsPage() {
         <Card className="p-4">
           <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">Defaults</h3>
           <div className="space-y-4">
-            <Select
+            <LiveSearch
               label="Display Currency"
               value={displayCurrencyId}
-              onChange={handleDisplayCurrencyChange}
-              options={currencies.map(c => ({
-                value: c.id,
-                label: `${c.code} - ${c.name}`,
-              }))}
+              onChange={(value) => handleDisplayCurrencyChange(String(value))}
+              options={currencies.map(c => ({ value: c.id, label: `${c.code} - ${c.name}` }))}
               disabled={loading}
+              placeholder="Search currencies"
             />
-            <Select
+            <LiveSearch
               label="Payment Currency"
               value={paymentCurrencyId}
-              onChange={handlePaymentCurrencyChange}
+              onChange={(value) => handlePaymentCurrencyChange(String(value))}
               options={[
                 { value: '', label: 'Same as account' },
-                ...currencies.map(c => ({
-                  value: c.id,
-                  label: `${c.code} - ${c.name}`,
-                })),
+                ...currencies.map(c => ({ value: c.id, label: `${c.code} - ${c.name}` })),
               ]}
               disabled={loading}
+              placeholder="Search currencies"
             />
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Payment currency pre-selects the expense currency when creating transactions.

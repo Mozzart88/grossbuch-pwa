@@ -123,14 +123,14 @@ export const currencyRepository = {
   },
 
   async setSystem(id: number): Promise<void> {
-    // The trigger will remove system tag from other currencies
+    await execSQL('DELETE FROM currency_to_tags WHERE tag_id = ?', [SYSTEM_TAGS.SYSTEM])
     await execSQL('INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.SYSTEM])
-    // System currency also gets the default payment tag
+    await execSQL('DELETE FROM currency_to_tags WHERE tag_id = ?', [SYSTEM_TAGS.DEFAULT])
     await execSQL('INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
   },
 
   async setPaymentDefault(id: number): Promise<void> {
-    // The trigger will remove default tag from other currencies
+    await execSQL('DELETE FROM currency_to_tags WHERE tag_id = ?', [SYSTEM_TAGS.DEFAULT])
     await execSQL('INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
   },
 

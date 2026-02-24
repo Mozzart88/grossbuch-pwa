@@ -347,11 +347,20 @@ describe('currencyRepository', () => {
     it('sets currency as system via tag and also sets payment default', async () => {
       await currencyRepository.setSystem(2)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockExecSQL).toHaveBeenCalledTimes(4)
+      expect(mockExecSQL).toHaveBeenNthCalledWith(1,
+        'DELETE FROM currency_to_tags WHERE tag_id = ?',
+        [SYSTEM_TAGS.SYSTEM]
+      )
+      expect(mockExecSQL).toHaveBeenNthCalledWith(2,
         'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
         [2, SYSTEM_TAGS.SYSTEM]
       )
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockExecSQL).toHaveBeenNthCalledWith(3,
+        'DELETE FROM currency_to_tags WHERE tag_id = ?',
+        [SYSTEM_TAGS.DEFAULT]
+      )
+      expect(mockExecSQL).toHaveBeenNthCalledWith(4,
         'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
         [2, SYSTEM_TAGS.DEFAULT]
       )
@@ -362,7 +371,12 @@ describe('currencyRepository', () => {
     it('sets currency as payment default via tag', async () => {
       await currencyRepository.setPaymentDefault(2)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockExecSQL).toHaveBeenCalledTimes(2)
+      expect(mockExecSQL).toHaveBeenNthCalledWith(1,
+        'DELETE FROM currency_to_tags WHERE tag_id = ?',
+        [SYSTEM_TAGS.DEFAULT]
+      )
+      expect(mockExecSQL).toHaveBeenNthCalledWith(2,
         'INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)',
         [2, SYSTEM_TAGS.DEFAULT]
       )

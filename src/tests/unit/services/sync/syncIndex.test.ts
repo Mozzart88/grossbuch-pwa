@@ -11,15 +11,19 @@ vi.mock('../../../../services/database/connection', () => ({
 }))
 
 const mockSettingsGet = vi.fn()
+const mockSettingsDelete = vi.fn()
 vi.mock('../../../../services/repositories/settingsRepository', () => ({
   settingsRepository: {
     get: (...args: unknown[]) => mockSettingsGet(...args),
+    delete: (...args: unknown[]) => mockSettingsDelete(...args),
   },
 }))
 
 const mockExportSyncPackage = vi.fn()
+const mockExportChunkedSyncPackages = vi.fn()
 vi.mock('../../../../services/sync/syncExport', () => ({
   exportSyncPackage: (...args: unknown[]) => mockExportSyncPackage(...args),
+  exportChunkedSyncPackages: (...args: unknown[]) => mockExportChunkedSyncPackages(...args),
 }))
 
 const mockImportSyncPackage = vi.fn()
@@ -208,6 +212,74 @@ describe('sync index', () => {
 
       expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
       expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+    })
+
+    it('full-history push: encrypts for target only and skips hasChanges check', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'target-device': 'target-pub-key' })
+        return null
+      })
+
+      const chunk1 = { version: 2, sender_id: 'inst-1' }
+      const chunk2 = { version: 2, sender_id: 'inst-1' }
+      mockExportChunkedSyncPackages.mockResolvedValue([chunk1, chunk2])
+      const mockEncrypted = { sender_id: 'inst-1', iv: 'iv', ciphertext: 'ct', recipient_keys: [{ installation_id: 'target-device', encrypted_key: 'key' }] }
+      mockEncryptSyncPackage.mockResolvedValue(mockEncrypted)
+      mockApiPush.mockResolvedValue({ success: true })
+
+      const result = await pushSync({ targetUuid: 'target-device' })
+
+      expect(result).toBe(true)
+      expect(mockExportChunkedSyncPackages).toHaveBeenCalledWith('inst-1')
+      expect(mockEncryptSyncPackage).toHaveBeenCalledTimes(2)
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(chunk1, [{ installation_id: 'target-device', public_key: 'target-pub-key' }])
+      expect(mockApiPush).toHaveBeenCalledTimes(2)
+      expect(mockHasUnpushedChanges).not.toHaveBeenCalled()
+      expect(mockUpdatePushTimestamp).not.toHaveBeenCalled()
+    })
+
+    it('returns false when targetUuid not in linked installations', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'other-device': 'other-key' })
+        return null
+      })
+
+      const result = await pushSync({ targetUuid: 'unknown-device' })
+      expect(result).toBe(false)
+      expect(mockExportChunkedSyncPackages).not.toHaveBeenCalled()
+    })
+
+    it('returns false when pending_initial_sync is set', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'other-id': 'public-key' })
+        if (key === 'pending_initial_sync') return '1'
+        return null
+      })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+      mockHasUnpushedChanges.mockResolvedValue(true)
+
+      const result = await pushSync()
+      expect(result).toBe(false)
+      expect(mockExportSyncPackage).not.toHaveBeenCalled()
+    })
+
+    it('does not skip full-history push when pending_initial_sync is set', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'target-device': 'target-pub-key' })
+        if (key === 'pending_initial_sync') return '1'
+        return null
+      })
+
+      mockExportChunkedSyncPackages.mockResolvedValue([{ version: 2, sender_id: 'inst-1' }])
+      mockEncryptSyncPackage.mockResolvedValue({ sender_id: 'inst-1', iv: 'iv', ciphertext: 'ct', recipient_keys: [] })
+      mockApiPush.mockResolvedValue({ success: true })
+
+      const result = await pushSync({ targetUuid: 'target-device' })
+      expect(result).toBe(true)
     })
   })
 
@@ -474,6 +546,143 @@ describe('sync index', () => {
       await pullSync()
 
       expect(mockSyncSingleRate).not.toHaveBeenCalled()
+    })
+
+    it('clears pending_initial_sync and updates push timestamp when packages imported (flag is set)', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'pending_initial_sync') return '1'
+        return null
+      })
+      mockSettingsDelete.mockResolvedValue(undefined)
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+
+      const encPkg = { sender_id: 'other', iv: 'iv', ciphertext: 'ct', recipient_keys: [] }
+      mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: encPkg }] })
+      mockDecryptSyncPackage.mockResolvedValue({ version: 1, sender_id: 'other' })
+      mockImportSyncPackage.mockResolvedValue({ imported: { transactions: 1 }, newAccountCurrencyIds: [], conflicts: 0, errors: [] })
+      mockApiAck.mockResolvedValue({ success: true })
+
+      await pullSync()
+
+      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number))
+      expect(mockSettingsDelete).toHaveBeenCalledWith('pending_initial_sync')
+    })
+
+    it('updates push timestamp even when pending_initial_sync is NOT set', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        // pending_initial_sync NOT set
+        return null
+      })
+      mockSettingsDelete.mockResolvedValue(undefined)
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+
+      const encPkg = { sender_id: 'other', iv: 'iv', ciphertext: 'ct', recipient_keys: [] }
+      mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: encPkg }] })
+      mockDecryptSyncPackage.mockResolvedValue({ version: 1, sender_id: 'other' })
+      mockImportSyncPackage.mockResolvedValue({ imported: { transactions: 1 }, newAccountCurrencyIds: [], conflicts: 0, errors: [] })
+      mockApiAck.mockResolvedValue({ success: true })
+
+      await pullSync()
+
+      // Must update push timestamp even when flag is not set (prevents echo)
+      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number))
+      // Flag was not set, so delete should NOT be called
+      expect(mockSettingsDelete).not.toHaveBeenCalled()
+    })
+
+    it('uses the pre-import timestamp for updatePushTimestamp', async () => {
+      const beforeCall = Math.floor(Date.now() / 1000)
+
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        return null
+      })
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+
+      const encPkg = { sender_id: 'other', iv: 'iv', ciphertext: 'ct', recipient_keys: [] }
+      mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: encPkg }] })
+      mockDecryptSyncPackage.mockResolvedValue({ version: 1, sender_id: 'other' })
+      mockImportSyncPackage.mockResolvedValue({ imported: { transactions: 1 }, newAccountCurrencyIds: [], conflicts: 0, errors: [] })
+      mockApiAck.mockResolvedValue({ success: true })
+
+      await pullSync()
+
+      const afterCall = Math.floor(Date.now() / 1000)
+      const [, timestamp] = mockUpdatePushTimestamp.mock.calls[0] as [string, number]
+      // Timestamp must be captured before (or at) the start of the call, not after
+      expect(timestamp).toBeGreaterThanOrEqual(beforeCall)
+      expect(timestamp).toBeLessThanOrEqual(afterCall)
+    })
+
+    it('does not clear pending_initial_sync when no packages were imported', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'pending_initial_sync') return '1'
+        return null
+      })
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+      mockApiPull.mockResolvedValue({ packages: [] })
+
+      await pullSync()
+
+      expect(mockSettingsDelete).not.toHaveBeenCalled()
+      expect(mockUpdatePushTimestamp).not.toHaveBeenCalled()
+    })
+
+    it('does not clear pending_initial_sync when all packages failed to ack', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'pending_initial_sync') return '1'
+        return null
+      })
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+      mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-fail', package: {} }] })
+      mockDecryptSyncPackage.mockRejectedValue(new Error('decrypt error'))
+
+      await pullSync()
+
+      expect(mockSettingsDelete).not.toHaveBeenCalled()
+    })
+
+    it('setSuppressWriteNotifications(false) is called when restoreUpdatedAtTriggers throws', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        return null
+      })
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+      mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: {} }] })
+      mockDecryptSyncPackage.mockResolvedValue({ version: 1 })
+      mockImportSyncPackage.mockResolvedValue({ imported: {}, newAccountCurrencyIds: [], conflicts: 0, errors: [] })
+      mockRestoreTriggers.mockRejectedValueOnce(new Error('restore error'))
+
+      await expect(pullSync()).rejects.toThrow('restore error')
+
+      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
+      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+    })
+
+    it('setSuppressWriteNotifications(false) is called when dropUpdatedAtTriggers throws', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        return null
+      })
+      mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
+      mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
+      mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: {} }] })
+      mockDropTriggers.mockRejectedValueOnce(new Error('drop error'))
+
+      await expect(pullSync()).rejects.toThrow('drop error')
+
+      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
+      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
     })
 
     it('deduplicates currency IDs across multiple packages', async () => {

@@ -7,11 +7,12 @@ import { ToastProvider, Spinner } from './components/ui'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { useSyncPull } from './hooks/useSyncPull'
 import { useSyncInit } from './hooks/useSyncInit'
-import { SyncProvider } from './contexts/SyncContext'
+import { SyncProvider, useSyncContext } from './contexts/SyncContext'
 import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
 import { ShareLinkCapture } from './components/ShareLinkCapture'
+import { AUTH_STORAGE_KEYS } from './types/auth'
 import {
   TransactionsPage,
   AddTransactionPage,
@@ -35,7 +36,24 @@ import {
   MigrationPage,
   InstallPage,
   SharePage,
+  LinkedDevicesPage,
+  OnboardingPage,
 } from './pages'
+
+function SyncGate({ children }: { children: React.ReactNode }) {
+  const { isInitialSyncing } = useSyncContext()
+
+  if (isInitialSyncing) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
+        <Spinner size="lg" />
+        <p className="text-gray-500 dark:text-gray-400">Syncing...</p>
+      </div>
+    )
+  }
+
+  return <>{children}</>
+}
 
 function InstallGate({ children }: { children: React.ReactNode }) {
   const { isInstalled } = useInstallation()
@@ -81,6 +99,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const { isReady, error } = useDatabase()
+  const { isFirstSetup, clearFirstSetup } = useAuth()
 
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
@@ -120,6 +139,10 @@ function AppContent() {
     )
   }
 
+  if (isFirstSetup && !localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)) {
+    return <OnboardingPage onComplete={clearFirstSetup} />
+  }
+
   return (
     <AppLayout>
       <Routes>
@@ -140,6 +163,7 @@ function AppContent() {
         <Route path="/settings/budgets" element={<BudgetsPage />} />
         <Route path="/settings/security" element={<ChangePinPage />} />
         <Route path="/settings/share" element={<SharePage />} />
+        <Route path="/settings/linked-devices" element={<LinkedDevicesPage />} />
       </Routes>
     </AppLayout>
   )
@@ -157,7 +181,9 @@ export default function App() {
                 <AuthGate>
                   <LayoutProvider>
                     <SyncProvider>
-                      <AppContent />
+                      <SyncGate>
+                        <AppContent />
+                      </SyncGate>
                     </SyncProvider>
                   </LayoutProvider>
                 </AuthGate>

@@ -91,13 +91,16 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
       let pushSuccess = false
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          await pushSync({ targetUuid: uuid })
-          pushSuccess = true
-          break
+          const ok = await pushSync({ targetUuid: uuid })
+          if (ok) {
+            pushSuccess = true
+            break
+          }
+          console.warn(`[pollAndProcessInit] Full push attempt ${attempt}/3: pushSync returned false`)
         } catch (err) {
           console.warn(`[pollAndProcessInit] Full push attempt ${attempt}/3 failed:`, err)
-          if (attempt < 3) await new Promise(r => setTimeout(r, 2000))
         }
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000))
       }
       if (!pushSuccess) {
         console.error('[pollAndProcessInit] Full push to new device failed after 3 attempts')

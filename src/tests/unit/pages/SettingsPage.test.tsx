@@ -107,28 +107,37 @@ describe('SettingsPage', () => {
     })
   })
 
-  describe('Settings links', () => {
-    it('renders Accounts link', () => {
+  describe('Settings links — removed items', () => {
+    it('does not render Accounts link', () => {
       renderPage()
 
-      expect(screen.getByText('Accounts')).toBeInTheDocument()
-      expect(screen.getByText('Manage your wallets and accounts')).toBeInTheDocument()
+      expect(screen.queryByText('Accounts')).not.toBeInTheDocument()
+      expect(screen.queryByText('Manage your wallets and accounts')).not.toBeInTheDocument()
     })
 
-    it('renders Tags link', () => {
+    it('does not render Tags link', () => {
       renderPage()
 
-      expect(screen.getByText('Tags')).toBeInTheDocument()
-      expect(screen.getByText('Organize your transactions')).toBeInTheDocument()
+      expect(screen.queryByText('Tags')).not.toBeInTheDocument()
+      expect(screen.queryByText('Organize your transactions')).not.toBeInTheDocument()
     })
 
-    it('renders Counterparties link', () => {
+    it('does not render Counterparties link', () => {
       renderPage()
 
-      expect(screen.getByText('Counterparties')).toBeInTheDocument()
-      expect(screen.getByText('Track who you transact with')).toBeInTheDocument()
+      expect(screen.queryByText('Counterparties')).not.toBeInTheDocument()
+      expect(screen.queryByText('Track who you transact with')).not.toBeInTheDocument()
     })
 
+    it('does not render Exchange Rates link', () => {
+      renderPage()
+
+      expect(screen.queryByText('Exchange Rates')).not.toBeInTheDocument()
+      expect(screen.queryByText('Set currency exchange rates')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Settings links — present items', () => {
     it('renders Export Data link', () => {
       renderPage()
 
@@ -150,33 +159,25 @@ describe('SettingsPage', () => {
       expect(screen.getByText('Download Raw Sqlite DB')).toBeInTheDocument()
     })
 
+    it('renders Linked Devices link', () => {
+      renderPage()
+
+      expect(screen.getByText('Linked Devices')).toBeInTheDocument()
+      expect(screen.getByText('Manage paired devices')).toBeInTheDocument()
+    })
+
+    it('links to linked-devices page', () => {
+      renderPage()
+
+      const link = screen.getByRole('link', { name: /Linked Devices/i })
+      expect(link).toHaveAttribute('href', '/settings/linked-devices')
+    })
+
     it('does not render Budgets link (moved to Summaries page)', () => {
       renderPage()
 
       expect(screen.queryByText('Budgets')).not.toBeInTheDocument()
       expect(screen.queryByText('Manage your budgets')).not.toBeInTheDocument()
-    })
-
-
-    it('links to accounts page', () => {
-      renderPage()
-
-      const accountsLink = screen.getByRole('link', { name: /Accounts/i })
-      expect(accountsLink).toHaveAttribute('href', '/settings/accounts')
-    })
-
-    it('links to tags page', () => {
-      renderPage()
-
-      const tagsLink = screen.getByRole('link', { name: /Tags/i })
-      expect(tagsLink).toHaveAttribute('href', '/settings/tags')
-    })
-
-    it('links to counterparties page', () => {
-      renderPage()
-
-      const counterpartiesLink = screen.getByRole('link', { name: /Counterparties/i })
-      expect(counterpartiesLink).toHaveAttribute('href', '/settings/counterparties')
     })
 
     it('links to export page', () => {
@@ -202,24 +203,6 @@ describe('SettingsPage', () => {
   })
 
   describe('Icons', () => {
-    it('renders account icon', () => {
-      renderPage()
-
-      expect(screen.getByText('🏦')).toBeInTheDocument()
-    })
-
-    it('renders tags icon', () => {
-      renderPage()
-
-      expect(screen.getByText('🏷️')).toBeInTheDocument()
-    })
-
-    it('renders counterparties icon', () => {
-      renderPage()
-
-      expect(screen.getByText('👥')).toBeInTheDocument()
-    })
-
     it('renders export icon', () => {
       renderPage()
 
@@ -236,6 +219,12 @@ describe('SettingsPage', () => {
       renderPage()
 
       expect(screen.getByText('🗄️')).toBeInTheDocument()
+    })
+
+    it('renders linked devices icon', () => {
+      renderPage()
+
+      expect(screen.getByText('📱')).toBeInTheDocument()
     })
   })
 
@@ -295,8 +284,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Display Currency')).toBeInTheDocument()
       })
 
-      const displayCurrencySelect = screen.getByRole('combobox', { name: /display currency/i })
-      fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /display currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(mockCurrencyRepository.setSystem).toHaveBeenCalledWith(2)
@@ -310,8 +301,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Payment Currency')).toBeInTheDocument()
       })
 
-      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
-      fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(mockCurrencyRepository.setPaymentDefault).toHaveBeenCalledWith(2)
@@ -330,8 +323,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Payment Currency')).toBeInTheDocument()
       })
 
-      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
-      fireEvent.change(paymentCurrencySelect, { target: { value: '' } })
+      const input = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Same as account' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: 'Same as account' }))
 
       await waitFor(() => {
         expect(mockCurrencyRepository.clearPaymentDefault).toHaveBeenCalled()
@@ -369,8 +364,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Display Currency')).toBeInTheDocument()
       })
 
-      const displayCurrencySelect = screen.getByRole('combobox', { name: /display currency/i })
-      fireEvent.change(displayCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /display currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to set system currency:', expect.any(Error))
@@ -389,8 +386,10 @@ describe('SettingsPage', () => {
         expect(screen.getByText('Payment Currency')).toBeInTheDocument()
       })
 
-      const paymentCurrencySelect = screen.getByRole('combobox', { name: /payment currency/i })
-      fireEvent.change(paymentCurrencySelect, { target: { value: '2' } })
+      const input = screen.getByRole('combobox', { name: /payment currency/i })
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('option', { name: /EUR - Euro/ })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: /EUR - Euro/ }))
 
       await waitFor(() => {
         expect(consoleSpy).toHaveBeenCalledWith('Failed to set payment currency:', expect.any(Error))

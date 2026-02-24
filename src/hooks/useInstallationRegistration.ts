@@ -47,6 +47,7 @@ export function useInstallationRegistration({
               localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)
               await saveLinkedInstallation(sharedUuid, sharedPublicKey)
               try {
+                await settingsRepository.set('pending_initial_sync', '1')
                 await sendInit(sharedUuid, sharedPublicKey)
               } catch (err) {
                 console.warn('[useInstallationRegistration] sendInit failed:', err)
@@ -87,6 +88,7 @@ export function useInstallationRegistration({
             localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)
             await saveLinkedInstallation(sharedUuid, sharedPublicKey)
             try {
+              await settingsRepository.set('pending_initial_sync', '1')
               await sendInit(sharedUuid, sharedPublicKey)
             } catch (err) {
               console.warn('[useInstallationRegistration] sendInit failed:', err)

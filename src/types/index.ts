@@ -299,6 +299,7 @@ export interface Settings {
   theme: 'light' | 'dark' | 'system'
   installation_id: string
   linked_installations: string
+  pending_initial_sync?: string
 }
 
 // System tag IDs (for reference)

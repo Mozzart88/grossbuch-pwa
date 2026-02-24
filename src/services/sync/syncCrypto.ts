@@ -53,7 +53,12 @@ export async function encryptSyncPackage(
   const aesKey = await generateAESKey()
 
   // Serialize and encrypt the package
-  const plaintext = new TextEncoder().encode(JSON.stringify(pkg))
+  const plaintext = new TextEncoder().encode(JSON.stringify(pkg, (_, v) => {
+    if (typeof v === 'bigint') {
+      return v.toString()
+    }
+    return v
+  }))
   const { ciphertext, iv } = await aesEncrypt(plaintext.buffer as ArrayBuffer, aesKey)
 
   // Export AES key for RSA wrapping

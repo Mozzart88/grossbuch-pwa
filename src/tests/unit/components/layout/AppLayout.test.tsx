@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { AppLayout } from '../../../../components/layout/AppLayout'
 import { LayoutProvider } from '../../../../store/LayoutContext'
@@ -12,6 +12,15 @@ vi.mock('../../../../components/ui', () => ({
 // Mock ActionBar component
 vi.mock('../../../../components/layout/ActionBar', () => ({
   ActionBar: () => <div data-testid="action-bar">ActionBar</div>,
+}))
+
+// Mock NavDrawer component
+vi.mock('../../../../components/layout/NavDrawer', () => ({
+  NavDrawer: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
+    <div data-testid="nav-drawer" data-open={isOpen}>
+      <button onClick={onClose}>Close drawer</button>
+    </div>
+  ),
 }))
 
 describe('AppLayout', () => {
@@ -52,6 +61,53 @@ describe('AppLayout', () => {
     })
   })
 
+  describe('Global top bar', () => {
+    it('renders the app logo', () => {
+      renderLayout()
+
+      expect(screen.getByRole('img', { name: 'Logo' })).toBeInTheDocument()
+    })
+
+    it('renders the hamburger menu button', () => {
+      renderLayout()
+
+      expect(screen.getByRole('button', { name: /open menu/i })).toBeInTheDocument()
+    })
+
+    it('renders a header element', () => {
+      renderLayout()
+
+      expect(screen.getByRole('banner')).toBeInTheDocument()
+    })
+
+    it('opens drawer when hamburger is clicked', () => {
+      renderLayout()
+
+      const drawer = screen.getByTestId('nav-drawer')
+      expect(drawer).toHaveAttribute('data-open', 'false')
+
+      const hamburger = screen.getByRole('button', { name: /open menu/i })
+      fireEvent.click(hamburger)
+
+      expect(drawer).toHaveAttribute('data-open', 'true')
+    })
+
+    it('closes drawer when onClose is called', () => {
+      renderLayout()
+
+      const hamburger = screen.getByRole('button', { name: /open menu/i })
+      fireEvent.click(hamburger)
+
+      const drawer = screen.getByTestId('nav-drawer')
+      expect(drawer).toHaveAttribute('data-open', 'true')
+
+      const closeButton = screen.getByRole('button', { name: /close drawer/i })
+      fireEvent.click(closeButton)
+
+      expect(drawer).toHaveAttribute('data-open', 'false')
+    })
+  })
+
   describe('Layout structure', () => {
     it('uses flex column layout', () => {
       const { container } = renderLayout()
@@ -80,13 +136,6 @@ describe('AppLayout', () => {
 
       const main = screen.getByRole('main')
       expect(main.className).toContain('pb-20')
-    })
-
-    it('main has safe area padding at top', () => {
-      renderLayout()
-
-      const main = screen.getByRole('main')
-      expect(main.className).toContain('pt-safe')
     })
   })
 
@@ -142,6 +191,23 @@ describe('AppLayout', () => {
   })
 
   describe('Order of elements', () => {
+    it('renders header before main in DOM order', () => {
+      const { container } = renderLayout(<div>Content</div>)
+
+      const wrapper = container.firstChild as HTMLElement
+      const header = wrapper.querySelector('header')
+      const main = wrapper.querySelector('main')
+
+      expect(header).toBeTruthy()
+      expect(main).toBeTruthy()
+
+      const children = Array.from(wrapper.children)
+      const headerIndex = children.indexOf(header as Element)
+      const mainIndex = children.indexOf(main as Element)
+
+      expect(headerIndex).toBeLessThan(mainIndex)
+    })
+
     it('renders main before TabBar in DOM order', () => {
       const { container } = renderLayout(<div>Content</div>)
 
@@ -149,7 +215,6 @@ describe('AppLayout', () => {
       const main = wrapper.querySelector('main')
       const tabBar = wrapper.querySelector('[data-testid="tab-bar"]')
 
-      // Check that main comes before nav in DOM
       expect(main).toBeTruthy()
       expect(tabBar).toBeTruthy()
 
@@ -192,6 +257,13 @@ describe('AppLayout', () => {
       const content = screen.getByTestId('content')
 
       expect(main).toContainElement(content)
+    })
+
+    it('hamburger button has aria-label', () => {
+      renderLayout()
+
+      const button = screen.getByRole('button', { name: /open menu/i })
+      expect(button).toHaveAttribute('aria-label', 'Open menu')
     })
   })
 })

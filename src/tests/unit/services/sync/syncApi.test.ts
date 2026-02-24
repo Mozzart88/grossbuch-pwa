@@ -164,7 +164,7 @@ describe('syncApi', () => {
   describe('getInit', () => {
     it('fetches init packages from /sync/init', async () => {
       const responseData = [
-        { id: 1, sender_uuid: 'sender-1', encrypted_payload: 'enc', created_at: '2026-01-01' },
+        { id: 1, payload: '{"msg":"enc","publicKey":"pub-key"}', created_at: '2026-01-01' },
       ]
       mockFetch.mockReturnValue(mockResponse(responseData))
 

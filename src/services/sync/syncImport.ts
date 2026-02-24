@@ -261,15 +261,17 @@ async function importCurrencies(currencies: SyncCurrency[]): Promise<number> {
     )
     if (!local) continue // Currency must already exist (pre-seeded)
 
+    // Always sync currency_to_tags (no updated_at guard)
+    await execSQL(`DELETE FROM currency_to_tags WHERE currency_id = ?`, [local.id])
+    for (const tagId of cur.tags) {
+      await execSQL(
+        `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)`,
+        [local.id, tagId]
+      )
+    }
+
+    // Only update currency record if sender is newer
     if (cur.updated_at > local.updated_at) {
-      // Sync currency_to_tags
-      await execSQL(`DELETE FROM currency_to_tags WHERE currency_id = ?`, [local.id])
-      for (const tagId of cur.tags) {
-        await execSQL(
-          `INSERT OR IGNORE INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)`,
-          [local.id, tagId]
-        )
-      }
       await execSQL(`UPDATE currency SET updated_at = ? WHERE id = ?`, [cur.updated_at, local.id])
       count++
     }

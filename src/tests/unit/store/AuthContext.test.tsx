@@ -59,6 +59,7 @@ function TestConsumer() {
       <span data-testid="status">{auth.status}</span>
       <span data-testid="failed-attempts">{auth.failedAttempts}</span>
       <span data-testid="error">{auth.error || 'no-error'}</span>
+      <span data-testid="is-first-setup">{String(auth.isFirstSetup)}</span>
       <button data-testid="setup-pin" onClick={() => auth.setupPin('123456')}>Setup</button>
       <button data-testid="migrate" onClick={() => auth.migrateDatabase('123456')}>Migrate</button>
       <button data-testid="login" onClick={() => auth.login('123456')}>Login</button>
@@ -66,6 +67,7 @@ function TestConsumer() {
       <button data-testid="change-pin" onClick={() => auth.changePin('old', 'new')}>Change</button>
       <button data-testid="wipe" onClick={() => auth.wipeAndReset()}>Wipe</button>
       <button data-testid="clear-error" onClick={() => auth.clearError()}>Clear Error</button>
+      <button data-testid="clear-first-setup" onClick={() => auth.clearFirstSetup()}>Clear First Setup</button>
     </div>
   )
 }
@@ -102,6 +104,11 @@ describe('AuthContext', () => {
     it('starts with no error', () => {
       renderWithProvider()
       expect(screen.getByTestId('error')).toHaveTextContent('no-error')
+    })
+
+    it('starts with isFirstSetup false', () => {
+      renderWithProvider()
+      expect(screen.getByTestId('is-first-setup')).toHaveTextContent('false')
     })
   })
 
@@ -272,6 +279,24 @@ describe('AuthContext', () => {
       })
     })
 
+    it('sets isFirstSetup true on success', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(false)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('first_time_setup')
+      })
+
+      await act(async () => {
+        screen.getByTestId('setup-pin').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('is-first-setup')).toHaveTextContent('true')
+      })
+    })
+
     it('sets error on failure', async () => {
       mockIsDatabaseSetup.mockResolvedValue(false)
       mockSetupPin.mockRejectedValue(new Error('Setup failed'))
@@ -308,6 +333,33 @@ describe('AuthContext', () => {
       await waitFor(() => {
         expect(screen.getByTestId('error')).toHaveTextContent('Failed to setup PIN')
       })
+    })
+  })
+
+  describe('clearFirstSetup', () => {
+    it('resets isFirstSetup to false', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(false)
+      mockSetupPin.mockResolvedValue(undefined)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('first_time_setup')
+      })
+
+      await act(async () => {
+        screen.getByTestId('setup-pin').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('is-first-setup')).toHaveTextContent('true')
+      })
+
+      await act(async () => {
+        screen.getByTestId('clear-first-setup').click()
+      })
+
+      expect(screen.getByTestId('is-first-setup')).toHaveTextContent('false')
     })
   })
 

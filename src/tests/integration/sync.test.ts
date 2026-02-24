@@ -17,6 +17,7 @@ import {
   getCurrencyIdByCode,
   getTestDatabase,
 } from './setup'
+import { generateRSAKeyPair } from '../../services/auth/crypto'
 
 let dbMock: ReturnType<typeof createDatabaseMock>
 
@@ -1086,6 +1087,89 @@ describe('Sync Integration', () => {
       })
 
       expect(result.errors.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('End-to-End Sync Pipeline', () => {
+    it('full pipeline: export → encrypt → decrypt → import', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+      const { encryptSyncPackage, decryptSyncPackage } = await import('../../services/sync/syncCrypto')
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'E2EWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.EXPENSE,
+        sign: '-',
+        amount_int: 42,
+        rate_int: 1,
+      })
+
+      const pkg = await exportSyncPackage(0, 'device-a')
+      const keyPairB = await generateRSAKeyPair()
+
+      const encrypted = await encryptSyncPackage(pkg, [{ installation_id: 'device-b', public_key: keyPairB.publicKey }])
+      const decrypted = await decryptSyncPackage(encrypted, 'device-b', keyPairB.privateKey)
+      const result = await importSyncPackage(decrypted)
+
+      expect(result.errors).toHaveLength(0)
+      expect(decrypted.sender_id).toBe('device-a')
+      expect(decrypted.version).toBe(2)
+    })
+
+    it('decrypt fails with wrong installation_id', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+      const { encryptSyncPackage, decryptSyncPackage } = await import('../../services/sync/syncCrypto')
+
+      const pkg = await exportSyncPackage(0, 'device-a')
+      const keyPairB = await generateRSAKeyPair()
+
+      const encrypted = await encryptSyncPackage(pkg, [{ installation_id: 'device-b', public_key: keyPairB.publicKey }])
+
+      await expect(
+        decryptSyncPackage(encrypted, 'device-c', keyPairB.privateKey)
+      ).rejects.toThrow('No encrypted key found for this installation')
+    })
+
+    it('multi-recipient: both devices can decrypt', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+      const { encryptSyncPackage, decryptSyncPackage } = await import('../../services/sync/syncCrypto')
+
+      const pkg = await exportSyncPackage(0, 'device-a')
+      const keyPairB = await generateRSAKeyPair()
+      const keyPairC = await generateRSAKeyPair()
+
+      const encrypted = await encryptSyncPackage(pkg, [
+        { installation_id: 'device-b', public_key: keyPairB.publicKey },
+        { installation_id: 'device-c', public_key: keyPairC.publicKey },
+      ])
+
+      const decryptedB = await decryptSyncPackage(encrypted, 'device-b', keyPairB.privateKey)
+      const decryptedC = await decryptSyncPackage(encrypted, 'device-c', keyPairC.privateKey)
+
+      expect(decryptedB.sender_id).toBe('device-a')
+      expect(decryptedC.sender_id).toBe('device-a')
+      expect(JSON.stringify(decryptedB)).toBe(JSON.stringify(decryptedC))
+    })
+
+    it('regression: payload field name in SyncInitPackage is preserved', () => {
+      const msg = 'encrypted-message-data'
+      const publicKey = 'device-public-key'
+
+      const pkg = {
+        id: 1,
+        payload: JSON.stringify({ msg, publicKey }),
+        created_at: '2026-01-01',
+      }
+
+      const parsed = JSON.parse(pkg.payload) as { msg: string; publicKey: string }
+      expect(parsed.msg).toBe(msg)
+      expect(parsed.publicKey).toBe(publicKey)
+      // Verify there is no encrypted_payload field (old field name)
+      expect(pkg).not.toHaveProperty('encrypted_payload')
+      expect(pkg).toHaveProperty('payload')
     })
   })
 })
