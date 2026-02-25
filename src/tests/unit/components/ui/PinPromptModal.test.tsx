@@ -188,4 +188,15 @@ describe('PinPromptModal', () => {
       expect(mockOnSubmit).toHaveBeenCalledWith('123456')
     })
   })
+
+  it('does not submit when Enter is pressed with short PIN', async () => {
+    renderModal()
+
+    const pinInput = screen.getByLabelText('Enter PIN')
+    fireEvent.change(pinInput, { target: { value: '123' } })
+    fireEvent.keyDown(pinInput, { key: 'Enter', code: 'Enter' })
+
+    await new Promise(r => setTimeout(r, 0))
+    expect(mockOnSubmit).not.toHaveBeenCalled()
+  })
 })

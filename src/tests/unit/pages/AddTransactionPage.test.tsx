@@ -32,6 +32,7 @@ vi.mock('../../../services/repositories', () => ({
   tagRepository: {
     findExpenseTags: vi.fn(),
     findIncomeTags: vi.fn(),
+    findCommonTags: vi.fn(),
   },
   counterpartyRepository: {
     findAll: vi.fn(),
@@ -112,6 +113,7 @@ describe('AddTransactionPage', () => {
         sort_order: 10
       },
     ])
+    mockTagRepository.findCommonTags.mockResolvedValue([])
     mockTagRepository.findIncomeTags.mockResolvedValue([
       {
         id: 11,
@@ -201,7 +203,7 @@ describe('AddTransactionPage', () => {
     fireEvent.change(amountInput, { target: { value: '50' } })
 
     // Select category using LiveSearch
-    const categoryInput = screen.getByRole('combobox', { name: /category/i })
+    const categoryInput = screen.getByPlaceholderText('Select category')
     fireEvent.focus(categoryInput)
     fireEvent.change(categoryInput, { target: { value: 'food' } })
     await waitFor(() => {

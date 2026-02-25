@@ -479,9 +479,24 @@ describe('transactionRepository', () => {
       await transactionRepository.getMonthSummary('2025-01')
 
       const call = mockQueryOne.mock.calls[0]
-      // Params: 6 system tags + 2 timestamps = 8 total
-      // Start timestamp is at index 6
-      expect(call![1]![6]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
+      // Params: 2 timestamps + 3 system tags = 5 total
+      // Start timestamp is at index 0
+      expect(call![1]![0]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
+    })
+
+    it('excludes common income-like tags (discount) from income and subtracts from expenses', async () => {
+      mockQueryOne.mockResolvedValue({ income: 0, expenses: 0 })
+
+      await transactionRepository.getMonthSummary('2025-01')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringMatching(/is_common\s*=\s*0/),
+        expect.anything()
+      )
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringMatching(/is_common\s*=\s*1/),
+        expect.anything()
+      )
     })
   })
 

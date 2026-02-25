@@ -18,6 +18,7 @@ export interface Tag {
   id: number
   name: string
   sort_order: number | null
+  is_common?: number // 1 = common add-on tag (Tips, Fee, VAT, Discount)
   // Joined fields
   parent_ids?: number[]
   parent_names?: string[]
@@ -30,6 +31,7 @@ export interface TagInput {
   name: string
   parent_ids?: number[]
   icon_id?: number
+  is_common?: number
 }
 
 // Tag hierarchy relationship
@@ -163,10 +165,12 @@ export interface TransactionLine {
   amount_frac: number
   rate_int: number
   rate_frac: number
+  pct_value?: number | null // NULL = absolute; 0.15 = 15% of base
   // Joined fields
   wallet?: string
   currency?: string
   tag?: string
+  is_common?: number // 1 = common add-on tag
 }
 
 export interface TransactionLineInput {
@@ -177,6 +181,7 @@ export interface TransactionLineInput {
   amount_frac: number
   rate_int: number
   rate_frac: number
+  pct_value?: number | null // NULL = absolute; 0.15 = 15% of base
 }
 
 // Transaction note
@@ -253,6 +258,8 @@ export interface TransactionLog {
   decimal_places: number
   // TODO: tags should be renamed to tag, because trx_log.tags contains only one tag
   tags: string
+  tag_is_common: number // 1 = common add-on tag (Tips, Fee, VAT, Discount)
+  pct_value: number | null // NULL = absolute; 0.15 = 15% of base
   sign: '+' | '-'
   amount_int: number
   amount_frac: number

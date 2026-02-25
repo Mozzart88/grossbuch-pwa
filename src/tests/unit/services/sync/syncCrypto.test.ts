@@ -119,6 +119,13 @@ describe('syncCrypto', () => {
 
       expect(mockExportKey).toHaveBeenCalledWith('raw', expect.anything())
     })
+
+    it('serializes BigInt values in payload to strings', async () => {
+      const recipients = [{ installation_id: 'r1', public_key: 'pk1' }]
+      const pkgWithBigInt = { ...samplePackage, customField: BigInt(42) } as unknown as SyncPackage
+      await encryptSyncPackage(pkgWithBigInt, recipients)
+      expect(mockEncrypt).toHaveBeenCalled()
+    })
   })
 
   describe('decryptSyncPackage', () => {
