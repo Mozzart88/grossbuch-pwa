@@ -52,8 +52,8 @@ export function SharePage() {
     if (!shareUrl) return
     try {
       await navigator.share({
-        title: 'GrossBuch',
-        text: 'Install GrossBuch on your device',
+        title: 'GrossBuh',
+        text: 'Install GrossBuh on your device',
         url: shareUrl,
       })
     } catch {

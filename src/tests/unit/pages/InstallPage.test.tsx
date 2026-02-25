@@ -29,7 +29,7 @@ describe('InstallPage', () => {
   it('renders app branding', () => {
     render(<InstallPage />)
 
-    expect(screen.getByText('GrossBuch')).toBeInTheDocument()
+    expect(screen.getByText('GrossBuh')).toBeInTheDocument()
     expect(screen.getByText('Personal Expense Tracker')).toBeInTheDocument()
   })
 
@@ -37,7 +37,7 @@ describe('InstallPage', () => {
     render(<InstallPage />)
 
     expect(screen.getByText('Install App')).toBeInTheDocument()
-    expect(screen.getByText('GrossBuch works best as an installed app')).toBeInTheDocument()
+    expect(screen.getByText('GrossBuh works best as an installed app')).toBeInTheDocument()
   })
 
   it('shows native install button when prompt is available', () => {
@@ -45,7 +45,7 @@ describe('InstallPage', () => {
 
     render(<InstallPage />)
 
-    expect(screen.getByText('Install GrossBuch')).toBeInTheDocument()
+    expect(screen.getByText('Install GrossBuh')).toBeInTheDocument()
   })
 
   it('calls promptInstall when install button is clicked', () => {
@@ -53,7 +53,7 @@ describe('InstallPage', () => {
 
     render(<InstallPage />)
 
-    fireEvent.click(screen.getByText('Install GrossBuch'))
+    fireEvent.click(screen.getByText('Install GrossBuh'))
     expect(mockInstallationState.promptInstall).toHaveBeenCalled()
   })
 

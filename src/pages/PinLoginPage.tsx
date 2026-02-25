@@ -57,7 +57,7 @@ export function PinLoginPage() {
             Welcome Back
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-            Enter your PIN to unlock GrossBuch
+            Enter your PIN to unlock GrossBuh
           </p>
         </div>
 
