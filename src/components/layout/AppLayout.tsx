@@ -19,7 +19,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                          border-b border-gray-200 dark:border-gray-800 shrink-0">
         <div className='flex items-start gap-1'>
           <img src={logo} alt="Logo" className='w-7' />
-          {/* <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">GrossBuch</span> */}
+          {/* <span className="text-lg font-semibold text-gray-900 dark:text-gray-100">GrossBuh</span> */}
         </div>
         <button
           onClick={() => setDrawerOpen(true)}

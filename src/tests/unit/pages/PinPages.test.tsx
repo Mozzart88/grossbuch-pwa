@@ -61,9 +61,9 @@ describe('PinSetupPage', () => {
     expect(screen.getByText('Create Your PIN')).toBeInTheDocument()
   })
 
-  it('shows GrossBuch title', () => {
+  it('shows GrossBuh title', () => {
     render(<PinSetupPage />)
-    expect(screen.getByText('GrossBuch')).toBeInTheDocument()
+    expect(screen.getByText('GrossBuh')).toBeInTheDocument()
   })
 
   it('shows security warning about PIN recovery', () => {

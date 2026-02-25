@@ -14,7 +14,7 @@ export function InstallPage() {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            GrossBuch
+            GrossBuh
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Personal Expense Tracker
@@ -28,13 +28,13 @@ export function InstallPage() {
                 Install App
               </h2>
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                GrossBuch works best as an installed app
+                GrossBuh works best as an installed app
               </p>
             </div>
 
             {canPromptInstall && (
               <Button onClick={promptInstall} className="w-full">
-                Install GrossBuch
+                Install GrossBuh
               </Button>
             )}
 

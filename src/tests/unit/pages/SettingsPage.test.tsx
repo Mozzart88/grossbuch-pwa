@@ -232,7 +232,7 @@ describe('SettingsPage', () => {
     it('renders app version', () => {
       renderPage()
 
-      expect(screen.getByText('GrossBuch v1.0.0')).toBeInTheDocument()
+      expect(screen.getByText('GrossBuh v1.0.0')).toBeInTheDocument()
     })
 
     it('renders data storage info', () => {
@@ -342,7 +342,7 @@ describe('SettingsPage', () => {
     })
 
     it('handles error when loading settings', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
       mockCurrencyRepository.findAll.mockRejectedValueOnce(new Error('Load failed'))
 
       renderPage()
@@ -355,7 +355,7 @@ describe('SettingsPage', () => {
     })
 
     it('handles error when setting display currency', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
       mockCurrencyRepository.setSystem.mockRejectedValueOnce(new Error('Set failed'))
 
       renderPage()
@@ -377,7 +377,7 @@ describe('SettingsPage', () => {
     })
 
     it('handles error when setting payment currency', async () => {
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
       mockCurrencyRepository.setPaymentDefault.mockRejectedValueOnce(new Error('Set failed'))
 
       renderPage()

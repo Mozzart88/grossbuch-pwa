@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'x192.png', 'x512.png'],
       manifest: {
-        name: 'GrossBuch - Expense Tracker',
-        short_name: 'GrossBuch',
+        name: 'GrossBuh - Expense Tracker',
+        short_name: 'GrossBuh',
         description: 'Personal expense and income tracking app',
         theme_color: '#3b82f6',
         background_color: '#ffffff',

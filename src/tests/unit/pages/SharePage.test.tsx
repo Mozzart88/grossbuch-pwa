@@ -49,13 +49,13 @@ describe('SharePage', () => {
 
   describe('Loading state', () => {
     it('shows spinner while loading', () => {
-      mockSettingsGet.mockImplementation(() => new Promise(() => {})) // never resolves
+      mockSettingsGet.mockImplementation(() => new Promise(() => { })) // never resolves
       const { container } = renderPage()
       expect(container.querySelector('.animate-spin')).toBeTruthy()
     })
 
     it('shows page header with back button while loading', () => {
-      mockSettingsGet.mockImplementation(() => new Promise(() => {}))
+      mockSettingsGet.mockImplementation(() => new Promise(() => { }))
       renderPage()
       expect(screen.getByText('Share')).toBeInTheDocument()
     })
@@ -202,8 +202,8 @@ describe('SharePage', () => {
 
       await waitFor(() => {
         expect(mockShare).toHaveBeenCalledWith({
-          title: 'GrossBuch',
-          text: 'Install GrossBuch on your device',
+          title: 'GrossBuh',
+          text: 'Install GrossBuh on your device',
           url: `${window.location.origin}/share?uuid=test-uuid-123&pub=test-public-key-base64url`,
         })
       })
@@ -235,7 +235,7 @@ describe('SharePage', () => {
     })
 
     it('handles clipboard failure gracefully', async () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => { })
       Object.defineProperty(navigator, 'clipboard', {
         value: { writeText: vi.fn().mockRejectedValue(new Error('Not allowed')) },
         writable: true,
@@ -260,7 +260,7 @@ describe('SharePage', () => {
 
   describe('Error handling', () => {
     it('handles settingsRepository.get failure', async () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => { })
       mockSettingsGet.mockRejectedValue(new Error('DB error'))
 
       renderPage()
