@@ -61,25 +61,26 @@ const getTransactionType = (trx: TransactionLog[]): transactionT => {
 }
 
 // Get the expense line for multi-currency expense transactions
-const getExpenseLine = (trx: TransactionLog[]): TransactionLog | undefined => {
-  return trx.find(l =>
-    getSignedAmount(l) < 0 &&
-    l.tags !== 'exchange' &&
-    l.tags !== 'transfer' &&
-    l.tags.match(/^fee[s]?$/i) === null
-  )
-}
+// const getExpenseLine = (trx: TransactionLog[]): TransactionLog | undefined => {
+//   return trx.find(l =>
+//     getSignedAmount(l) < 0 &&
+//     l.tags !== 'exchange' &&
+//     l.tags !== 'transfer' &&
+//     l.tags.match(/^fee[s]?$/i) === null
+//   )
+// }
 
 export function TransactionItem({ transaction, onClick }: TransactionItemProps) {
   const getAmountDisplay = () => {
     const transactionType = getTransactionType(transaction)
 
-    // For multi-currency expense, show the expense amount in the expense currency
+    // For multi-currency expense, sum all non-exchange lines in the payment currency
     if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
-      const expenseLine = getExpenseLine(transaction)!
-      const amount = fromIntFrac(expenseLine.amount_int, expenseLine.amount_frac)
+      const paymentLines = transaction.filter(l => !l.tags.includes('exchange'))
+      const symbol = paymentLines[0]?.symbol ?? transaction[0].symbol
+      const amount = Math.abs(paymentLines.reduce((s, l) => s + getSignedAmount(l), 0))
       return {
-        text: formatCurrencyValue(amount, expenseLine.symbol),
+        text: formatCurrencyValue(amount, symbol),
         color: 'text-gray-600 dark:text-gray-400',
       }
     }
@@ -195,17 +196,23 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     if (['transfer', 'exchange'].includes(transactionType)) {
       return capitalize(transactionType)
     }
-    // For multi-currency expense, use the expense line's tags
-    if (transactionType === 'expense' && isMultiCurrencyExpense(transaction)) {
-      const expenseLine = getExpenseLine(transaction)!
-      if (expenseLine.tags && expenseLine.tags.length > 0) {
-        const tag = expenseLine.tags.split(',')[0]
-        return capitalize(tag)
-      }
-    }
-    if (transaction[0].tags && transaction[0].tags.length > 0) {
-      const tag = transaction[0].tags.split(',')[0]
-      return capitalize(tag)
+
+    // For expense/income: collect all non-common, non-system tag names
+    // System/special tag names to exclude from display
+    const systemTagNames = new Set(['exchange', 'transfer', 'initial', 'adjustment', 'fee'])
+
+    // Lines to search for display tags (for multi-currency expense, exclude exchange/transfer lines)
+    const relevantLines = transactionType === 'expense' && isMultiCurrencyExpense(transaction)
+      ? transaction.filter(l => !l.tags.includes('exchange') && l.tags !== 'transfer')
+      : transaction
+
+    const plainTags = relevantLines
+      .filter(l => l.tag_is_common === 0 && l.tags && !systemTagNames.has(l.tags.toLowerCase()))
+      .map(l => capitalize(l.tags))
+      .filter((name, index, arr) => arr.indexOf(name) === index) // dedupe
+
+    if (plainTags.length > 0) {
+      return plainTags.join(', ')
     }
     return 'Uncategorized'
   }

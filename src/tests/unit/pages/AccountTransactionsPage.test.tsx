@@ -147,6 +147,21 @@ describe('AccountTransactionsPage', () => {
     })
   })
 
+  describe('Missing accountId param', () => {
+    it('shows error when accountId param is missing', async () => {
+      render(
+        <MemoryRouter initialEntries={['/accounts/transactions']}>
+          <Routes>
+            <Route path="/accounts/transactions" element={<AccountTransactionsPage />} />
+          </Routes>
+        </MemoryRouter>
+      )
+      await waitFor(() => {
+        expect(screen.getByText('Account ID is required')).toBeInTheDocument()
+      })
+    })
+  })
+
   describe('Account ID parsing', () => {
     it('parses numeric account ID correctly', async () => {
       vi.mocked(accountRepository.findById).mockResolvedValue(mockAccount)

@@ -65,7 +65,9 @@ const sampleTransaction: TransactionLog = {
   rate_frac: 0,
   symbol: '$',
   decimal_places: 2,
-  wallet_color: ''
+  wallet_color: '',
+  tag_is_common: 0,
+  pct_value: null,
 }
 
 describe('TransactionList', () => {
@@ -532,6 +534,26 @@ describe('TransactionList', () => {
       })
 
       expect(screen.queryByText(/Filtered by:/)).not.toBeInTheDocument()
+    })
+
+    it('shows no filter name when tag is not found', async () => {
+      mockTagRepository.findById.mockResolvedValue(null)
+      renderWithRouter(['/?month=2025-01&tag=99'])
+
+      await waitFor(() => {
+        expect(mockTagRepository.findById).toHaveBeenCalledWith(99)
+      })
+      expect(screen.queryByText(/Tag:/)).not.toBeInTheDocument()
+    })
+
+    it('shows no filter name when counterparty is not found', async () => {
+      mockCounterpartyRepository.findById.mockResolvedValue(null)
+      renderWithRouter(['/?month=2025-01&counterparty=99'])
+
+      await waitFor(() => {
+        expect(mockCounterpartyRepository.findById).toHaveBeenCalledWith(99)
+      })
+      expect(screen.queryByText(/Counterparty:/)).not.toBeInTheDocument()
     })
 
     it('clears filter when clear button is clicked', async () => {

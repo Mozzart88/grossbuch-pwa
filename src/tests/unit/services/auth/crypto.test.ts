@@ -369,6 +369,17 @@ describe('crypto', () => {
     })
   })
 
+  describe('rsaEncrypt — validation', () => {
+    it('throws when data exceeds 190 bytes', async () => {
+      const largeData = new ArrayBuffer(191)
+      const publicKeyB64 = arrayBufferToBase64Url(new Uint8Array([1, 2, 3]).buffer)
+
+      await expect(rsaEncrypt(largeData, publicKeyB64)).rejects.toThrow(
+        'data length should not excide 190 bytes'
+      )
+    })
+  })
+
   describe('rsaDecrypt', () => {
     beforeEach(() => {
       mockImportKey.mockResolvedValue({ type: 'private' })

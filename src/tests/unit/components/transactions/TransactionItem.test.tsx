@@ -18,7 +18,9 @@ describe('TransactionItem', () => {
     rate_int: 1,
     rate_frac: 0,
     symbol: '$',
-    decimal_places: 2
+    decimal_places: 2,
+    tag_is_common: 0,
+    pct_value: null,
   }
 
   it('renders expense transaction', () => {
@@ -356,6 +358,19 @@ describe('TransactionItem', () => {
     expect(screen.getByText('Food')).toBeInTheDocument()
     // Shows counterparty when available for multi-currency expense
     expect(screen.getByText('Amazon')).toBeInTheDocument()
+  })
+
+  it('sums all sub-entries for multi-currency multi-sub-entry expense', () => {
+    const transaction: TransactionLog[] = [
+      { ...baseTransaction, tags: 'exchange', sign: '-', amount_int: 12, amount_frac: 0 },
+      { ...baseTransaction, tags: 'exchange', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '+', amount_int: 12, amount_frac: 0 },
+      { ...baseTransaction, tags: 'food',  wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 10, amount_frac: 0, tag_is_common: 0, pct_value: null },
+      { ...baseTransaction, tags: 'house', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 2,  amount_frac: 0, tag_is_common: 0, pct_value: null },
+    ]
+    render(<TransactionItem transaction={transaction} onClick={vi.fn()} />)
+
+    expect(screen.getByText('$12.00')).toBeInTheDocument()
+    expect(screen.getByText('Food, House')).toBeInTheDocument()
   })
 
   it('calls onClick when clicked', () => {

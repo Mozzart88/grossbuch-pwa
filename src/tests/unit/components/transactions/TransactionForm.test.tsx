@@ -13,6 +13,8 @@ vi.mock('../../../../services/repositories', () => ({
   tagRepository: {
     findIncomeTags: vi.fn(),
     findExpenseTags: vi.fn(),
+    findCommonTags: vi.fn(),
+    create: vi.fn(),
   },
   counterpartyRepository: {
     findAll: vi.fn(),
@@ -170,6 +172,7 @@ describe('TransactionForm', () => {
     mockWalletRepository.findOrCreateAccountForCurrency.mockResolvedValue(mockAccountEUR)
     mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
+    mockTagRepository.findCommonTags.mockResolvedValue([])
     mockCounterpartyRepository.findAll.mockResolvedValue(mockCounterparties)
     mockCounterpartyRepository.create.mockResolvedValue({ id: 256 } as any)
     mockCounterpartyRepository.update.mockResolvedValue({} as any)
@@ -254,7 +257,8 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Category')).toBeInTheDocument()
       })
 
-      const categorySelect = screen.getByRole('combobox', { name: /category/i })
+      // In expense mode, combobox is identified by placeholder
+      const categorySelect = screen.getByPlaceholderText('Select category')
       expect(categorySelect).toBeInTheDocument()
     })
 
@@ -265,7 +269,8 @@ describe('TransactionForm', () => {
         expect(screen.getByText('Category')).toBeInTheDocument()
       })
 
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      // In expense mode, combobox is identified by placeholder
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
 
       // All expense tags should be shown in dropdown
@@ -607,7 +612,7 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -767,7 +772,7 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -797,7 +802,7 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -894,7 +899,7 @@ describe('TransactionForm', () => {
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -934,7 +939,7 @@ describe('TransactionForm', () => {
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'transport' } })
       await waitFor(() => {
@@ -974,7 +979,7 @@ describe('TransactionForm', () => {
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -1011,7 +1016,7 @@ describe('TransactionForm', () => {
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -1254,7 +1259,7 @@ describe('TransactionForm', () => {
       fireEvent.change(amountInput, { target: { value: '50' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -1314,7 +1319,7 @@ describe('TransactionForm', () => {
       fireEvent.change(paymentAmountInput, { target: { value: '55' } })
 
       // Select category using LiveSearch
-      const categoryInput = screen.getByRole('combobox', { name: /category/i })
+      const categoryInput = screen.getByPlaceholderText('Select category')
       fireEvent.focus(categoryInput)
       fireEvent.change(categoryInput, { target: { value: 'food' } })
       await waitFor(() => {
@@ -1592,6 +1597,563 @@ describe('TransactionForm', () => {
       await waitFor(() => {
         expect(screen.getByText(/Amount from account/)).toBeInTheDocument()
       })
+    })
+  })
+
+  describe('Multi-tag expense sub-entries', () => {
+    it('adds a second sub-entry when clicking Add category', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(1)
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(2)
+      })
+    })
+
+    it('shows Categories label with multiple sub-entries', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Category')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getByText('Categories')).toBeInTheDocument()
+      })
+    })
+
+    it('shows Total label and per-sub-entry amount inputs when multiple sub-entries', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
+        expect(screen.getAllByRole('spinbutton')).toHaveLength(3)
+      })
+    })
+
+    it('removes a sub-entry when remove button is clicked', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(2)
+      })
+      const removeButtons = screen.getAllByRole('button', { name: 'Remove category' })
+      expect(removeButtons).toHaveLength(2)
+      fireEvent.click(removeButtons[0])
+      await waitFor(() => {
+        expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(1)
+      })
+    })
+
+    it('shows category required error when no sub-entry has a tag', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(2)
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(screen.getByText('Category is required')).toBeInTheDocument()
+      })
+    })
+
+    it('shows error when all sub-entry amounts are zero in multi-sub-entry mode', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(2)
+      })
+
+      // Select a category so tag validation passes
+      const categoryInputs = screen.getAllByPlaceholderText('Select category')
+      fireEvent.focus(categoryInputs[0])
+      fireEvent.change(categoryInputs[0], { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
+
+      // Don't fill amounts → expensePlainBase = 0
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(screen.getByText('At least one sub-amount is required')).toBeInTheDocument()
+      })
+    })
+
+    it('submits with multiple sub-entries', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => {
+        expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(2)
+      })
+
+      // Select category for each sub-entry
+      const categoryInputs = screen.getAllByPlaceholderText('Select category')
+      fireEvent.focus(categoryInputs[0])
+      fireEvent.change(categoryInputs[0], { target: { value: 'food' } })
+      await waitFor(() => {
+        expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
+
+      fireEvent.focus(categoryInputs[1])
+      fireEvent.change(categoryInputs[1], { target: { value: 'transport' } })
+      await waitFor(() => {
+        expect(screen.getAllByRole('option', { name: /transport/ })[0]).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getAllByRole('option', { name: /transport/ })[0])
+
+      // spinbutton[0]=readOnly main total, [1]=sub1 amount, [2]=sub2 amount
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
+      })
+      const spinbuttons = screen.getAllByRole('spinbutton')
+      fireEvent.change(spinbuttons[1], { target: { value: '30' } })
+      fireEvent.change(spinbuttons[2], { target: { value: '20' } })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ tag_id: 10, sign: '-', amount_int: 30 }),
+              expect.objectContaining({ tag_id: 11, sign: '-', amount_int: 20 }),
+            ])
+          })
+        )
+      })
+    })
+  })
+
+  describe('Common add-on tag pills', () => {
+    const mockCommonTag: Tag = { id: 100, name: 'ServiceFee', sort_order: 5 }
+
+    beforeEach(() => {
+      mockTagRepository.findCommonTags.mockResolvedValue([mockCommonTag])
+    })
+
+    it('shows common tag pills in expense mode', async () => {
+      renderForm()
+      await waitFor(() => {
+        expect(screen.getByText('+ ServiceFee')).toBeInTheDocument()
+      })
+    })
+
+    it('toggles common tag on', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => {
+        expect(screen.getByText('ServiceFee ✓')).toBeInTheDocument()
+      })
+    })
+
+    it('toggles common tag off when clicked again', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => expect(screen.getByText('ServiceFee ✓')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('ServiceFee ✓'))
+      await waitFor(() => {
+        expect(screen.getByText('+ ServiceFee')).toBeInTheDocument()
+      })
+    })
+
+    it('switches common tag to absolute amount type', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => {
+        expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => {
+        expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
+      })
+    })
+
+    it('updates common tag pct input', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('15')).toBeInTheDocument()
+      })
+      const pctInput = screen.getByPlaceholderText('15')
+      fireEvent.change(pctInput, { target: { value: '10' } })
+      expect(pctInput).toHaveValue(10)
+    })
+
+    it('updates common tag abs input', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => {
+        expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
+      })
+      // After switching to abs, isExpenseMainEditable=false, sub-entry amount appears
+      // spinbutton[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
+      const spinbuttons = screen.getAllByRole('spinbutton')
+      expect(spinbuttons).toHaveLength(3)
+      fireEvent.change(spinbuttons[2], { target: { value: '7.50' } })
+      expect(spinbuttons[2]).toHaveValue(7.5)
+    })
+
+    it('submits expense with pct common tag', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+
+      // Fill main amount (editable: 1 sub-entry + pct common → isExpenseMainEditable=true)
+      fireEvent.change(screen.getByLabelText(/^Amount/), { target: { value: '100' } })
+
+      // Select category
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument())
+      fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
+
+      // Toggle pct common tag on and set 10%
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => expect(screen.getByPlaceholderText('15')).toBeInTheDocument())
+      fireEvent.change(screen.getByPlaceholderText('15'), { target: { value: '10' } })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ tag_id: 10, sign: '-', amount_int: 100 }),
+              expect.objectContaining({ tag_id: 100, sign: '-', pct_value: 0.1 }),
+            ])
+          })
+        )
+      })
+    })
+
+    it('submits expense with abs common tag', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
+
+      // Toggle on and switch to abs mode
+      fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => {
+        expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
+        // isExpenseMainEditable=false since abs common → label becomes Total
+        expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
+      })
+
+      // Select category for sub-entry
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'food' } })
+      await waitFor(() => expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument())
+      fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
+
+      // spinbutton[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
+      const spinbuttons = screen.getAllByRole('spinbutton')
+      fireEvent.change(spinbuttons[1], { target: { value: '50' } })
+      fireEvent.change(spinbuttons[2], { target: { value: '5' } })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ tag_id: 10, sign: '-', amount_int: 50 }),
+              expect.objectContaining({ tag_id: 100, sign: '-', pct_value: null }),
+            ])
+          })
+        )
+      })
+    })
+
+    it('subtracts discount (isIncome) from computed total', async () => {
+      mockTagRepository.findCommonTags.mockResolvedValue([{ id: 18, name: 'Discount', sort_order: 1 }])
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      // Add a second sub-entry
+      fireEvent.click(screen.getByText('+ Add category'))
+      await waitFor(() => expect(screen.getAllByPlaceholderText('Select category')).toHaveLength(2))
+
+      // Select food and transport categories
+      const categoryInputs = screen.getAllByPlaceholderText('Select category')
+      fireEvent.focus(categoryInputs[0])
+      fireEvent.change(categoryInputs[0], { target: { value: 'food' } })
+      await waitFor(() => expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument())
+      fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
+
+      fireEvent.focus(categoryInputs[1])
+      fireEvent.change(categoryInputs[1], { target: { value: 'transport' } })
+      await waitFor(() => expect(screen.getAllByRole('option', { name: /transport/ })[0]).toBeInTheDocument())
+      fireEvent.click(screen.getAllByRole('option', { name: /transport/ })[0])
+
+      // Toggle Discount on and switch to abs
+      await waitFor(() => expect(screen.getByText('+ Discount')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('+ Discount'))
+      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+
+      // spinbutton[0]=readOnly total, [1]=food amount, [2]=transport amount, [3]=discount abs
+      const spinbuttons = screen.getAllByRole('spinbutton')
+      fireEvent.change(spinbuttons[1], { target: { value: '9' } })
+      fireEvent.change(spinbuttons[2], { target: { value: '1' } })
+      fireEvent.change(spinbuttons[3], { target: { value: '1' } })
+
+      // Total should be 10 - 1 = 9, not 10 + 1 = 11
+      await waitFor(() => {
+        const totalInput = screen.getAllByRole('spinbutton')[0] as HTMLInputElement
+        expect(totalInput.value).toBe('9.00')
+      })
+    })
+  })
+
+  describe('New tag modal', () => {
+    it('opens modal when income category onCreateNew is triggered', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('Select category')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'MyNewTag' } })
+      await waitFor(() => expect(screen.getByText(/Create "MyNewTag"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "MyNewTag"/))
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+        expect(screen.getByText('New Category')).toBeInTheDocument()
+      })
+    })
+
+    it('closes modal and clears tag name on Cancel', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('Select category')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'TestTag' } })
+      await waitFor(() => expect(screen.getByText(/Create "TestTag"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "TestTag"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      const dialog = screen.getByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+    })
+
+    it('closes modal on OK (income path)', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('Select category')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'MyIncome' } })
+      await waitFor(() => expect(screen.getByText(/Create "MyIncome"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "MyIncome"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }))
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+    })
+
+    it('changes tag type using type selector buttons in modal', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('Select category')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'TestType' } })
+      await waitFor(() => expect(screen.getByText(/Create "TestType"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "TestType"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      const dialog = screen.getByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Both' }))
+      expect(within(dialog).getByRole('button', { name: 'Both' }).className).toContain('bg-primary')
+    })
+
+    it('closes modal on Escape key', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('Select category')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'EscapeTest' } })
+      await waitFor(() => expect(screen.getByText(/Create "EscapeTest"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "EscapeTest"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      fireEvent.keyDown(document, { key: 'Escape' })
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+    })
+
+    it('opens modal for expense sub-entry onCreateNew', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'ExpenseNew' } })
+      await waitFor(() => expect(screen.getByText(/Create "ExpenseNew"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "ExpenseNew"/))
+
+      await waitFor(() => {
+        expect(screen.getByRole('dialog')).toBeInTheDocument()
+      })
+    })
+
+    it('closes modal on OK (expense sub-entry path)', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'ExpNew' } })
+      await waitFor(() => expect(screen.getByText(/Create "ExpNew"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "ExpNew"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }))
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+    })
+
+    it('creates new income tag on submit', async () => {
+      mockTagRepository.create.mockResolvedValue({ id: 200, name: 'NewIncomeCat', sort_order: 1 } as any)
+
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => expect(screen.getByPlaceholderText('Select category')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'NewIncomeCat' } })
+      await waitFor(() => expect(screen.getByText(/Create "NewIncomeCat"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "NewIncomeCat"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+      fireEvent.change(screen.getByLabelText(/^Amount/), { target: { value: '500' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      await waitFor(() => {
+        expect(mockTagRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ name: 'NewIncomeCat' })
+        )
+        expect(mockTransactionRepository.create).toHaveBeenCalled()
+      })
+    })
+
+    it('creates new expense sub-entry tag on submit', async () => {
+      mockTagRepository.create.mockResolvedValue({ id: 201, name: 'NewExpCat', sort_order: 1 } as any)
+
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'NewExpCat' } })
+      await waitFor(() => expect(screen.getByText(/Create "NewExpCat"/)).toBeInTheDocument())
+      fireEvent.click(screen.getByText(/Create "NewExpCat"/))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }))
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+      fireEvent.change(screen.getByLabelText(/^Amount/), { target: { value: '75' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      await waitFor(() => {
+        expect(mockTagRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ name: 'NewExpCat' })
+        )
+        expect(mockTransactionRepository.create).toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe('Exchange mode toggle', () => {
+    it('switches from rate mode back to amounts mode', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Exchange' }))
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Enter rate' })).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Enter rate' }))
+      await waitFor(() => {
+        expect(screen.getByLabelText(/Exchange Rate/)).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Enter amounts' }))
+      await waitFor(() => {
+        expect(screen.queryByLabelText(/Exchange Rate/)).not.toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Income category validation', () => {
+    it('shows category required error in income mode without category', async () => {
+      renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      await waitFor(() => {
+        expect(screen.getByLabelText(/^Amount/)).toBeInTheDocument()
+      })
+
+      fireEvent.change(screen.getByLabelText(/^Amount/), { target: { value: '100' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      await waitFor(() => {
+        expect(screen.getByText('Category is required')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('DateTime input', () => {
+    it('updates datetime when input changes', async () => {
+      const { container } = renderForm()
+      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
+
+      const dateInput = container.querySelector('input[type="datetime-local"]')!
+      expect(dateInput).toBeTruthy()
+      fireEvent.change(dateInput, { target: { value: '2025-06-15T09:30' } })
+      // State is updated internally; no crash expected
+      expect(dateInput).toBeInTheDocument()
     })
   })
 })

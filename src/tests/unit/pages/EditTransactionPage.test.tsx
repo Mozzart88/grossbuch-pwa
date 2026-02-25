@@ -31,6 +31,7 @@ vi.mock('../../../services/repositories', () => ({
     findAll: vi.fn(),
     findExpenseTags: vi.fn(),
     findIncomeTags: vi.fn(),
+    findCommonTags: vi.fn(),
   },
   counterpartyRepository: {
     findAll: vi.fn(),
@@ -173,6 +174,7 @@ describe('EditTransactionPage', () => {
         name: 'sale',
       },
     ])
+    mockTagRepository.findCommonTags.mockResolvedValue([])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
     mockCurrencyRepository.findSystem.mockResolvedValue({
       id: 1,
@@ -388,6 +390,21 @@ describe('EditTransactionPage', () => {
     fireEvent.click(cancelButton)
 
     expect(mockNavigate).toHaveBeenCalledWith(-1)
+  })
+
+  it('does nothing when id param is missing', async () => {
+    render(
+      <MemoryRouter initialEntries={['/edit']}>
+        <LayoutProvider>
+          <Routes>
+            <Route path="/edit" element={<EditTransactionPage />} />
+          </Routes>
+          <TestActionBar />
+        </LayoutProvider>
+      </MemoryRouter>
+    )
+    await new Promise(r => setTimeout(r, 0))
+    expect(mockTransactionRepository.findById).not.toHaveBeenCalled()
   })
 
   it('shows Deleting... text while deleting', async () => {

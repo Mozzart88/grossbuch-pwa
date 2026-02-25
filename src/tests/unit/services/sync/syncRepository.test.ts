@@ -169,5 +169,14 @@ describe('syncRepository', () => {
       const result = await hasUnpushedChanges('inst-1')
       expect(result).toBe(false)
     })
+
+    it('returns false when count query returns null', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 100 })
+        .mockResolvedValueOnce(null) // COUNT returns null
+
+      const result = await hasUnpushedChanges('inst-1')
+      expect(result).toBe(false)
+    })
   })
 })

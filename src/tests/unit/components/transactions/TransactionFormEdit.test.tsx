@@ -14,6 +14,7 @@ vi.mock('../../../../services/repositories', () => ({
   tagRepository: {
     findIncomeTags: vi.fn(),
     findExpenseTags: vi.fn(),
+    findCommonTags: vi.fn(),
   },
   counterpartyRepository: {
     findAll: vi.fn(),
@@ -140,6 +141,7 @@ describe('TransactionForm Editing mode', () => {
     mockWalletRepository.findOrCreateAccountForCurrency.mockResolvedValue(mockAccount2)
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
     mockTagRepository.findIncomeTags.mockResolvedValue(mockIncomeTags)
+    mockTagRepository.findCommonTags.mockResolvedValue([])
     mockCounterpartyRepository.findAll.mockResolvedValue([])
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
     mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0]) // USD is default
@@ -187,7 +189,7 @@ describe('TransactionForm Editing mode', () => {
       expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50)
       expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('1')
       // LiveSearch shows the label (category name) not the value (ID)
-      expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('Food')
+      expect(screen.getByPlaceholderText('Select category')).toHaveValue('Food')
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
     })
   })
