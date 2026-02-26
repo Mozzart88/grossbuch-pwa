@@ -67,7 +67,6 @@ const sampleTransaction: TransactionLog = {
   decimal_places: 2,
   wallet_color: '',
   tag_is_common: 0,
-  pct_value: null,
 }
 
 describe('TransactionList', () => {

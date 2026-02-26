@@ -20,7 +20,6 @@ describe('TransactionItem', () => {
     symbol: '$',
     decimal_places: 2,
     tag_is_common: 0,
-    pct_value: null,
   }
 
   it('renders expense transaction', () => {
@@ -364,8 +363,8 @@ describe('TransactionItem', () => {
     const transaction: TransactionLog[] = [
       { ...baseTransaction, tags: 'exchange', sign: '-', amount_int: 12, amount_frac: 0 },
       { ...baseTransaction, tags: 'exchange', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '+', amount_int: 12, amount_frac: 0 },
-      { ...baseTransaction, tags: 'food',  wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 10, amount_frac: 0, tag_is_common: 0, pct_value: null },
-      { ...baseTransaction, tags: 'house', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 2,  amount_frac: 0, tag_is_common: 0, pct_value: null },
+      { ...baseTransaction, tags: 'food',  wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 10, amount_frac: 0, tag_is_common: 0 },
+      { ...baseTransaction, tags: 'house', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 2,  amount_frac: 0, tag_is_common: 0 },
     ]
     render(<TransactionItem transaction={transaction} onClick={vi.fn()} />)
 

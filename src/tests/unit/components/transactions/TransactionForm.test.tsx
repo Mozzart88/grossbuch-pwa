@@ -1830,7 +1830,7 @@ describe('TransactionForm', () => {
           expect.objectContaining({
             lines: expect.arrayContaining([
               expect.objectContaining({ tag_id: 10, sign: '-', amount_int: 100 }),
-              expect.objectContaining({ tag_id: 100, sign: '-', pct_value: 0.1 }),
+              expect.objectContaining({ tag_id: 100, sign: '-', amount_int: 10 }),
             ])
           })
         )
@@ -1869,7 +1869,7 @@ describe('TransactionForm', () => {
           expect.objectContaining({
             lines: expect.arrayContaining([
               expect.objectContaining({ tag_id: 10, sign: '-', amount_int: 50 }),
-              expect.objectContaining({ tag_id: 100, sign: '-', pct_value: null }),
+              expect.objectContaining({ tag_id: 100, sign: '-', amount_int: 5 }),
             ])
           })
         )
