@@ -176,17 +176,20 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
       })))
 
-      // Restore common add-ons
+      // Restore common add-ons (compute pct from stored amounts)
       if (commonLines.length > 0) {
+        const baseAmt = expenseLines.reduce((s, l) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
         setActiveCommons(commonLines.map(l => {
-          const isPct = l.pct_value != null && l.pct_value > 0
+          const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
+          const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
+          const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
           return {
             tagId: l.tag_id,
             tagName: l.tag || '',
             isIncome: l.sign === '+',
-            amtType: isPct ? 'pct' as const : 'abs' as const,
-            pct: isPct ? String((l.pct_value! * 100).toFixed(2).replace(/\.?0+$/, '')) : '',
-            abs: isPct ? '' : fromIntFrac(l.amount_int, l.amount_frac).toString(),
+            amtType: 'pct' as const,
+            pct: pctStr,
+            abs: '',
           }
         }))
       }
@@ -249,17 +252,20 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
         }
       }
 
-      // Restore common add-on entries
+      // Restore common add-on entries (compute pct from stored amounts)
       if (commonLines.length > 0) {
+        const baseAmt = plainLines.reduce((s: number, l: TransactionLine) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
         setActiveCommons(commonLines.map((l: TransactionLine) => {
-          const isPct = l.pct_value != null && l.pct_value > 0
+          const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
+          const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
+          const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
           return {
             tagId: l.tag_id,
             tagName: l.tag || '',
             isIncome: l.sign === '+',
-            amtType: isPct ? 'pct' as const : 'abs' as const,
-            pct: isPct ? String((l.pct_value! * 100).toFixed(2).replace(/\.?0+$/, '')) : '',
-            abs: isPct ? '' : fromIntFrac(l.amount_int, l.amount_frac).toString(),
+            amtType: 'pct' as const,
+            pct: pctStr,
+            abs: '',
           }
         }))
       }
@@ -721,7 +727,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               amount_frac: subAmountIF.frac,
               rate_int: targetRateData.int,
               rate_frac: targetRateData.frac,
-              pct_value: null,
             })
           }
           // Common add-on lines (in payment currency)
@@ -733,9 +738,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               ? pctBase * (parseFloat(common.pct) || 0) / 100
               : parseFloat(common.abs) || 0
             const commonIF = toAmountIntFrac(commonAmtNum.toFixed(paymentCurrencyDecimalPlaces))
-            const pctValue = common.amtType === 'pct'
-              ? (parseFloat(common.pct) || 0) / 100
-              : null
             payload.lines.push({
               account_id: targetAccount.id,
               tag_id: common.tagId,
@@ -744,7 +746,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               amount_frac: commonIF.frac,
               rate_int: targetRateData.int,
               rate_frac: targetRateData.frac,
-              pct_value: pctValue,
             })
           }
         } else {
@@ -762,7 +763,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               amount_frac: subAmountIF.frac,
               rate_int: accountRateData.int,
               rate_frac: accountRateData.frac,
-              pct_value: null,
             })
           }
 
@@ -776,9 +776,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               ? pctBase * (parseFloat(common.pct) || 0) / 100
               : parseFloat(common.abs) || 0
             const commonIF = toAmountIntFrac(commonAmtNum.toFixed(decimalPlaces))
-            const pctValue = common.amtType === 'pct'
-              ? (parseFloat(common.pct) || 0) / 100
-              : null
             payload.lines.push({
               account_id: accId,
               tag_id: common.tagId,
@@ -787,7 +784,6 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
               amount_frac: commonIF.frac,
               rate_int: accountRateData.int,
               rate_frac: accountRateData.frac,
-              pct_value: pctValue,
             })
           }
         }

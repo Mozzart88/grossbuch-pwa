@@ -60,9 +60,14 @@ export const tagRepository = {
     return this.getTagsByParentId(SYSTEM_TAGS.SYSTEM)
   },
 
-  // Find common add-on tags (Tips, Fee, VAT, Discount) shown as toggle pills
+  // Find common add-on tags (children of 'add-on' tag) shown as toggle pills
   async findCommonTags(): Promise<Tag[]> {
-    return querySQL<Tag>('SELECT * FROM tags WHERE is_common = 1 ORDER BY name ASC')
+    return querySQL<Tag>(`
+      SELECT t.* FROM tags t
+      JOIN tags_hierarchy th ON t.id = th.child_id
+      WHERE th.parent = 'add-on'
+      ORDER BY t.name ASC
+    `)
   },
 
   // Check if tag is a system tag (protected from deletion)

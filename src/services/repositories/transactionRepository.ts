@@ -80,8 +80,11 @@ export const transactionRepository = {
         a.symbol as symbol,
         a.decimal_places as decimal_places,
         tag.name as tags,
-        tag.is_common as tag_is_common,
-        tb.pct_value as pct_value,
+        CASE WHEN EXISTS(
+          SELECT 1 FROM tags_hierarchy th2
+          WHERE th2.child_id = tag.id
+            AND th2.parent = 'add-on'
+        ) THEN 1 ELSE 0 END as tag_is_common,
         tb.amount_int as amount_int,
         tb.amount_frac as amount_frac,
         tb.sign as sign,
@@ -141,7 +144,11 @@ export const transactionRepository = {
         a.wallet,
         a.currency,
         tag.name as tag,
-        tag.is_common as is_common
+        CASE WHEN EXISTS(
+          SELECT 1 FROM tags_hierarchy th2
+          WHERE th2.child_id = tag.id
+            AND th2.parent = 'add-on'
+        ) THEN 1 ELSE 0 END as is_common
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
@@ -160,16 +167,20 @@ export const transactionRepository = {
 
     const result = await queryOne<{ income: number; expenses: number }>(`
       SELECT
-        COALESCE(SUM(CASE WHEN tb.sign = '+' AND tag.is_common = 0
-          THEN (tb.amount_int + tb.amount_frac * 1e-18)
+        COALESCE(SUM(CASE WHEN tb.sign = '+' AND NOT EXISTS(
+            SELECT 1 FROM tags_hierarchy th2
+            WHERE th2.child_id = tag.id AND th2.parent = 'add-on'
+          ) THEN (tb.amount_int + tb.amount_frac * 1e-18)
                / (tb.rate_int + tb.rate_frac * 1e-18)
           ELSE 0 END), 0) as income,
         COALESCE(SUM(CASE
           WHEN tb.sign = '-'
           THEN (tb.amount_int + tb.amount_frac * 1e-18)
                / (tb.rate_int + tb.rate_frac * 1e-18)
-          WHEN tb.sign = '+' AND tag.is_common = 1
-          THEN -(tb.amount_int + tb.amount_frac * 1e-18)
+          WHEN tb.sign = '+' AND EXISTS(
+            SELECT 1 FROM tags_hierarchy th2
+            WHERE th2.child_id = tag.id AND th2.parent = 'add-on'
+          ) THEN -(tb.amount_int + tb.amount_frac * 1e-18)
                / (tb.rate_int + tb.rate_frac * 1e-18)
           ELSE 0 END), 0) as expenses
       FROM trx t
@@ -405,9 +416,9 @@ export const transactionRepository = {
     }
 
     await execSQL(`
-      INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac, pct_value)
-      VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount_int, line.amount_frac, rateInt, rateFrac, line.pct_value ?? null])
+      INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac)
+      VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [trxId, line.account_id, line.tag_id, line.sign, line.amount_int, line.amount_frac, rateInt, rateFrac])
 
     // Get the created line ID
     const lineResult = await queryOne<{ id: Uint8Array }>(

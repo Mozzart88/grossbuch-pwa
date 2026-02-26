@@ -55,6 +55,7 @@ const sampleTransactionLog: TransactionLog = {
   wallet_color: '#fff',
   currency: 'USD',
   tags: 'food',
+  tag_is_common: 0,
   amount_int: 50,
   amount_frac: 0,
   sign: '-',
@@ -490,11 +491,11 @@ describe('transactionRepository', () => {
       await transactionRepository.getMonthSummary('2025-01')
 
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringMatching(/is_common\s*=\s*0/),
+        expect.stringContaining('tags_hierarchy'),
         expect.anything()
       )
       expect(mockQueryOne).toHaveBeenCalledWith(
-        expect.stringMatching(/is_common\s*=\s*1/),
+        expect.stringContaining("'add-on'"),
         expect.anything()
       )
     })
