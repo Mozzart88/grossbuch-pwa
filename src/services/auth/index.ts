@@ -9,7 +9,18 @@ export {
   changePin,
   wipeAndReset,
   validateAndRefreshSession,
+  loginWithBiometrics,
+  enableBiometrics,
+  disableBiometrics,
 } from './authService'
+
+export {
+  isPlatformAuthenticatorAvailable,
+  hasWebAuthnCredential,
+  clearWebAuthnCredential,
+  isPRFKnownUnsupported,
+  clearPRFUnsupportedFlag,
+} from './webauthn'
 
 export {
   deriveEncryptionKey,

@@ -17,6 +17,12 @@ import {
   logout as authLogout,
   changePin as authChangePin,
   wipeAndReset as authWipeAndReset,
+  loginWithBiometrics as authLoginWithBiometrics,
+  enableBiometrics as authEnableBiometrics,
+  disableBiometrics as authDisableBiometrics,
+  isPlatformAuthenticatorAvailable,
+  hasWebAuthnCredential,
+  isPRFKnownUnsupported,
 } from '../services/auth'
 import { useDatabase } from './DatabaseContext'
 
@@ -30,6 +36,11 @@ interface AuthContextValue extends AuthState {
   clearError: () => void
   isFirstSetup: boolean
   clearFirstSetup: () => void
+  biometricsAvailable: boolean
+  biometricsEnabled: boolean
+  loginWithBiometrics: () => Promise<boolean>
+  enableBiometrics: () => Promise<boolean>
+  disableBiometrics: () => void
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -45,6 +56,11 @@ const AuthContext = createContext<AuthContextValue>({
   clearError: () => {},
   isFirstSetup: false,
   clearFirstSetup: () => {},
+  biometricsAvailable: false,
+  biometricsEnabled: false,
+  loginWithBiometrics: async () => false,
+  enableBiometrics: async () => false,
+  disableBiometrics: () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -52,6 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [failedAttempts, setFailedAttempts] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isFirstSetup, setIsFirstSetup] = useState(false)
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false)
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false)
   const { setDatabaseReady, setDatabaseError, reset: resetDatabase } = useDatabase()
 
   // Check auth status on mount
@@ -89,7 +107,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    async function checkBiometrics() {
+      try {
+        const available = await isPlatformAuthenticatorAvailable()
+        // PRF known unsupported means Face ID/Touch ID exists but the PRF extension
+        // (needed for key-wrapping) isn't available — e.g. iOS < 18. Treat this the
+        // same as no biometrics so the UI stays hidden instead of showing a confusing
+        // "could not enable" error after a successful Face ID prompt.
+        const prfUsable = available && !isPRFKnownUnsupported()
+        setBiometricsAvailable(prfUsable)
+        if (!prfUsable) {
+          // Clear any stale credential so it doesn't interfere on next check
+          authDisableBiometrics()
+          setBiometricsEnabled(false)
+        } else {
+          setBiometricsEnabled(hasWebAuthnCredential())
+        }
+      } catch {
+        setBiometricsAvailable(false)
+        setBiometricsEnabled(false)
+      }
+    }
+
     checkAuthStatus()
+    checkBiometrics()
   }, [])
 
   const setupPin = useCallback(async (pin: string): Promise<boolean> => {
@@ -151,6 +192,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [failedAttempts, setDatabaseReady])
 
+  const loginWithBiometrics = useCallback(async (): Promise<boolean> => {
+    try {
+      const success = await authLoginWithBiometrics()
+      if (success) {
+        setDatabaseReady()
+        setStatus('authenticated')
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  }, [setDatabaseReady])
+
   const logout = useCallback(() => {
     authLogout()
     resetDatabase()
@@ -167,6 +222,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return false
       }
 
+      // PIN change clears biometric credential (DEK changed)
+      setBiometricsEnabled(false)
+
       return true
     } catch (err) {
       console.error('Change PIN failed:', err)
@@ -181,12 +239,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetDatabase()
       setFailedAttempts(0)
       setError(null)
+      setBiometricsEnabled(false)
       setStatus('first_time_setup')
     } catch (err) {
       console.error('Wipe and reset failed:', err)
       setError(err instanceof Error ? err.message : 'Failed to wipe data')
     }
   }, [resetDatabase])
+
+  const enableBiometrics = useCallback(async (): Promise<boolean> => {
+    try {
+      const success = await authEnableBiometrics()
+      if (success) setBiometricsEnabled(true)
+      return success
+    } catch {
+      return false
+    }
+  }, [])
+
+  const disableBiometrics = useCallback(() => {
+    authDisableBiometrics()
+    setBiometricsEnabled(false)
+  }, [])
 
   const clearFirstSetup = useCallback(() => {
     setIsFirstSetup(false)
@@ -214,6 +288,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearError,
         isFirstSetup,
         clearFirstSetup,
+        biometricsAvailable,
+        biometricsEnabled,
+        loginWithBiometrics,
+        enableBiometrics,
+        disableBiometrics,
       }}
     >
       {children}

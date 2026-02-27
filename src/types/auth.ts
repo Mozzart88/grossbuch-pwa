@@ -47,10 +47,20 @@ export interface KeyPair {
   privateKey: string  // base64url-encoded PKCS8
 }
 
+// WebAuthn credential data stored in localStorage
+export interface WebAuthnCredentialData {
+  credentialId: string  // base64url credential ID
+  prfSalt: string       // base64url 32-byte PRF input (deterministic)
+  wrappedDEK: string    // base64url AES-GCM ciphertext of DEK bytes
+  iv: string            // base64url 12-byte GCM IV
+}
+
 // Storage keys
 export const AUTH_STORAGE_KEYS = {
   PBKDF2_SALT: 'gb_pbkdf2_salt',
   SESSION_TOKEN: 'gb_session_token',
   SHARED_UUID: 'gb_shared_uuid',
   SHARED_PUBLIC_KEY: 'gb_shared_public_key',
+  WEBAUTHN_DATA: 'gb_webauthn_data',
+  PRF_UNSUPPORTED: 'gb_prf_unsupported',
 } as const

@@ -12,7 +12,7 @@ type Step = 'current' | 'new' | 'confirm'
 export function ChangePinPage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
-  const { changePin, wipeAndReset, logout } = useAuth()
+  const { changePin, wipeAndReset, logout, biometricsAvailable, biometricsEnabled, enableBiometrics, disableBiometrics } = useAuth()
 
   const [step, setStep] = useState<Step>('current')
   const [currentPin, setCurrentPin] = useState('')
@@ -99,6 +99,20 @@ export function ChangePinPage() {
   const handleLogout = () => {
     logout()
     navigate('/')
+  }
+
+  const handleEnableBiometrics = async () => {
+    const success = await enableBiometrics()
+    if (success) {
+      showToast('Biometric unlock enabled', 'success')
+    } else {
+      showToast('Could not enable biometric unlock', 'error')
+    }
+  }
+
+  const handleDisableBiometrics = () => {
+    disableBiometrics()
+    showToast('Biometric unlock disabled', 'success')
   }
 
   const getStepTitle = () => {
@@ -226,6 +240,32 @@ export function ChangePinPage() {
             )}
           </div>
         </Card>
+
+        {/* Biometric unlock */}
+        {biometricsAvailable && (
+          <Card className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Biometric Unlock</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Unlock with fingerprint, face, or device PIN
+                </p>
+              </div>
+              {biometricsEnabled ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-green-600 dark:text-green-400 font-medium">Enabled</span>
+                  <Button variant="secondary" onClick={handleDisableBiometrics}>
+                    Disable
+                  </Button>
+                </div>
+              ) : (
+                <Button onClick={handleEnableBiometrics}>
+                  Enable
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Additional security options */}
         <Card className="divide-y divide-gray-200 dark:divide-gray-700">

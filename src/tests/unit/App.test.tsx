@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import App from '../../App'
 
 // Mock all page components
@@ -33,6 +33,20 @@ vi.mock('../../pages', () => ({
     </div>
   ),
 }))
+
+// Mock BiometricSetupPrompt
+vi.mock('../../components/auth', async () => {
+  const actual = await vi.importActual('../../components/auth')
+  return {
+    ...actual,
+    BiometricSetupPrompt: ({ onEnable, onSkip }: { onEnable: () => Promise<void>; onSkip: () => void }) => (
+      <div data-testid="biometric-setup-prompt">
+        <button onClick={onEnable}>Enable Biometrics</button>
+        <button onClick={onSkip}>Skip</button>
+      </div>
+    ),
+  }
+})
 
 // Mock TabBar
 vi.mock('../../components/ui', async () => {
@@ -71,6 +85,11 @@ let mockAuthState = {
   clearError: vi.fn(),
   isFirstSetup: false,
   clearFirstSetup: vi.fn(),
+  biometricsAvailable: false,
+  biometricsEnabled: false,
+  enableBiometrics: vi.fn().mockResolvedValue(undefined),
+  disableBiometrics: vi.fn(),
+  loginWithBiometrics: vi.fn(),
 }
 
 vi.mock('../../store/AuthContext', () => ({
@@ -131,6 +150,11 @@ describe('App', () => {
       clearError: vi.fn(),
       isFirstSetup: false,
       clearFirstSetup: vi.fn(),
+      biometricsAvailable: false,
+      biometricsEnabled: false,
+      enableBiometrics: vi.fn().mockResolvedValue(undefined),
+      disableBiometrics: vi.fn(),
+      loginWithBiometrics: vi.fn(),
     }
   })
 
@@ -260,6 +284,92 @@ describe('App', () => {
 
       expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
       expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+    })
+  })
+
+  describe('BiometricSetupPrompt flow', () => {
+    beforeEach(() => {
+      localStorage.clear()
+      mockDatabaseState = { isReady: true, error: null }
+      mockAuthState.isFirstSetup = true
+      // clearFirstSetup must update isFirstSetup so the re-render passes the onboarding gate
+      mockAuthState.clearFirstSetup = vi.fn().mockImplementation(() => {
+        mockAuthState.isFirstSetup = false
+      })
+    })
+
+    it('shows BiometricSetupPrompt after onboarding when biometrics available and not yet enabled', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = false
+
+      render(<App />)
+      fireEvent.click(screen.getByText('Complete Onboarding'))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
+      })
+    })
+
+    it('does not show BiometricSetupPrompt when biometrics not available', () => {
+      mockAuthState.biometricsAvailable = false
+      mockAuthState.biometricsEnabled = false
+
+      render(<App />)
+      fireEvent.click(screen.getByText('Complete Onboarding'))
+
+      // handleOnboardingComplete ran but setPendingBiometricSetup was not called
+      expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+    })
+
+    it('does not show BiometricSetupPrompt when biometrics already enabled', () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = true
+
+      render(<App />)
+      fireEvent.click(screen.getByText('Complete Onboarding'))
+
+      expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+    })
+
+    it('calls enableBiometrics and dismisses prompt when Enable is clicked', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = false
+      const enableBiometrics = vi.fn().mockResolvedValue(undefined)
+      mockAuthState.enableBiometrics = enableBiometrics
+
+      render(<App />)
+      fireEvent.click(screen.getByText('Complete Onboarding'))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Enable Biometrics'))
+
+      await waitFor(() => {
+        expect(enableBiometrics).toHaveBeenCalledOnce()
+        expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+        expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+      })
+    })
+
+    it('dismisses prompt and shows main app when Skip is clicked', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = false
+
+      render(<App />)
+      fireEvent.click(screen.getByText('Complete Onboarding'))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Skip'))
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+        expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+      })
     })
   })
 })
