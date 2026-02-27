@@ -528,4 +528,88 @@ describe('Transactions Integration', () => {
       expect(columns).not.toContain('trx_base_id')
     })
   })
+
+  describe('tag_is_common in findByMonth', () => {
+    it('computes tag_is_common=0 for plain expense (food tag)', async () => {
+      const db = getTestDatabase()
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      const timestamp = Math.floor(new Date('2025-06-15T10:00:00').getTime() / 1000)
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.FOOD,
+        sign: '-',
+        amount_int: 100,
+        timestamp,
+      })
+
+      const result = db.exec(`
+        SELECT
+          tag.name as tags,
+          CASE WHEN EXISTS(
+            SELECT 1 FROM tags_hierarchy th2
+            WHERE th2.child_id = tag.id
+              AND th2.parent = 'add-on'
+          ) THEN 1 ELSE 0 END as tag_is_common
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN accounts a ON tb.account_id = a.id
+        JOIN tag ON tb.tag_id = tag.id
+        LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+        LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+        WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE '2025-06%'
+          AND tag.name NOT LIKE '%initial%'
+        ORDER BY t.timestamp DESC
+      `)
+
+      expect(result[0].values.length).toBe(1)
+      // tag_is_common is the second column (index 1)
+      expect(result[0].values[0][1]).toBe(0)
+    })
+
+    it('computes tag_is_common=1 for add-on tag (Fees)', async () => {
+      const db = getTestDatabase()
+      const walletId = insertWallet({ name: 'Cash' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+
+      // Look up the Fees tag seeded by v16 migration as an add-on tag
+      const feeTagResult = db.exec("SELECT id FROM tag WHERE name = 'Fees'")
+      if (!feeTagResult[0]?.values?.[0]?.[0]) {
+        return // Skip if Fees tag not present
+      }
+      const feeTagId = Number(feeTagResult[0].values[0][0])
+
+      const timestamp = Math.floor(new Date('2025-07-15T10:00:00').getTime() / 1000)
+      insertTransaction({
+        account_id: accountId,
+        tag_id: feeTagId,
+        sign: '-',
+        amount_int: 10,
+        timestamp,
+      })
+
+      const result = db.exec(`
+        SELECT
+          tag.name as tags,
+          CASE WHEN EXISTS(
+            SELECT 1 FROM tags_hierarchy th2
+            WHERE th2.child_id = tag.id
+              AND th2.parent = 'add-on'
+          ) THEN 1 ELSE 0 END as tag_is_common
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN accounts a ON tb.account_id = a.id
+        JOIN tag ON tb.tag_id = tag.id
+        LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+        LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+        WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE '2025-07%'
+          AND tag.name NOT LIKE '%initial%'
+        ORDER BY t.timestamp DESC
+      `)
+
+      expect(result[0].values.length).toBe(1)
+      expect(result[0].values[0][1]).toBe(1)
+    })
+  })
 })

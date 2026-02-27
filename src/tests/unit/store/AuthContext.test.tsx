@@ -14,6 +14,13 @@ vi.mock('../../../services/auth', () => ({
   logout: vi.fn(),
   changePin: vi.fn().mockResolvedValue(true),
   wipeAndReset: vi.fn().mockResolvedValue(undefined),
+  loginWithBiometrics: vi.fn().mockResolvedValue(true),
+  enableBiometrics: vi.fn().mockResolvedValue(true),
+  disableBiometrics: vi.fn(),
+  isPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(false),
+  hasWebAuthnCredential: vi.fn().mockReturnValue(false),
+  isPRFKnownUnsupported: vi.fn().mockReturnValue(false),
+  clearPRFUnsupportedFlag: vi.fn(),
 }))
 
 // Mock database context
@@ -39,6 +46,12 @@ import {
   logout as authLogout,
   changePin as authChangePin,
   wipeAndReset as authWipeAndReset,
+  loginWithBiometrics as authLoginWithBiometrics,
+  enableBiometrics as authEnableBiometrics,
+  disableBiometrics as authDisableBiometrics,
+  isPlatformAuthenticatorAvailable,
+  hasWebAuthnCredential,
+  isPRFKnownUnsupported,
 } from '../../../services/auth'
 
 const mockIsDatabaseSetup = vi.mocked(isDatabaseSetup)
@@ -50,6 +63,12 @@ const mockLogin = vi.mocked(authLogin)
 const mockLogout = vi.mocked(authLogout)
 const mockChangePin = vi.mocked(authChangePin)
 const mockWipeAndReset = vi.mocked(authWipeAndReset)
+const mockLoginWithBiometrics = vi.mocked(authLoginWithBiometrics)
+const mockEnableBiometrics = vi.mocked(authEnableBiometrics)
+const mockDisableBiometrics = vi.mocked(authDisableBiometrics)
+const mockIsPlatformAuthenticatorAvailable = vi.mocked(isPlatformAuthenticatorAvailable)
+const mockHasWebAuthnCredential = vi.mocked(hasWebAuthnCredential)
+const mockIsPRFKnownUnsupported = vi.mocked(isPRFKnownUnsupported)
 
 // Test consumer component
 function TestConsumer() {
@@ -60,6 +79,8 @@ function TestConsumer() {
       <span data-testid="failed-attempts">{auth.failedAttempts}</span>
       <span data-testid="error">{auth.error || 'no-error'}</span>
       <span data-testid="is-first-setup">{String(auth.isFirstSetup)}</span>
+      <span data-testid="biometrics-available">{String(auth.biometricsAvailable)}</span>
+      <span data-testid="biometrics-enabled">{String(auth.biometricsEnabled)}</span>
       <button data-testid="setup-pin" onClick={() => auth.setupPin('123456')}>Setup</button>
       <button data-testid="migrate" onClick={() => auth.migrateDatabase('123456')}>Migrate</button>
       <button data-testid="login" onClick={() => auth.login('123456')}>Login</button>
@@ -68,6 +89,9 @@ function TestConsumer() {
       <button data-testid="wipe" onClick={() => auth.wipeAndReset()}>Wipe</button>
       <button data-testid="clear-error" onClick={() => auth.clearError()}>Clear Error</button>
       <button data-testid="clear-first-setup" onClick={() => auth.clearFirstSetup()}>Clear First Setup</button>
+      <button data-testid="login-biometrics" onClick={() => auth.loginWithBiometrics()}>Bio Login</button>
+      <button data-testid="enable-biometrics" onClick={() => auth.enableBiometrics()}>Enable Bio</button>
+      <button data-testid="disable-biometrics" onClick={() => auth.disableBiometrics()}>Disable Bio</button>
     </div>
   )
 }
@@ -88,6 +112,15 @@ describe('AuthContext', () => {
     mockIsDatabaseSetup.mockResolvedValue(false)
     mockNeedsMigration.mockResolvedValue(false)
     mockHasValidSession.mockResolvedValue(false)
+    mockIsPlatformAuthenticatorAvailable.mockResolvedValue(false)
+    mockHasWebAuthnCredential.mockReturnValue(false)
+    mockIsPRFKnownUnsupported.mockReturnValue(false)
+    mockLoginWithBiometrics.mockResolvedValue(true)
+    mockEnableBiometrics.mockResolvedValue(true)
+    // Ensure these resolve by default (vi.clearAllMocks may clear return values in some configs)
+    mockWipeAndReset.mockResolvedValue(undefined)
+    mockLogout.mockReturnValue(undefined)
+    mockDisableBiometrics.mockReturnValue(undefined)
   })
 
   describe('initial state', () => {
@@ -817,6 +850,296 @@ describe('AuthContext', () => {
       })
 
       expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+    })
+  })
+
+  describe('biometrics state', () => {
+    it('starts with biometricsAvailable false', () => {
+      renderWithProvider()
+      expect(screen.getByTestId('biometrics-available')).toHaveTextContent('false')
+    })
+
+    it('starts with biometricsEnabled false', () => {
+      renderWithProvider()
+      expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+    })
+
+    it('sets biometricsAvailable true when platform authenticator available', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockHasWebAuthnCredential.mockReturnValue(false)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-available')).toHaveTextContent('true')
+      })
+    })
+
+    it('sets biometricsEnabled true when credential stored and platform available', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('true')
+      })
+    })
+
+    it('clears biometricsEnabled when platform authenticator not available', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(false)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+      })
+    })
+
+    it('calls disableBiometrics when platform authenticator not available', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(false)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(mockDisableBiometrics).toHaveBeenCalled()
+      })
+    })
+
+    it('sets biometricsAvailable false when PRF is known unsupported', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockIsPRFKnownUnsupported.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-available')).toHaveTextContent('false')
+      })
+    })
+
+    it('sets biometricsEnabled false when PRF is known unsupported', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+      mockIsPRFKnownUnsupported.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+      })
+    })
+
+    it('calls disableBiometrics when PRF is known unsupported', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockIsPRFKnownUnsupported.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(mockDisableBiometrics).toHaveBeenCalled()
+      })
+    })
+  })
+
+  describe('loginWithBiometrics', () => {
+    beforeEach(() => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+    })
+
+    it('calls auth service loginWithBiometrics', async () => {
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+      })
+
+      await act(async () => {
+        screen.getByTestId('login-biometrics').click()
+      })
+
+      expect(mockLoginWithBiometrics).toHaveBeenCalled()
+    })
+
+    it('sets authenticated status on success', async () => {
+      mockLoginWithBiometrics.mockResolvedValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+      })
+
+      await act(async () => {
+        screen.getByTestId('login-biometrics').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+      })
+    })
+
+    it('stays needs_auth when biometric login fails', async () => {
+      mockLoginWithBiometrics.mockResolvedValue(false)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+      })
+
+      await act(async () => {
+        screen.getByTestId('login-biometrics').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+      })
+    })
+
+    it('stays needs_auth when biometric login throws', async () => {
+      mockLoginWithBiometrics.mockRejectedValue(new Error('Biometric error'))
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+      })
+
+      await act(async () => {
+        screen.getByTestId('login-biometrics').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('status')).toHaveTextContent('needs_auth')
+      })
+    })
+  })
+
+  describe('enableBiometrics', () => {
+    it('calls auth service enableBiometrics', async () => {
+      renderWithProvider()
+
+      await act(async () => {
+        screen.getByTestId('enable-biometrics').click()
+      })
+
+      expect(mockEnableBiometrics).toHaveBeenCalled()
+    })
+
+    it('sets biometricsEnabled true on success', async () => {
+      mockEnableBiometrics.mockResolvedValue(true)
+
+      renderWithProvider()
+
+      await act(async () => {
+        screen.getByTestId('enable-biometrics').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('true')
+      })
+    })
+
+    it('does not set biometricsEnabled when enableBiometrics returns false', async () => {
+      mockEnableBiometrics.mockResolvedValue(false)
+
+      renderWithProvider()
+
+      await act(async () => {
+        screen.getByTestId('enable-biometrics').click()
+      })
+
+      expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+    })
+
+    it('returns false when enableBiometrics throws', async () => {
+      mockEnableBiometrics.mockRejectedValue(new Error('No session'))
+
+      renderWithProvider()
+
+      // Should not throw, just return false silently
+      await act(async () => {
+        screen.getByTestId('enable-biometrics').click()
+      })
+
+      expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+    })
+  })
+
+  describe('disableBiometrics', () => {
+    it('calls auth service disableBiometrics', async () => {
+      renderWithProvider()
+
+      await act(async () => {
+        screen.getByTestId('disable-biometrics').click()
+      })
+
+      expect(mockDisableBiometrics).toHaveBeenCalled()
+    })
+
+    it('sets biometricsEnabled false', async () => {
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('true')
+      })
+
+      await act(async () => {
+        screen.getByTestId('disable-biometrics').click()
+      })
+
+      expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+    })
+  })
+
+  describe('changePin clears biometrics', () => {
+    it('sets biometricsEnabled false after PIN change', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+      mockLogin.mockResolvedValue(true)
+      mockChangePin.mockResolvedValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('true')
+      })
+
+      await act(async () => {
+        screen.getByTestId('change-pin').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+      })
+    })
+  })
+
+  describe('wipeAndReset clears biometrics', () => {
+    it('sets biometricsEnabled false after wipe', async () => {
+      mockIsDatabaseSetup.mockResolvedValue(true)
+      mockIsPlatformAuthenticatorAvailable.mockResolvedValue(true)
+      mockHasWebAuthnCredential.mockReturnValue(true)
+
+      renderWithProvider()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('true')
+      })
+
+      await act(async () => {
+        screen.getByTestId('wipe').click()
+      })
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometrics-enabled')).toHaveTextContent('false')
+      })
     })
   })
 })

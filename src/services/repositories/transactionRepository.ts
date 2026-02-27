@@ -22,10 +22,35 @@ export const transactionRepository = {
   async findByMonth(yearMonth: string): Promise<TransactionLog[]> {
     // yearMonth format: "YYYY-MM"
     return querySQL<TransactionLog>(`
-      SELECT * FROM trx_log
-      WHERE date_time LIKE ?
-        AND tags NOT LIKE '%initial%'
-      ORDER BY date_time DESC
+      SELECT
+        t.id as id,
+        datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
+        c.name as counterparty,
+        a.wallet as wallet,
+        a.wallet_color as wallet_color,
+        a.currency as currency,
+        a.symbol as symbol,
+        a.decimal_places as decimal_places,
+        tag.name as tags,
+        CASE WHEN EXISTS(
+          SELECT 1 FROM tags_hierarchy th2
+          WHERE th2.child_id = tag.id
+            AND th2.parent = 'add-on'
+        ) THEN 1 ELSE 0 END as tag_is_common,
+        tb.amount_int as amount_int,
+        tb.amount_frac as amount_frac,
+        tb.sign as sign,
+        tb.rate_int as rate_int,
+        tb.rate_frac as rate_frac
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+      WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?
+        AND tag.name NOT LIKE '%initial%'
+      ORDER BY t.timestamp DESC
     `, [`${yearMonth}%`])
   },
 

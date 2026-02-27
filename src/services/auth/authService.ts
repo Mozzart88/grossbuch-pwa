@@ -24,6 +24,18 @@ import {
   queryOne,
 } from '../database/connection'
 import { runMigrations } from '../database/migrations'
+import {
+  authenticateWithWebAuthn,
+  registerWebAuthn,
+  clearWebAuthnCredential,
+  clearPRFUnsupportedFlag,
+} from './webauthn'
+
+/**
+ * Module-level DEK cache — set after PIN login/setup, cleared on logout/wipe.
+ * Used by enableBiometrics() to wrap the DEK without re-deriving it.
+ */
+let sessionDEK: string | null = null
 
 /**
  * Get PBKDF2 salt from localStorage
@@ -245,6 +257,9 @@ export async function setupPin(pin: string): Promise<void> {
   // Create session token
   const sessionToken = await createSessionToken(jwtSalt)
   storeSessionToken(sessionToken)
+
+  // Cache DEK for potential biometric enrollment
+  sessionDEK = encryptionKey
 }
 
 /**
@@ -291,6 +306,9 @@ export async function login(pin: string): Promise<boolean> {
     const sessionToken = await createSessionToken(settings.jwt_salt)
     storeSessionToken(sessionToken)
 
+    // Cache DEK for potential biometric enrollment
+    sessionDEK = encryptionKey
+
     return true
   } catch {
     // Invalid key - wrong PIN
@@ -299,10 +317,11 @@ export async function login(pin: string): Promise<boolean> {
 }
 
 /**
- * Logout - clear session token
+ * Logout - clear session token and DEK cache
  */
 export function logout(): void {
   clearSessionToken()
+  sessionDEK = null
 }
 
 /**
@@ -346,6 +365,10 @@ export async function changePin(oldPin: string, newPin: string): Promise<boolean
     const sessionToken = await createSessionToken(newJwtSalt)
     storeSessionToken(sessionToken)
 
+    // DEK changed — old wrapped DEK is invalid; clear biometric credential
+    clearWebAuthnCredential()
+    sessionDEK = newKey
+
     return true
   } catch {
     return false
@@ -362,8 +385,51 @@ export async function wipeAndReset(): Promise<void> {
   // Clear stored salt
   clearStoredSalt()
 
+  // Clear biometric credential and PRF flag so next install gets a fresh check
+  clearWebAuthnCredential()
+  clearPRFUnsupportedFlag()
+  sessionDEK = null
+
   // Delete database file
   await wipeDatabase()
+}
+
+/**
+ * Login using a stored WebAuthn credential (biometric unlock).
+ * Returns true on success, false if no credential stored or authentication fails.
+ */
+export async function loginWithBiometrics(): Promise<boolean> {
+  const dek = await authenticateWithWebAuthn()
+  if (!dek) return false
+
+  await initEncryptedDatabase(dek)
+  await runMigrations()
+
+  const settings = await getAuthSettings()
+  if (!settings) return false
+
+  const sessionToken = await createSessionToken(settings.jwt_salt)
+  storeSessionToken(sessionToken)
+
+  sessionDEK = dek
+  return true
+}
+
+/**
+ * Enable biometric unlock by registering a platform authenticator and wrapping the current DEK.
+ * Requires an active PIN session (sessionDEK must be set).
+ * Returns true on success, false if PRF unsupported or registration fails.
+ */
+export async function enableBiometrics(): Promise<boolean> {
+  if (!sessionDEK) throw new Error('No active session — log in with PIN first')
+  return registerWebAuthn(sessionDEK)
+}
+
+/**
+ * Disable biometric unlock by removing the stored credential.
+ */
+export function disableBiometrics(): void {
+  clearWebAuthnCredential()
 }
 
 /**

@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { DatabaseProvider, useDatabase } from './store/DatabaseContext'
 import { AuthProvider, useAuth } from './store/AuthContext'
 import { ThemeProvider } from './store/ThemeContext'
 import { LayoutProvider } from './store/LayoutContext'
 import { ToastProvider, Spinner } from './components/ui'
+import { BiometricSetupPrompt } from './components/auth'
 import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { useSyncPull } from './hooks/useSyncPull'
 import { useSyncInit } from './hooks/useSyncInit'
@@ -99,7 +101,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 function AppContent() {
   const { isReady, error } = useDatabase()
-  const { isFirstSetup, clearFirstSetup } = useAuth()
+  const { isFirstSetup, clearFirstSetup, biometricsAvailable, biometricsEnabled, enableBiometrics } = useAuth()
+  const [pendingBiometricSetup, setPendingBiometricSetup] = useState(false)
 
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
@@ -140,7 +143,25 @@ function AppContent() {
   }
 
   if (isFirstSetup && !localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)) {
-    return <OnboardingPage onComplete={clearFirstSetup} />
+    function handleOnboardingComplete() {
+      clearFirstSetup()
+      if (biometricsAvailable && !biometricsEnabled) {
+        setPendingBiometricSetup(true)
+      }
+    }
+    return <OnboardingPage onComplete={handleOnboardingComplete} />
+  }
+
+  if (pendingBiometricSetup) {
+    return (
+      <BiometricSetupPrompt
+        onEnable={async () => {
+          await enableBiometrics()
+          setPendingBiometricSetup(false)
+        }}
+        onSkip={() => setPendingBiometricSetup(false)}
+      />
+    )
   }
 
   return (
