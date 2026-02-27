@@ -361,10 +361,10 @@ describe('TransactionItem', () => {
 
   it('sums all sub-entries for multi-currency multi-sub-entry expense', () => {
     const transaction: TransactionLog[] = [
+      { ...baseTransaction, tags: 'food', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 10, amount_frac: 0, tag_is_common: 0 },
       { ...baseTransaction, tags: 'exchange', sign: '-', amount_int: 12, amount_frac: 0 },
       { ...baseTransaction, tags: 'exchange', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '+', amount_int: 12, amount_frac: 0 },
-      { ...baseTransaction, tags: 'food',  wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 10, amount_frac: 0, tag_is_common: 0 },
-      { ...baseTransaction, tags: 'house', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 2,  amount_frac: 0, tag_is_common: 0 },
+      { ...baseTransaction, tags: 'house', wallet: 'Bank', currency: 'USD', symbol: '$', sign: '-', amount_int: 2, amount_frac: 0, tag_is_common: 0 },
     ]
     render(<TransactionItem transaction={transaction} onClick={vi.fn()} />)
 
@@ -833,5 +833,13 @@ describe('TransactionItem', () => {
       expect(item?.className).toContain('cursor-pointer')
       expect(item?.className).not.toContain('cursor-default')
     })
+  })
+
+  it('renders expense tag name when tag_is_common is absent (regression: trx_log view missing column)', () => {
+    const { tag_is_common: _, ...withoutTagIsCommon } = baseTransaction
+    const transaction = withoutTagIsCommon as TransactionLog
+    render(<TransactionItem transaction={[transaction]} onClick={vi.fn()} />)
+    expect(screen.getByText('Food')).toBeInTheDocument()
+    expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
   })
 })

@@ -103,7 +103,7 @@ describe('transactionRepository', () => {
       const result = await transactionRepository.findByMonth('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM trx_log'),
+        expect.stringContaining('tag_is_common'),
         expect.arrayContaining([expect.any(String)])
       )
       expect(result).toEqual([sampleTransactionLog])
@@ -132,7 +132,7 @@ describe('transactionRepository', () => {
       await transactionRepository.findByMonth('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('ORDER BY date_time DESC'),
+        expect.stringContaining('ORDER BY t.timestamp DESC'),
         expect.anything()
       )
     })
@@ -143,7 +143,7 @@ describe('transactionRepository', () => {
       await transactionRepository.findByMonth('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining("tags NOT LIKE '%initial%'"),
+        expect.stringContaining("tag.name NOT LIKE '%initial%'"),
         expect.anything()
       )
     })
@@ -156,7 +156,7 @@ describe('transactionRepository', () => {
       const result = await transactionRepository.findByMonthFiltered('2025-01')
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM trx_log'),
+        expect.stringContaining('tag_is_common'),
         expect.arrayContaining(['2025-01%'])
       )
       expect(result).toEqual([sampleTransactionLog])
@@ -168,7 +168,7 @@ describe('transactionRepository', () => {
       const result = await transactionRepository.findByMonthFiltered('2025-01', {})
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM trx_log'),
+        expect.stringContaining('tag_is_common'),
         expect.arrayContaining(['2025-01%'])
       )
       expect(result).toEqual([sampleTransactionLog])

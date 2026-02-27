@@ -207,7 +207,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       : transaction
 
     const plainTags = relevantLines
-      .filter(l => l.tag_is_common === 0 && l.tags && !systemTagNames.has(l.tags.toLowerCase()))
+      .filter(l => !l.tag_is_common && l.tags && !systemTagNames.has(l.tags.toLowerCase()))
       .map(l => capitalize(l.tags))
       .filter((name, index, arr) => arr.indexOf(name) === index) // dedupe
 
