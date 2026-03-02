@@ -104,8 +104,8 @@ describe('tagRepository', () => {
       const result = await tagRepository.findUserTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE th.parent_id = ?'),
-        [SYSTEM_TAGS.DEFAULT]
+        expect.stringContaining('WHERE parent_id != ?'),
+        [SYSTEM_TAGS.SYSTEM]
       )
 
       expect(result).toEqual(userTags)

@@ -42,7 +42,13 @@ export const tagRepository = {
 
   // Find user-visible tags (children of 'default' tag, id=2)
   async findUserTags(): Promise<Tag[]> {
-    return this.getTagsByParentId(SYSTEM_TAGS.DEFAULT)
+    return await querySQL<Tag>(`
+    SELECT DISTINCT
+      child_id as id,
+      child as name
+    FROM tags_hierarchy
+    WHERE parent_id != ?
+    `, [SYSTEM_TAGS.SYSTEM])
   },
 
   // Find income category tags (children of 'income' tag, id=9)
