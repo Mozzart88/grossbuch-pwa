@@ -232,7 +232,7 @@ describe('SettingsPage', () => {
     it('renders app version', () => {
       renderPage()
 
-      expect(screen.getByText('GrossBuh v1.0.0')).toBeInTheDocument()
+      expect(screen.getByText(`GrossBuh v${__APP_VERSION__}`)).toBeInTheDocument()
     })
 
     it('renders data storage info', () => {
