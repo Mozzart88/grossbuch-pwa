@@ -226,6 +226,33 @@ describe('ThemeContext', () => {
       expect(screen.getByTestId('theme')).toHaveTextContent('system')
     })
 
+    it('adds dark class to document.documentElement when setTheme("dark") is called', () => {
+      render(
+        <ThemeProvider>
+          <TestConsumer />
+        </ThemeProvider>
+      )
+      expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+      fireEvent.click(screen.getByTestId('set-dark'))
+
+      expect(document.documentElement.classList.contains('dark')).toBe(true)
+    })
+
+    it('removes dark class from document.documentElement when setTheme("light") is called', () => {
+      localStorage.setItem('theme', 'dark')
+      render(
+        <ThemeProvider>
+          <TestConsumer />
+        </ThemeProvider>
+      )
+      expect(document.documentElement.classList.contains('dark')).toBe(true)
+
+      fireEvent.click(screen.getByTestId('set-light'))
+
+      expect(document.documentElement.classList.contains('dark')).toBe(false)
+    })
+
     it('updates isDark immediately after theme change', () => {
       render(
         <ThemeProvider>
