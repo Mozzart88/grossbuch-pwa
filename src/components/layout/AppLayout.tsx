@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import { TabBar } from '../ui'
 import { ActionBar } from './ActionBar'
 import { NavDrawer } from './NavDrawer'
-import logo from '/dark-favicon.svg?url'
+import logoDark from '/dark-favicon.svg?url'
+import logoLight from '/favicon.svg?url'
+import { useTheme } from '../../store/ThemeContext'
 
 interface AppLayoutProps {
   children: ReactNode
@@ -11,6 +13,8 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const { isDark } = useTheme()
+  const logo = isDark ? logoDark : logoLight
 
   return (
     <div className="min-h-full flex flex-col">
