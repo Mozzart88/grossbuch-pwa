@@ -146,7 +146,7 @@ export function SettingsPage() {
 
         {/* App info */}
         <div className="text-center text-xs text-gray-400 dark:text-gray-500 pt-4">
-          <p>GrossBuh v1.0.0</p>
+          <p>GrossBuh v{__APP_VERSION__}</p>
           <p>All data stored locally on your device</p>
         </div>
       </div>
