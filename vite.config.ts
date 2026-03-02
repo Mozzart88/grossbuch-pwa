@@ -75,11 +75,6 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version)
   },
 
-  build: {
-    minify: false,
-    sourcemap: true
-  },
-
   // Required for SQLite WASM with OPFS
   server: {
     host: '0.0.0.0',
