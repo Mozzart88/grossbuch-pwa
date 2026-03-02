@@ -220,20 +220,21 @@ export function CounterpartiesPage() {
               If selected, this counterparty will only appear for these tags
             </p>
             <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-              {tags.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => toggleTag(tag.id)}
-                  className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                    selectedTagIds.includes(tag.id)
+              {tags
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.id)}
+                    className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${selectedTagIds.includes(tag.id)
                       ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
                       : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
-                  }`}
-                >
-                  {tag.name}
-                </button>
-              ))}
+                      }`}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
             </div>
           </div>
           <div className="flex gap-3 pt-2">
