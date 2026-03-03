@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useLayoutContext } from '../store/LayoutContext'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
@@ -29,11 +30,13 @@ const TABS = [
 export function SummariesPage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
+  const { setPlusButtonConfig } = useLayoutContext()
   const dataVersion = useDataRefresh()
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tabParam = searchParams.get('tab') || 'income-expense'
 
+  const todayMonth = getCurrentMonth()
   const [month, setMonth] = useState(monthParam)
   const [activeTab, setActiveTab] = useState(tabParam)
   const [loading, setLoading] = useState(true)
@@ -61,6 +64,8 @@ export function SummariesPage() {
   const [budgetPeriod, setBudgetPeriod] = useState(getCurrentMonth()) // defaults to current month
   const [submitting, setSubmitting] = useState(false)
 
+  const isCurrentMonth = month === todayMonth
+
   // Update URL when month or tab changes
   useEffect(() => {
     const params = new URLSearchParams()
@@ -68,6 +73,20 @@ export function SummariesPage() {
     params.set('tab', activeTab)
     setSearchParams(params, { replace: true })
   }, [month, activeTab, setSearchParams])
+
+  // Override FAB to open Set Budget modal
+  useEffect(() => {
+    setPlusButtonConfig({
+      onClick: () => {
+        setSelectedTagId('')
+        setEditingBudget(null)
+        setBudgetAmount('')
+        setBudgetPeriod(getCurrentMonth())
+        setModalOpen(true)
+      }
+    })
+    return () => setPlusButtonConfig(null)
+  }, [setPlusButtonConfig])
 
   // Load data when month changes
   useEffect(() => {
@@ -172,6 +191,33 @@ export function SummariesPage() {
       setEditingBudget(null)
       setBudgetAmount(suggestedAmount.toFixed(decimalPlaces))
       setBudgetPeriod(getCurrentMonth()) // Always default to current month for new budgets
+    }
+    setModalOpen(true)
+  }
+
+  const openSetBudgetModal = async (tagId: number, suggestedAmount: number) => {
+    setSelectedTagId(tagId)
+    setEditingBudget(null)
+    setBudgetAmount(suggestedAmount.toFixed(decimalPlaces))
+    try {
+      const allForTag = await budgetRepository.findByTagId(tagId)
+      const occupied = new Set(
+        allForTag.map(b => {
+          const d = new Date(b.start * 1000)
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        })
+      )
+      const [cy, cm] = getCurrentMonth().split('-').map(Number)
+      let d = new Date(cy, cm - 1, 1)
+      let target = getCurrentMonth()
+      for (let i = 0; i < 24; i++) {
+        const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        if (!occupied.has(m)) { target = m; break }
+        d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+      }
+      setBudgetPeriod(target)
+    } catch {
+      setBudgetPeriod(getCurrentMonth())
     }
     setModalOpen(true)
   }
@@ -364,8 +410,8 @@ export function SummariesPage() {
                               type="expense"
                               onClick={() => handleCategoryClick('expense', cat.tag_id)}
                               budget={budget}
-                              onSetBudget={() => openBudgetModal(cat.tag_id, cat.amount)}
-                              onEditBudget={budget ? () => openBudgetModal(cat.tag_id, cat.amount, budget) : undefined}
+                              onSetBudget={() => openSetBudgetModal(cat.tag_id, cat.amount)}
+                              onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(cat.tag_id, cat.amount, budget) : undefined}
                               onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
                             />
                           )
@@ -490,11 +536,11 @@ interface CategoryCardProps {
   onClick: () => void
   budget?: Budget
   onSetBudget?: () => void
-  onEditBudget?: () => void
+  onAdjustBudget?: () => void
   onDeleteBudget?: () => void
 }
 
-function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type, onClick, budget, onSetBudget, onEditBudget, onDeleteBudget }: CategoryCardProps) {
+function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type, onClick, budget, onSetBudget, onAdjustBudget, onDeleteBudget }: CategoryCardProps) {
   const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
 
   // Calculate progress based on whether we have a budget
@@ -527,15 +573,14 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
   // Build dropdown menu items for expense cards
   const dropdownItems = []
   if (type === 'expense') {
-    if (budget) {
-      if (onEditBudget) {
-        dropdownItems.push({ label: 'Edit budget', onClick: onEditBudget })
-      }
-      if (onDeleteBudget) {
-        dropdownItems.push({ label: 'Delete budget', onClick: onDeleteBudget, variant: 'danger' as const })
-      }
-    } else if (onSetBudget) {
+    if (onAdjustBudget) {
+      dropdownItems.push({ label: 'Adjust budget', onClick: onAdjustBudget })
+    }
+    if (onSetBudget) {
       dropdownItems.push({ label: 'Set budget', onClick: onSetBudget })
+    }
+    if (budget && onDeleteBudget) {
+      dropdownItems.push({ label: 'Delete budget', onClick: onDeleteBudget, variant: 'danger' as const })
     }
   }
 

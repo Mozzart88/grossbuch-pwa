@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { SummariesPage } from '../../../pages/SummariesPage'
+import { LayoutProvider, useLayoutContext } from '../../../store/LayoutContext'
 
 vi.mock('../../../services/repositories')
 // Import after mock
@@ -52,10 +53,21 @@ vi.mock('../../../components/ui', async () => {
 
 const renderWithRouter = (initialEntries = ['/summaries']) => {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <SummariesPage />
-    </MemoryRouter>
+    <LayoutProvider>
+      <MemoryRouter initialEntries={initialEntries}>
+        <SummariesPage />
+      </MemoryRouter>
+    </LayoutProvider>
   )
+}
+
+// Helper component that exposes the FAB config as a clickable button
+function FABTrigger() {
+  const { plusButtonConfig } = useLayoutContext()
+  if (plusButtonConfig?.onClick) {
+    return <button data-testid="test-fab" onClick={plusButtonConfig.onClick}>FAB</button>
+  }
+  return null
 }
 
 describe('SummariesPage', () => {
@@ -108,6 +120,7 @@ describe('SummariesPage', () => {
       actual: 300,
     })
     mockBudgetRepository.delete.mockResolvedValue(undefined)
+    mockBudgetRepository.findByTagId.mockResolvedValue([])
     mockTagRepository.findExpenseTags.mockResolvedValue([
       { id: 12, name: 'Food', sort_order: 10 },
       { id: 13, name: 'Transport', sort_order: 10 },
@@ -547,7 +560,7 @@ describe('SummariesPage', () => {
       })
     })
 
-    it('shows Edit and Delete options when budget exists', async () => {
+    it('shows Adjust, Set, and Delete options when budget exists on current month', async () => {
       mockBudgetRepository.findByMonth.mockResolvedValue([
         {
           id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
@@ -561,7 +574,7 @@ describe('SummariesPage', () => {
         },
       ])
 
-      renderWithRouter()
+      renderWithRouter() // default: current month 2025-01
 
       await waitFor(() => {
         expect(screen.getByText('Food')).toBeInTheDocument()
@@ -572,7 +585,8 @@ describe('SummariesPage', () => {
       fireEvent.click(dropdownButton)
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: 'Edit budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Adjust budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
         expect(screen.getByRole('menuitem', { name: 'Delete budget' })).toBeInTheDocument()
       })
     })
@@ -778,15 +792,15 @@ describe('SummariesPage', () => {
         expect(screen.getByText('Food')).toBeInTheDocument()
       })
 
-      // Open dropdown and click "Edit budget"
+      // Open dropdown and click "Adjust budget"
       const dropdownButton = screen.getByRole('button', { expanded: false })
       fireEvent.click(dropdownButton)
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: 'Edit budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Adjust budget' })).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit budget' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Adjust budget' }))
 
       await waitFor(() => {
         expect(screen.getByText('Edit Budget')).toBeInTheDocument()
@@ -815,15 +829,15 @@ describe('SummariesPage', () => {
         expect(screen.getByText('Food')).toBeInTheDocument()
       })
 
-      // Open dropdown and click "Edit budget"
+      // Open dropdown and click "Adjust budget"
       const dropdownButton = screen.getByRole('button', { expanded: false })
       fireEvent.click(dropdownButton)
 
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: 'Edit budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Adjust budget' })).toBeInTheDocument()
       })
 
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit budget' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Adjust budget' }))
 
       await waitFor(() => {
         expect(screen.getByText('Edit Budget')).toBeInTheDocument()
@@ -993,6 +1007,21 @@ describe('SummariesPage', () => {
       expect(dropdownButtons.length).toBe(1) // Only 1 dropdown for Food expense
     })
 
+    it('shows "Set budget" always in dropdown for expense categories', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => {
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+      })
+    })
+
     it('shows category with budget even when no expenses for that category', async () => {
       // Budget exists for Transport but no expenses
       mockBudgetRepository.findByMonth.mockResolvedValue([
@@ -1020,6 +1049,162 @@ describe('SummariesPage', () => {
         expect(screen.getByText('Transport')).toBeInTheDocument()
         // Should show $0.00/$200.00 format
         expect(screen.getByText('$0.00/$200.00')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Dropdown context-sensitivity', () => {
+    const budgetFood = {
+      id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+      tag_id: 1,
+      amount_int: 500,
+      amount_frac: 0,
+      start: 0,
+      end: 0,
+      tag: 'Food',
+      actual: 300,
+    }
+
+    it('shows "Adjust budget" only when viewing current month with budget', async () => {
+      mockBudgetRepository.findByMonth.mockResolvedValue([budgetFood])
+
+      renderWithRouter(['/summaries']) // current month (2025-01 = todayMonth)
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => {
+        expect(screen.getByRole('menuitem', { name: 'Adjust budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Delete budget' })).toBeInTheDocument()
+      })
+    })
+
+    it('does not show "Adjust budget" when viewing a past month with budget', async () => {
+      mockBudgetRepository.findByMonth.mockResolvedValue([budgetFood])
+
+      renderWithRouter(['/summaries?month=2024-12']) // past month
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => {
+        expect(screen.queryByRole('menuitem', { name: 'Adjust budget' })).not.toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+        expect(screen.getByRole('menuitem', { name: 'Delete budget' })).toBeInTheDocument()
+      })
+    })
+
+    it('shows "Set budget" when viewing a past month with budget', async () => {
+      mockBudgetRepository.findByMonth.mockResolvedValue([budgetFood])
+
+      renderWithRouter(['/summaries?month=2024-12']) // past month
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => {
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Set budget modal — smart period pre-fill', () => {
+    it('pre-fills period with current month when no future budgets exist for tag', async () => {
+      mockBudgetRepository.findByTagId.mockResolvedValue([])
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1))
+
+      // Submit and verify start timestamp is January 2025
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '300.00' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      const expectedStart = Math.floor(new Date(2025, 0, 1).getTime() / 1000)
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ start: expectedStart })
+        )
+      })
+    })
+
+    it('pre-fills period with next month when current month already has a budget for tag', async () => {
+      // Budget for tag 1 in January 2025 (local time)
+      const jan2025Mid = Math.floor(new Date(2025, 0, 15).getTime() / 1000)
+      mockBudgetRepository.findByTagId.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 1,
+          amount_int: 500,
+          amount_frac: 0,
+          start: jan2025Mid,
+          end: 0,
+          tag: 'Food',
+          actual: 300,
+        },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      // Submit and verify start timestamp is February 2025
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '300.00' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      const expectedStart = Math.floor(new Date(2025, 1, 1).getTime() / 1000)
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ start: expectedStart })
+        )
+      })
+    })
+  })
+
+  describe('FAB override', () => {
+    it('opens Set Budget modal when FAB is clicked', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByTestId('test-fab')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Set Budget')).toBeInTheDocument()
       })
     })
   })
