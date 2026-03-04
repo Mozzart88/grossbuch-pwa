@@ -1,9 +1,11 @@
 import { execSQL, getLastInsertId } from '../database'
 
 export type ModelClass<T extends BaseModel> = {
-  new (): T
+  new(): T
   tableName: string
   idColumn: string
+  selectSQL?: string
+  filterPrefix?: string
 }
 
 export type FilterMap = Record<string, string | number | boolean | null | Uint8Array>
@@ -13,22 +15,26 @@ export abstract class BaseModel {
   static tableName: string
   /** Declared by subclass (default 'id') */
   static idColumn: string = 'id'
+  /** Override in subclasses that need JOINs — replaces the default SELECT * FROM tableName */
+  static selectSQL?: string
+  /** Column prefix for WHERE clauses when selectSQL is set (e.g. 't.') */
+  static filterPrefix = ''
 
   private _original: Record<string, unknown> = {}
   private _dirty: Set<string> = new Set()
   /** true after _hydrate completes — new instances are false until first hydrate */
   private _isNew = true
   /** Proxy intercept is only active after this flag is set */
-  private _tracking = false
+  private _tracking = true
 
   constructor() {
     return new Proxy(this, {
       set(target, prop, value) {
-        if (
-          typeof prop === 'string' &&
-          !prop.startsWith('_') &&
-          target._tracking
-        ) {
+        const isRelation =
+          value != null &&
+          typeof value === 'object' &&
+          typeof (value as Record<string, unknown>).drainPending === 'function'
+        if (!isRelation && typeof prop === 'string' && !prop.startsWith('_') && target._tracking) {
           target._dirty.add(prop)
         }
         return Reflect.set(target, prop, value)
@@ -46,7 +52,11 @@ export abstract class BaseModel {
     return this._dirty.size > 0
   }
 
-  getDirtyFields(): Record<string, unknown> {
+  isFieldDirty(field: string): boolean {
+    return this._dirty.has(field)
+  }
+
+  protected getDirtyFields(): Record<string, unknown> {
     const out: Record<string, unknown> = {}
     for (const key of this._dirty) {
       out[key] = (this as Record<string, unknown>)[key]
@@ -68,7 +78,9 @@ export abstract class BaseModel {
     const { tableName, idColumn } = Model
 
     if (this._isNew) {
-      const values = this._snapshot()
+      const allDirty = this.getDirtyFields()
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [idColumn]: _skip, ...values } = allDirty
       const cols = Object.keys(values)
       const placeholders = cols.map(() => '?').join(', ')
       await execSQL(
@@ -76,9 +88,8 @@ export abstract class BaseModel {
         Object.values(values)
       )
       const newId = await getLastInsertId()
-      ;(this as Record<string, unknown>)[idColumn] = newId
+        ; (this as Record<string, unknown>)[idColumn] = newId
       this._original = { ...values, [idColumn]: newId }
-      this._dirty = new Set()
       this._isNew = false
     } else {
       const dirty = this.getDirtyFields()
@@ -92,11 +103,11 @@ export abstract class BaseModel {
           [...Object.values(dirty), id]
         )
         this._original = { ...this._original, ...dirty }
-        this._dirty = new Set()
       }
     }
 
     await this._saveRelations()
+    this._dirty = new Set()
   }
 
   /**
@@ -160,14 +171,5 @@ export abstract class BaseModel {
     this._isNew = false
     this._tracking = true
     return this
-  }
-
-  private _snapshot(): Record<string, unknown> {
-    const keys = Object.keys(this._original)
-    const out: Record<string, unknown> = {}
-    for (const key of keys) {
-      out[key] = (this as Record<string, unknown>)[key]
-    }
-    return out
   }
 }

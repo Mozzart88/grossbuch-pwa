@@ -1,4 +1,4 @@
-import { querySQL, queryOne, execSQL } from '../database'
+import { querySQL, queryOne } from '../database'
 import { BaseModel } from './BaseModel'
 import type { ModelClass, FilterMap } from './BaseModel'
 
@@ -8,7 +8,7 @@ export class Repository {
     Model: ModelClass<T>,
     filters?: FilterMap
   ): Promise<T[]> {
-    const { sql, binds } = Repository._buildSelect(Model.tableName, filters)
+    const { sql, binds } = Repository._buildSelect(Model, filters)
     const rows = await querySQL<Record<string, unknown>>(sql, binds)
     return rows.map(row => new Model()._hydrate(row))
   }
@@ -18,7 +18,7 @@ export class Repository {
     Model: ModelClass<T>,
     filters?: FilterMap
   ): Promise<T | null> {
-    const { sql, binds } = Repository._buildSelect(Model.tableName, filters)
+    const { sql, binds } = Repository._buildSelect(Model, filters)
     const row = await queryOne<Record<string, unknown>>(sql + ' LIMIT 1', binds)
     return row ? new Model()._hydrate(row) : null
   }
@@ -41,27 +41,24 @@ export class Repository {
 
   /** DELETE the entity by its primary key. */
   static async delete<T extends BaseModel>(entity: T): Promise<void> {
-    const Model = entity.constructor as typeof BaseModel
-    const id = (entity as Record<string, unknown>)[Model.idColumn]
-    await execSQL(
-      `DELETE FROM ${Model.tableName} WHERE ${Model.idColumn} = ?`,
-      [id]
-    )
+    await entity.delete()
   }
 
   // ── Private helpers ────────────────────────────────────────────────────
 
   private static _buildSelect(
-    tableName: string,
+    Model: ModelClass<any>,
     filters?: FilterMap
   ): { sql: string; binds: unknown[] } {
-    let sql = `SELECT * FROM ${tableName}`
+    const base = Model.selectSQL ?? `SELECT * FROM ${Model.tableName}`
+    const prefix = Model.filterPrefix ?? ''
     const binds: unknown[] = []
+    let sql = base
 
     if (filters && Object.keys(filters).length > 0) {
       const conditions = Object.entries(filters).map(([col, val]) => {
         binds.push(val)
-        return `${col} = ?`
+        return `${prefix}${col} = ?`
       })
       sql += ` WHERE ${conditions.join(' AND ')}`
     }
