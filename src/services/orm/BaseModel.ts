@@ -20,12 +20,12 @@ export abstract class BaseModel {
   /** Column prefix for WHERE clauses when selectSQL is set (e.g. 't.') */
   static filterPrefix = ''
 
-  private _original: Record<string, unknown> = {}
-  private _dirty: Set<string> = new Set()
+  protected _original: Record<string, unknown> = {}
+  protected _dirty: Set<string> = new Set()
   /** true after _hydrate completes — new instances are false until first hydrate */
-  private _isNew = true
+  protected _isNew = true
   /** Proxy intercept is only active after this flag is set */
-  private _tracking = true
+  protected _tracking = true
 
   constructor() {
     return new Proxy(this, {
