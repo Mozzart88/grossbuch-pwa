@@ -835,6 +835,79 @@ describe('TransactionItem', () => {
     })
   })
 
+  describe('add-on-only transactions (tag_is_common = 1)', () => {
+    it('shows add-on tag name for single expense with only Tips tag', () => {
+      const transaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'Tips',
+        sign: '-',
+        tag_is_common: 1,
+      }
+      render(<TransactionItem transaction={[transaction]} onClick={vi.fn()} />)
+      expect(screen.getByText('Tips')).toBeInTheDocument()
+      expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
+    })
+
+    it('shows add-on tag name for single expense with only VAT tag', () => {
+      const transaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'VAT',
+        sign: '-',
+        tag_is_common: 1,
+      }
+      render(<TransactionItem transaction={[transaction]} onClick={vi.fn()} />)
+      expect(screen.getByText('Vat')).toBeInTheDocument()
+      expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
+    })
+
+    it('shows add-on tag name for single income with only Tips tag', () => {
+      const transaction: TransactionLog = {
+        ...baseTransaction,
+        tags: 'Tips',
+        sign: '+',
+        tag_is_common: 1,
+      }
+      render(<TransactionItem transaction={[transaction]} onClick={vi.fn()} />)
+      expect(screen.getByText('Tips')).toBeInTheDocument()
+      expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
+    })
+
+    it('shows primary tag when expense has both primary and add-on tags', () => {
+      const transactions: TransactionLog[] = [
+        { ...baseTransaction, tags: 'Food', sign: '-', tag_is_common: 0, amount_int: 40 },
+        { ...baseTransaction, tags: 'Tips', sign: '-', tag_is_common: 1, amount_int: 10 },
+      ]
+      render(<TransactionItem transaction={transactions} onClick={vi.fn()} />)
+      expect(screen.getByText('Food')).toBeInTheDocument()
+      expect(screen.queryByText('Tips')).not.toBeInTheDocument()
+      expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
+    })
+
+    it('shows add-on tag for multi-currency expense with only Tips add-on', () => {
+      const transactions: TransactionLog[] = [
+        { ...baseTransaction, tags: 'exchange', sign: '-', amount_int: 50, tag_is_common: 0 },
+        { ...baseTransaction, tags: 'exchange', wallet: 'Bank', currency: 'ARS', symbol: 'AR$', sign: '+', amount_int: 0, amount_frac: 5e17, tag_is_common: 0 },
+        { ...baseTransaction, tags: 'Tips', wallet: 'Bank', currency: 'ARS', symbol: 'AR$', sign: '-', amount_int: 0, amount_frac: 5e17, tag_is_common: 1 },
+      ]
+      render(<TransactionItem transaction={transactions} onClick={vi.fn()} />)
+      expect(screen.getByText('Tips')).toBeInTheDocument()
+      expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
+    })
+
+    it('shows primary tag for multi-currency expense with primary and Tips add-on', () => {
+      const transactions: TransactionLog[] = [
+        { ...baseTransaction, tags: 'exchange', sign: '-', amount_int: 50, tag_is_common: 0 },
+        { ...baseTransaction, tags: 'exchange', wallet: 'Bank', currency: 'ARS', symbol: 'AR$', sign: '+', amount_int: 0, amount_frac: 5e17, tag_is_common: 0 },
+        { ...baseTransaction, tags: 'Food', wallet: 'Bank', currency: 'ARS', symbol: 'AR$', sign: '-', amount_int: 0, amount_frac: 4e17, tag_is_common: 0 },
+        { ...baseTransaction, tags: 'Tips', wallet: 'Bank', currency: 'ARS', symbol: 'AR$', sign: '-', amount_int: 0, amount_frac: 1e17, tag_is_common: 1 },
+      ]
+      render(<TransactionItem transaction={transactions} onClick={vi.fn()} />)
+      expect(screen.getByText('Food')).toBeInTheDocument()
+      expect(screen.queryByText('Tips')).not.toBeInTheDocument()
+      expect(screen.queryByText('Uncategorized')).not.toBeInTheDocument()
+    })
+  })
+
   it('renders expense tag name when tag_is_common is absent (regression: trx_log view missing column)', () => {
     const { tag_is_common: _, ...withoutTagIsCommon } = baseTransaction
     const transaction = withoutTagIsCommon as TransactionLog

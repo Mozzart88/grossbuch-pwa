@@ -206,14 +206,26 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       ? transaction.filter(l => !l.tags.includes('exchange') && l.tags !== 'transfer')
       : transaction
 
-    const plainTags = relevantLines
+    // Primary (non-add-on) category tags
+    const primaryTags = relevantLines
       .filter(l => !l.tag_is_common && l.tags && !systemTagNames.has(l.tags.toLowerCase()))
       .map(l => capitalize(l.tags))
       .filter((name, index, arr) => arr.indexOf(name) === index) // dedupe
 
-    if (plainTags.length > 0) {
-      return plainTags.join(', ')
+    if (primaryTags.length > 0) {
+      return primaryTags.join(', ')
     }
+
+    // Fallback: show add-on tag names when no primary category exists
+    const addonTags = relevantLines
+      .filter(l => l.tag_is_common && l.tags && !systemTagNames.has(l.tags.toLowerCase()))
+      .map(l => capitalize(l.tags))
+      .filter((name, index, arr) => arr.indexOf(name) === index) // dedupe
+
+    if (addonTags.length > 0) {
+      return addonTags.join(', ')
+    }
+
     return 'Uncategorized'
   }
 
