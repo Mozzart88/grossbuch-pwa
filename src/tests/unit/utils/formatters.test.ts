@@ -7,31 +7,31 @@ describe('formatters', () => {
     it('formats positive amount with dollar symbol', () => {
       const { int, frac } = toIntFrac(1234.56)
       const result = formatCurrency(int, frac, '$')
-      expect(result).toMatch(/\$1,?234\.56/)
+      expect(result).toMatch(/\$1[.,]?234[.,]56/)
     })
 
     it('formats negative amount (floor convention)', () => {
       const { int, frac } = toIntFrac(-1234.56)
       const result = formatCurrency(int, frac, '$')
-      expect(result).toMatch(/\$1,?234\.56/)
+      expect(result).toMatch(/\$1[.,]?234[.,]56/)
     })
 
     it('formats zero', () => {
       const result = formatCurrency(0, 0, '$')
-      expect(result).toMatch(/\$0\.00/)
+      expect(result).toMatch(/\$0[.,]00/)
     })
 
     it('handles different currency symbols', () => {
       const { int, frac } = toIntFrac(100)
-      expect(formatCurrency(int, frac, '€')).toMatch(/€100\.00/)
-      expect(formatCurrency(int, frac, '£')).toMatch(/£100\.00/)
-      expect(formatCurrency(int, frac, '¥')).toMatch(/¥100\.00/)
+      expect(formatCurrency(int, frac, '€')).toMatch(/€100[.,]00/)
+      expect(formatCurrency(int, frac, '£')).toMatch(/£100[.,]00/)
+      expect(formatCurrency(int, frac, '¥')).toMatch(/¥100[.,]00/)
     })
 
     it('respects decimal places parameter', () => {
       const { int, frac } = toIntFrac(100.1234)
       const result = formatCurrency(int, frac, '$', 4)
-      expect(result).toMatch(/\$100\.1234/)
+      expect(result).toMatch(/\$100[.,]1234/)
     })
 
     it('formats with 0 decimal places', () => {
@@ -43,41 +43,41 @@ describe('formatters', () => {
     it('handles very small positive amounts', () => {
       const { int, frac } = toIntFrac(0.01)
       const result = formatCurrency(int, frac, '$')
-      expect(result).toMatch(/\$0\.01/)
+      expect(result).toMatch(/\$0[.,]01/)
     })
 
     it('default decimal places is 2', () => {
       const { int, frac } = toIntFrac(100)
       const result = formatCurrency(int, frac, '$')
-      expect(result).toMatch(/100\.00/)
+      expect(result).toMatch(/100[.,]00/)
     })
   })
 
   describe('formatCurrencyValue (float)', () => {
     it('formats positive amount with dollar symbol', () => {
       const result = formatCurrencyValue(1234.56, '$')
-      expect(result).toMatch(/\$1,?234\.56/)
+      expect(result).toMatch(/\$1[.,]?234[.,]56/)
     })
 
     it('formats negative amount with sign and symbol', () => {
       const result = formatCurrencyValue(-1234.56, '$')
-      expect(result).toMatch(/-\$1,?234\.56/)
+      expect(result).toMatch(/-\$1[.,]?234[.,]56/)
     })
 
     it('formats zero', () => {
       const result = formatCurrencyValue(0, '$')
-      expect(result).toMatch(/\$0\.00/)
+      expect(result).toMatch(/\$0[.,]00/)
     })
 
     it('handles different currency symbols', () => {
-      expect(formatCurrencyValue(100, '€')).toMatch(/€100\.00/)
-      expect(formatCurrencyValue(100, '£')).toMatch(/£100\.00/)
-      expect(formatCurrencyValue(100, '¥')).toMatch(/¥100\.00/)
+      expect(formatCurrencyValue(100, '€')).toMatch(/€100[.,]00/)
+      expect(formatCurrencyValue(100, '£')).toMatch(/£100[.,]00/)
+      expect(formatCurrencyValue(100, '¥')).toMatch(/¥100[.,]00/)
     })
 
     it('respects decimal places parameter', () => {
       const result = formatCurrencyValue(100.1234, '$', 4)
-      expect(result).toMatch(/\$100\.1234/)
+      expect(result).toMatch(/\$100[.,]1234/)
     })
 
     it('formats with 0 decimal places', () => {
@@ -93,17 +93,17 @@ describe('formatters', () => {
 
     it('handles very small positive amounts', () => {
       const result = formatCurrencyValue(0.01, '$')
-      expect(result).toMatch(/\$0\.01/)
+      expect(result).toMatch(/\$0[.,]01/)
     })
 
     it('handles very small negative amounts', () => {
       const result = formatCurrencyValue(-0.01, '$')
-      expect(result).toMatch(/\$0\.01/)
+      expect(result).toMatch(/\$0[.,]01/)
     })
 
     it('default decimal places is 2', () => {
       const result = formatCurrencyValue(100, '$')
-      expect(result).toMatch(/100\.00/)
+      expect(result).toMatch(/100[.,]00/)
     })
   })
 
@@ -111,22 +111,22 @@ describe('formatters', () => {
     it('formats positive number with default decimal places', () => {
       const { int, frac } = toIntFrac(1234.56)
       const result = formatAmount(int, frac)
-      expect(result).toMatch(/1,?234\.56/)
+      expect(result).toMatch(/1[.,]?234[.,]56/)
     })
 
     it('formats negative number', () => {
       const { int, frac } = toIntFrac(-1234.56)
       const result = formatAmount(int, frac)
-      expect(result).toMatch(/-1,?234\.56/)
+      expect(result).toMatch(/-1[.,]?234[.,]56/)
     })
 
     it('formats zero', () => {
-      expect(formatAmount(0, 0)).toMatch(/0\.00/)
+      expect(formatAmount(0, 0)).toMatch(/0[.,]00/)
     })
 
     it('respects decimal places parameter', () => {
       const { int, frac } = toIntFrac(100.1234)
-      expect(formatAmount(int, frac, 4)).toMatch(/100\.1234/)
+      expect(formatAmount(int, frac, 4)).toMatch(/100[.,]1234/)
     })
 
     it('formats with 0 decimal places', () => {
@@ -139,20 +139,20 @@ describe('formatters', () => {
   describe('formatAmountValue (float)', () => {
     it('formats positive number with default decimal places', () => {
       const result = formatAmountValue(1234.56)
-      expect(result).toMatch(/1,?234\.56/)
+      expect(result).toMatch(/1[.,]?234[.,]56/)
     })
 
     it('formats negative number', () => {
       const result = formatAmountValue(-1234.56)
-      expect(result).toMatch(/-1,?234\.56/)
+      expect(result).toMatch(/-1[.,]?234[.,]56/)
     })
 
     it('formats zero', () => {
-      expect(formatAmountValue(0)).toMatch(/0\.00/)
+      expect(formatAmountValue(0)).toMatch(/0[.,]00/)
     })
 
     it('respects decimal places parameter', () => {
-      expect(formatAmountValue(100.1234, 4)).toMatch(/100\.1234/)
+      expect(formatAmountValue(100.1234, 4)).toMatch(/100[.,]1234/)
     })
 
     it('formats with 0 decimal places', () => {
@@ -167,12 +167,12 @@ describe('formatters', () => {
 
     it('pads with zeros if needed', () => {
       const result = formatAmountValue(100.1, 2)
-      expect(result).toMatch(/100\.10/)
+      expect(result).toMatch(/100[.,]10/)
     })
 
     it('handles 8 decimal places for crypto', () => {
       const result = formatAmountValue(0.00000001, 8)
-      expect(result).toMatch(/0\.00000001/)
+      expect(result).toMatch(/0[.,]00000001/)
     })
   })
 

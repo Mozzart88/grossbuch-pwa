@@ -4,6 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import '@testing-library/jest-dom'
 import { AccountTransactionList } from '../../../../components/transactions/AccountTransactionList'
 import type { Account, TransactionLog } from '../../../../types'
+import { formatCurrencyValue } from '../../../../utils/formatters'
+import { formatDate } from '../../../../utils/dateUtils'
 
 // Mock the navigation
 const mockNavigate = vi.fn()
@@ -131,7 +133,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // End balance is shown with green color for positive values
-        const balanceElements = screen.getAllByText('$1,000.00')
+        const balanceElements = screen.getAllByText(formatCurrencyValue(1000, '$'))
         const endBalanceElement = balanceElements.find(el => el.classList.contains('text-green-600'))
         expect(endBalanceElement).toBeInTheDocument()
       })
@@ -144,7 +146,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // End balance is shown with red color for negative values
-        const balanceElements = screen.getAllByText('-$500.00')
+        const balanceElements = screen.getAllByText(formatCurrencyValue(-500, '$'))
         const endBalanceElement = balanceElements.find(el => el.classList.contains('text-red-600'))
         expect(endBalanceElement).toBeInTheDocument()
       })
@@ -220,9 +222,9 @@ describe('AccountTransactionList', () => {
       renderComponent()
 
       await waitFor(() => {
-        // Should show date headers (short format like "Feb 4, 2026")
-        expect(screen.getByText(/Feb 4/i)).toBeInTheDocument()
-        expect(screen.getByText(/Feb 3/i)).toBeInTheDocument()
+        // Should show date headers in locale format
+        expect(screen.getByText(formatDate('2026-02-04 00:00:00'))).toBeInTheDocument()
+        expect(screen.getByText(formatDate('2026-02-03 00:00:00'))).toBeInTheDocument()
       })
     })
 
@@ -235,7 +237,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // Day summary shows the net change with currency symbol
-        expect(screen.getByText('-$50.00')).toBeInTheDocument()
+        expect(screen.getByText(formatCurrencyValue(-50, '$'))).toBeInTheDocument()
       })
     })
 
@@ -248,7 +250,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // Running balance shown (account balance is $1,500) - appears in header and day row
-        const balanceElements = screen.getAllByText('$1,500.00')
+        const balanceElements = screen.getAllByText(formatCurrencyValue(1500, '$'))
         expect(balanceElements.length).toBeGreaterThanOrEqual(1)
       })
     })
@@ -304,7 +306,7 @@ describe('AccountTransactionList', () => {
       // Wait for data to load, but the transaction should not be visible initially
       // (date is not today so it's collapsed by default)
       await waitFor(() => {
-        expect(screen.getByText(/Jan 15/i)).toBeInTheDocument()
+        expect(screen.getByText(formatDate('2026-01-15 00:00:00'))).toBeInTheDocument()
       })
 
       // Transaction should be hidden initially (collapsed)
@@ -419,7 +421,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // Balance is shown in both header (end balance) and day row (running balance)
-        const balanceElements = screen.getAllByText('$1,500.00')
+        const balanceElements = screen.getAllByText(formatCurrencyValue(1500, '$'))
         expect(balanceElements.length).toBeGreaterThanOrEqual(1)
       })
     })
@@ -434,7 +436,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // Should show $0.00 for day summary (with neutral gray color)
-        expect(screen.getByText('$0.00')).toBeInTheDocument()
+        expect(screen.getByText(formatCurrencyValue(0, '$'))).toBeInTheDocument()
       })
     })
   })
@@ -458,7 +460,7 @@ describe('AccountTransactionList', () => {
 
       await waitFor(() => {
         // With start → end format, the balance appears twice (start and end are same when no transactions)
-        const balanceElements = screen.getAllByText('€1,000.50')
+        const balanceElements = screen.getAllByText(formatCurrencyValue(1000.5, '€'))
         expect(balanceElements.length).toBeGreaterThanOrEqual(1)
       })
     })

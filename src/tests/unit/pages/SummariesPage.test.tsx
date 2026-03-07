@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { SummariesPage } from '../../../pages/SummariesPage'
 import { LayoutProvider, useLayoutContext } from '../../../store/LayoutContext'
+import { formatCurrencyValue } from '../../../utils/formatters'
 
 vi.mock('../../../services/repositories')
 // Import after mock
@@ -204,8 +205,8 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         // The same amounts may appear in multiple places (net, income/out columns)
         // So we use getAllByText and check there's at least one
-        expect(screen.getAllByText('$1,000.00', { exact: false }).length).toBeGreaterThan(0)
-        expect(screen.getAllByText('$300.00', { exact: false }).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(formatCurrencyValue(1000, '$'), { exact: false }).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(formatCurrencyValue(300, '$'), { exact: false }).length).toBeGreaterThan(0)
       })
     })
 
@@ -454,7 +455,7 @@ describe('SummariesPage', () => {
       })
 
       // Card should have cursor-pointer class
-      const foodCard = screen.getByText('Expenses ($500.00)')
+      const foodCard = screen.getByText(`Expenses (${formatCurrencyValue(500, '$')})`)
       expect(foodCard).toBeInTheDocument
     })
 
@@ -609,7 +610,7 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         // Should display as $300.00/$500.00
-        expect(screen.getByText('$300.00/$500.00')).toBeInTheDocument()
+        expect(screen.getByText(`${formatCurrencyValue(300, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
       })
     })
 
@@ -964,8 +965,8 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         // 0/50000 = 0%
         expect(screen.getByText('0%')).toBeInTheDocument()
-        expect(screen.getByText('$0.00/$500.00')).toBeInTheDocument()
-        expect(screen.getByText('Expenses ($500.00/$500.00)')).toBeInTheDocument()
+        expect(screen.getByText(`${formatCurrencyValue(0, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(screen.getByText(`Expenses (${formatCurrencyValue(500, '$')}/${formatCurrencyValue(500, '$')})`)).toBeInTheDocument()
       })
     })
 
@@ -1048,7 +1049,7 @@ describe('SummariesPage', () => {
         // Transport should be shown even without expenses because it has a budget
         expect(screen.getByText('Transport')).toBeInTheDocument()
         // Should show $0.00/$200.00 format
-        expect(screen.getByText('$0.00/$200.00')).toBeInTheDocument()
+        expect(screen.getByText(`${formatCurrencyValue(0, '$')}/${formatCurrencyValue(200, '$')}`)).toBeInTheDocument()
       })
     })
   })

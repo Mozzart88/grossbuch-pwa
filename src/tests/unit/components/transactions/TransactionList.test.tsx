@@ -3,6 +3,8 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { TransactionList } from '../../../../components/transactions/TransactionList'
 import type { TransactionLog } from '../../../../types'
+import { formatCurrencyValue } from '../../../../utils/formatters'
+import { formatDate } from '../../../../utils/dateUtils'
 
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
@@ -117,8 +119,8 @@ describe('TransactionList', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getByText('$1,000.00')).toBeInTheDocument()
-      expect(screen.getByText('$500.00')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(1000, '$'))).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(500, '$'))).toBeInTheDocument()
     })
   })
 
@@ -166,7 +168,7 @@ describe('TransactionList', () => {
 
     await waitFor(() => {
       // Should use default $ symbol
-      expect(screen.getByText('$1,000.00')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(1000, '$'))).toBeInTheDocument()
     })
   })
 
@@ -175,7 +177,7 @@ describe('TransactionList', () => {
 
     await waitFor(() => {
       // Total balance: 1500 (natural float)
-      expect(screen.getByText('$1,500.00')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(1500, '$'))).toBeInTheDocument()
     })
   })
 
@@ -196,7 +198,7 @@ describe('TransactionList', () => {
 
     await waitFor(() => {
       // With 8 decimal places: 1.00000000
-      expect(screen.getByText('₿1.00000000')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(1, '₿', 8))).toBeInTheDocument()
     })
   })
 
@@ -207,7 +209,7 @@ describe('TransactionList', () => {
       // Transaction shows wallet name when no counterparty
       expect(screen.getByText('Cash')).toBeInTheDocument()
       // Transaction amount
-      expect(screen.getByText('$50.00')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(50, '$'))).toBeInTheDocument()
     })
   })
 
@@ -356,7 +358,7 @@ describe('TransactionList', () => {
 
       await waitFor(() => {
         // Date header should be visible (check for date format)
-        expect(screen.getByText(/Jan 1, 2020/i)).toBeInTheDocument()
+        expect(screen.getByText(formatDate('2020-01-01 00:00:00'))).toBeInTheDocument()
       })
 
       // Transaction items should NOT be visible (collapsed by default)
@@ -374,14 +376,14 @@ describe('TransactionList', () => {
       renderWithRouter()
 
       await waitFor(() => {
-        expect(screen.getByText(/Jan 1, 2020/i)).toBeInTheDocument()
+        expect(screen.getByText(formatDate('2020-01-01 00:00:00'))).toBeInTheDocument()
       })
 
       // Transaction should be hidden initially
       expect(screen.queryByText('Food')).not.toBeInTheDocument()
 
       // Click the date header to expand
-      const dateHeader = screen.getByText(/Jan 1, 2020/i).closest('div[class*="cursor-pointer"]')
+      const dateHeader = screen.getByText(formatDate('2020-01-01 00:00:00')).closest('div[class*="cursor-pointer"]')
       fireEvent.click(dateHeader!)
 
       // Transaction should now be visible

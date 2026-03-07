@@ -91,7 +91,8 @@ describe('dateUtils', () => {
   describe('formatMonth', () => {
     it('formats month with full month name and year', () => {
       const result = formatMonth('2025-01')
-      expect(result).toMatch(/January.*2025|2025.*January/)
+      const expected = new Date(2025, 0, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+      expect(result).toBe(expected)
     })
 
     it('handles all months', () => {
@@ -116,29 +117,27 @@ describe('dateUtils', () => {
   describe('formatDate', () => {
     it('formats database date string correctly', () => {
       const result = formatDate('2025-01-09 14:30:00')
-      expect(result).toMatch(/9|09/)
-      expect(result).toMatch(/Jan/)
-      expect(result).toMatch(/2025/)
+      const expected = new Date(2025, 0, 9).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      expect(result).toBe(expected)
     })
 
     it('formats Date object correctly', () => {
       const date = new Date(2025, 0, 9, 14, 30, 0)
       const result = formatDate(date)
-      expect(result).toMatch(/9|09/)
-      expect(result).toMatch(/Jan/)
-      expect(result).toMatch(/2025/)
+      const expected = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      expect(result).toBe(expected)
     })
 
     it('handles different months', () => {
       const result = formatDate('2025-12-25 08:00:00')
-      expect(result).toMatch(/25/)
-      expect(result).toMatch(/Dec/)
+      const expected = new Date(2025, 11, 25).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      expect(result).toBe(expected)
     })
 
     it('handles first day of month', () => {
       const result = formatDate('2025-03-01 00:00:00')
-      expect(result).toMatch(/1|01/)
-      expect(result).toMatch(/Mar/)
+      const expected = new Date(2025, 2, 1).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      expect(result).toBe(expected)
     })
   })
 
@@ -169,17 +168,17 @@ describe('dateUtils', () => {
   describe('formatDateTime', () => {
     it('combines date and time formatting', () => {
       const result = formatDateTime('2025-01-09 14:30:00')
-      expect(result).toMatch(/9|09/)
-      expect(result).toMatch(/Jan/)
-      expect(result).toMatch(/2025/)
-      expect(result).toMatch(/14:30/)
+      const expectedDate = new Date(2025, 0, 9).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      expect(result).toContain(expectedDate)
+      expect(result).toContain('14:30')
     })
 
     it('handles Date object', () => {
       const date = new Date(2025, 0, 9, 14, 30, 0)
       const result = formatDateTime(date)
-      expect(result).toMatch(/Jan/)
-      expect(result).toMatch(/2025/)
+      const expectedDate = date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+      expect(result).toContain(expectedDate)
+      expect(result).toContain('2025')
     })
   })
 

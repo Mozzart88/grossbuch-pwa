@@ -1,7 +1,7 @@
 {
   "name": "gb-pwa",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,6 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "@sqlite.org/sqlite-wasm": "^3.51.1-build2",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
