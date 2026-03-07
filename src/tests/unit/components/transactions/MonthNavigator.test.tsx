@@ -21,7 +21,8 @@ describe('MonthNavigator', () => {
   it('displays formatted month', () => {
     render(<MonthNavigator {...defaultProps} />)
 
-    expect(screen.getByText(/January.*2025/)).toBeInTheDocument()
+    const expected = new Date(2025, 0, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+    expect(screen.getByText(expected)).toBeInTheDocument()
   })
 
   it('navigates to previous month', () => {
@@ -62,7 +63,8 @@ describe('MonthNavigator', () => {
     const onChange = vi.fn()
     render(<MonthNavigator month="2024-06" onChange={onChange} />)
 
-    const centerButton = screen.getByText(/June.*2024/)
+    const june2024 = new Date(2024, 5, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+    const centerButton = screen.getByText(june2024)
     fireEvent.click(centerButton)
 
     expect(onChange).toHaveBeenCalledWith('2025-01')
@@ -78,11 +80,13 @@ describe('MonthNavigator', () => {
   it('displays different months correctly', () => {
     const { rerender } = render(<MonthNavigator month="2025-06" onChange={vi.fn()} />)
 
-    expect(screen.getByText(/June.*2025/)).toBeInTheDocument()
+    const june2025 = new Date(2025, 5, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+    expect(screen.getByText(june2025)).toBeInTheDocument()
 
     rerender(<MonthNavigator month="2024-12" onChange={vi.fn()} />)
 
-    expect(screen.getByText(/December.*2024/)).toBeInTheDocument()
+    const dec2024 = new Date(2024, 11, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })
+    expect(screen.getByText(dec2024)).toBeInTheDocument()
   })
 
   it('handles year transitions correctly', () => {

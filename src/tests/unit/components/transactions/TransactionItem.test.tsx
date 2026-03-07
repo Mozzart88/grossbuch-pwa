@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TransactionItem } from '../../../../components/transactions/TransactionItem'
+import { formatCurrencyValue } from '../../../../utils/formatters'
 import type { TransactionLog } from '../../../../types'
 
 describe('TransactionItem', () => {
@@ -27,7 +28,7 @@ describe('TransactionItem', () => {
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
     expect(screen.getByText('Food')).toBeInTheDocument()
-    expect(screen.getByText('$50.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(50, '$'))).toBeInTheDocument()
   })
 
   it('renders income transaction (positive amount)', () => {
@@ -42,7 +43,7 @@ describe('TransactionItem', () => {
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
 
     expect(screen.getByText('Sale')).toBeInTheDocument()
-    expect(screen.getByText('$1,000.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(1000, '$'))).toBeInTheDocument()
   })
 
   it('renders transfer transaction in same currency', () => {
@@ -161,7 +162,7 @@ describe('TransactionItem', () => {
       return element?.textContent === 'Cash:$ → Bank:AR$'
     })
     expect(description).toBeInTheDocument()
-    expect(screen.getByText('$50.00 → AR$0.50')).toBeInTheDocument()
+    expect(screen.getByText(`${formatCurrencyValue(50, '$')} → ${formatCurrencyValue(0.5, 'AR$')}`)).toBeInTheDocument()
   })
 
   it('renders multi-currency expense', () => {
@@ -201,7 +202,7 @@ describe('TransactionItem', () => {
     expect(screen.getByText('📉')).toBeInTheDocument()
     // Shows source wallet (where money came from) with source currency
     expect(screen.getByText('Cash:$')).toBeInTheDocument()
-    expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(0.5, 'AR$'))).toBeInTheDocument()
   })
 
   describe('multi-currency transactions edge-cases', () => {
@@ -249,7 +250,7 @@ describe('TransactionItem', () => {
       expect(screen.getByText('📉')).toBeInTheDocument()
       // Shows source wallet (where money came from) with source currency
       expect(screen.getByText('Cash:$')).toBeInTheDocument()
-      expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(0.5, 'AR$'))).toBeInTheDocument()
     })
 
     it('should render transaction with Fee tag as exchange', () => {
@@ -293,7 +294,7 @@ describe('TransactionItem', () => {
       expect(screen.getByText('📉')).toBeInTheDocument()
       // Shows source wallet (where money came from) with source currency
       expect(screen.getByText('Cash:$')).toBeInTheDocument()
-      expect(screen.getByText('AR$0.50')).toBeInTheDocument()
+      expect(screen.getByText(formatCurrencyValue(0.5, 'AR$'))).toBeInTheDocument()
     })
 
     it('transactions order should not matters for exchange', () => {
@@ -368,7 +369,7 @@ describe('TransactionItem', () => {
     ]
     render(<TransactionItem transaction={transaction} onClick={vi.fn()} />)
 
-    expect(screen.getByText('$12.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(12, '$'))).toBeInTheDocument()
     expect(screen.getByText('Food, House')).toBeInTheDocument()
   })
 
@@ -425,7 +426,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
-    expect(screen.getByText('$50.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(50, '$'))).toBeInTheDocument()
   })
 
   it('applies green color for income (positive amount)', () => {
@@ -439,7 +440,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[incomeTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('$50.00')
+    const amount = screen.getByText(formatCurrencyValue(50, '$'))
     expect(amount.className).toContain('text-green-600')
   })
 
@@ -447,7 +448,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[baseTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('$50.00')
+    const amount = screen.getByText(formatCurrencyValue(50, '$'))
     expect(amount.className).toContain('text-gray-600')
   })
 
@@ -523,7 +524,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[initialTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('$1,000.00')
+    const amount = screen.getByText(formatCurrencyValue(1000, '$'))
     expect(amount.className).toContain('text-slate-500')
   })
 
@@ -538,7 +539,7 @@ describe('TransactionItem', () => {
     const onClick = vi.fn()
     render(<TransactionItem transaction={[adjustmentTransaction]} onClick={onClick} />)
 
-    const amount = screen.getByText('$50.00')
+    const amount = screen.getByText(formatCurrencyValue(50, '$'))
     expect(amount.className).toContain('text-slate-500')
   })
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { BrowserRouter, MemoryRouter } from 'react-router-dom'
 import { MonthSummary } from '../../../../components/transactions/MonthSummary'
+import { formatCurrencyValue } from '../../../../utils/formatters'
 
 const renderWithRouter = (ui: React.ReactElement) => {
   return render(<BrowserRouter>{ui}</BrowserRouter>)
@@ -28,19 +29,19 @@ describe('MonthSummary', () => {
   it('displays income amount with plus sign', () => {
     renderWithRouter(<MonthSummary {...defaultProps} />)
 
-    expect(screen.getByText('$1,000.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(1000, '$'))).toBeInTheDocument()
   })
 
   it('displays expenses amount with minus sign', () => {
     renderWithRouter(<MonthSummary {...defaultProps} />)
 
-    expect(screen.getByText('$500.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(500, '$'))).toBeInTheDocument()
   })
 
   it('displays total balance', () => {
     renderWithRouter(<MonthSummary {...defaultProps} />)
 
-    expect(screen.getByText('$1,500.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(1500, '$'))).toBeInTheDocument()
   })
 
   it('displays labels', () => {
@@ -54,21 +55,21 @@ describe('MonthSummary', () => {
   it('applies green color to income', () => {
     renderWithRouter(<MonthSummary {...defaultProps} />)
 
-    const incomeAmount = screen.getByText('$1,000.00')
+    const incomeAmount = screen.getByText(formatCurrencyValue(1000, '$'))
     expect(incomeAmount.className).toContain('text-green-600')
   })
 
   it('applies red color to expenses', () => {
     renderWithRouter(<MonthSummary {...defaultProps} />)
 
-    const expensesAmount = screen.getByText('$500.00')
+    const expensesAmount = screen.getByText(formatCurrencyValue(500, '$'))
     expect(expensesAmount.className).toContain('text-red-600')
   })
 
   it('applies neutral color to positive total balance', () => {
     renderWithRouter(<MonthSummary {...defaultProps} />)
 
-    const totalAmount = screen.getByText('$1,500.00')
+    const totalAmount = screen.getByText(formatCurrencyValue(1500, '$'))
     expect(totalAmount.className).toContain('text-gray-900')
   })
 
@@ -76,7 +77,7 @@ describe('MonthSummary', () => {
     // Use different value to avoid conflict with expense display
     renderWithRouter(<MonthSummary income={1000} expenses={500} totalBalance={-200} displayCurrencySymbol="$" />)
 
-    const totalAmount = screen.getByText('-$200.00')
+    const totalAmount = screen.getByText(formatCurrencyValue(-200, '$'))
     expect(totalAmount.className).toContain('text-red-600')
   })
 
@@ -90,15 +91,15 @@ describe('MonthSummary', () => {
       />
     )
 
-    expect(screen.getAllByText('$0.00').length === 3).toBeTruthy()
+    expect(screen.getAllByText(formatCurrencyValue(0, '$')).length === 3).toBeTruthy()
   })
 
   it('uses different currency symbols', () => {
     renderWithRouter(<MonthSummary {...defaultProps} displayCurrencySymbol="€" />)
 
-    expect(screen.getByText('€1,000.00')).toBeInTheDocument()
-    expect(screen.getByText('€500.00')).toBeInTheDocument()
-    expect(screen.getByText('€1,500.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(1000, '€'))).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(500, '€'))).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(1500, '€'))).toBeInTheDocument()
   })
 
   it('handles large numbers', () => {
@@ -111,7 +112,7 @@ describe('MonthSummary', () => {
       />
     )
 
-    expect(screen.getByText('$1,000,000.00')).toBeInTheDocument()
+    expect(screen.getByText(formatCurrencyValue(1000000, '$'))).toBeInTheDocument()
   })
 
   it('uses grid layout with 3 columns', () => {
