@@ -237,13 +237,12 @@ describe('AddTransactionPage', () => {
   it('navigates back on cancel', async () => {
     renderPage()
 
+    // Cancel button is in ActionBar — wait for it to appear after action bar config is set
     await waitFor(() => {
-      expect(screen.getByText('Account')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     })
 
-    // Cancel button is now in ActionBar
-    const cancelButton = screen.getByRole('button', { name: 'Cancel' })
-    fireEvent.click(cancelButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
