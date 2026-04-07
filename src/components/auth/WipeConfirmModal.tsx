@@ -77,7 +77,7 @@ export function WipeConfirmModal({ isOpen, onClose, onConfirm }: WipeConfirmModa
             onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
             placeholder="DELETE"
             disabled={isWiping}
-            className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent disabled:opacity-50"
+            className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-transparent disabled:opacity-50"
           />
         </div>
 

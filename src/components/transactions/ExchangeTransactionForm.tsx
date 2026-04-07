@@ -298,7 +298,7 @@ export function ExchangeTransactionForm({
         }}
         placeholder="0.00"
         error={errors.fee}
-        className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+        className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 ${errors.fee ? 'border-red-500' : ''}`}
       />
 
       {/* Notes */}
@@ -310,7 +310,7 @@ export function ExchangeTransactionForm({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}
-          className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none"
           placeholder="Add notes..."
         />
       </div>
