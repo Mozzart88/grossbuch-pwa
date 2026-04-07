@@ -10,6 +10,10 @@ vi.mock('../../../../services/repositories', () => ({
   transactionRepository: { create: vi.fn(), update: vi.fn() },
 }))
 
+vi.mock('../../../../services/exchangeRate/historicalRateService', () => ({
+  getRateForDate: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
+}))
+
 import { currencyRepository, transactionRepository } from '../../../../services/repositories'
 
 const mockTransactionRepository = vi.mocked(transactionRepository)

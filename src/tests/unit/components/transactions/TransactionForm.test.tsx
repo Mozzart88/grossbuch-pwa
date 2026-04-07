@@ -4,6 +4,10 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { TransactionForm } from '../../../../components/transactions/TransactionForm'
 import type { Wallet, Tag, Counterparty, Currency, Account } from '../../../../types'
 
+vi.mock('../../../../services/exchangeRate/historicalRateService', () => ({
+  getRateForDate: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
+}))
+
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
   walletRepository: {
@@ -1036,7 +1040,7 @@ describe('TransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalled()
         // EUR (currency_id=2) rate: 85 EUR per 100 USD = 0.85
         // toIntFrac(0.85) => { int: 0, frac: 850000000000000000 }
-        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 0, 850000000000000000)
+        expect(mockCurrencyRepository.setExchangeRate).toHaveBeenCalledWith(2, 0, 850000000000000000, expect.any(String))
       })
     })
 
@@ -1061,6 +1065,7 @@ describe('TransactionForm', () => {
           2,
           expect.any(Number),
           expect.any(Number),
+          expect.any(String),
         )
       })
     })

@@ -8,7 +8,8 @@ import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, formatBalance, toAmountIntFrac } from './transactionFormShared'
+import { getStep, getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface SubEntry {
   id: string
@@ -373,9 +374,10 @@ export function ExpenseTransactionForm({
         }
       }
 
-      const accountRateData = await currencyRepository.getRateForCurrency(
-        accounts.find(a => a.id.toString() === accountId)!.currency_id
-      )
+      const accountCurrencyId = accounts.find(a => a.id.toString() === accountId)!.currency_id
+      const accountRateData = isDateInPast(datetime)
+        ? await getRateForDate(accountCurrencyId, toDateString(datetime))
+        : await currencyRepository.getRateForCurrency(accountCurrencyId)
       const primaryTagIdsForCp = Object.values(resolvedSubTagIds).filter(id => id > 0)
 
       let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
@@ -407,7 +409,9 @@ export function ExpenseTransactionForm({
           accounts.find(a => a.id.toString() === accountId)!.wallet_id,
           paymentCurrencyId
         )
-        const targetRateData = await currencyRepository.getRateForCurrency(paymentCurrencyId)
+        const targetRateData = isDateInPast(datetime)
+          ? await getRateForDate(paymentCurrencyId, toDateString(datetime))
+          : await currencyRepository.getRateForCurrency(paymentCurrencyId)
         const sourceAmountIF = toAmountIntFrac(paymentAmount)
         const totalPaymentStr = isExpenseMainEditable
           ? amount

@@ -465,6 +465,52 @@ describe('currencyRepository', () => {
     })
   })
 
+  describe('getExchangeRateForDate', () => {
+    it('returns rate matching the given date', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValue(rate)
+
+      const result = await currencyRepository.getExchangeRateForDate(2, '2024-01-01')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining("date(updated_at, 'unixepoch')"),
+        [2, '2024-01-01']
+      )
+      expect(result).toEqual(rate)
+    })
+
+    it('returns null when no rate exists for date', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.getExchangeRateForDate(2, '2024-01-01')
+
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('getExchangeRateNearDate', () => {
+    it('returns nearest rate within offset range', async () => {
+      const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValue(rate)
+
+      const result = await currencyRepository.getExchangeRateNearDate(2, '2024-01-05', 3)
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('BETWEEN'),
+        [2, '2024-01-05', 3, '2024-01-05', 3, '2024-01-05']
+      )
+      expect(result).toEqual(rate)
+    })
+
+    it('returns null when no rate within range', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await currencyRepository.getExchangeRateNearDate(2, '2024-01-05', 3)
+
+      expect(result).toBeNull()
+    })
+  })
+
   describe('setExchangeRate', () => {
     it('inserts new exchange rate with int and frac', async () => {
       await currencyRepository.setExchangeRate(2, 1, 150000000000000000)
@@ -472,6 +518,16 @@ describe('currencyRepository', () => {
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
         [2, 1, 150000000000000000]
+      )
+    })
+
+    it('inserts with explicit updated_at when dateStr provided', async () => {
+      await currencyRepository.setExchangeRate(2, 1, 150000000000000000, '2024-01-15')
+
+      const expectedUpdatedAt = Math.floor(new Date('2024-01-15').getTime() / 1000)
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac, updated_at) VALUES (?, ?, ?, ?)',
+        [2, 1, 150000000000000000, expectedUpdatedAt]
       )
     })
   })

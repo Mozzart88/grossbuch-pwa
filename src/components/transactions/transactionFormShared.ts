@@ -25,3 +25,9 @@ export const toAmountIntFrac = (displayAmount: string): { int: number; frac: num
   const parsed = parseFloat(displayAmount) || 0
   return toIntFrac(Math.abs(parsed))
 }
+
+export const toDateString = (datetimeMs: number): string =>
+  new Date(datetimeMs).toISOString().slice(0, 10)
+
+export const isDateInPast = (datetimeMs: number): boolean =>
+  toDateString(datetimeMs) < new Date().toISOString().slice(0, 10)
