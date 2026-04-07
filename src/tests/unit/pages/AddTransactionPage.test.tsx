@@ -237,13 +237,12 @@ describe('AddTransactionPage', () => {
   it('navigates back on cancel', async () => {
     renderPage()
 
+    // Cancel button is in ActionBar — wait for it to appear after action bar config is set
     await waitFor(() => {
-      expect(screen.getByText('Account')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     })
 
-    // Cancel button is now in ActionBar
-    const cancelButton = screen.getByRole('button', { name: 'Cancel' })
-    fireEvent.click(cancelButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
     expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
@@ -258,11 +257,11 @@ describe('AddTransactionPage', () => {
       </MemoryRouter>
     )
 
+    // Exchange button should be active — wait for the exchange form to render
     await waitFor(() => {
-      expect(screen.getByText('Account')).toBeInTheDocument()
+      expect(screen.getAllByRole('combobox')[0]).toBeInTheDocument()
     })
 
-    // Exchange button should be active
     const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
     expect(exchangeButton.className).toContain('bg-white')
   })

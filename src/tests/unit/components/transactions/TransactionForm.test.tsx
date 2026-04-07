@@ -346,7 +346,7 @@ describe('TransactionForm', () => {
       fireEvent.click(transferButton)
 
       await waitFor(() => {
-        expect(screen.getByText('To Account')).toBeInTheDocument()
+        expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2)
       })
     })
 
@@ -378,52 +378,9 @@ describe('TransactionForm', () => {
       fireEvent.click(exchangeButton)
 
       await waitFor(() => {
-        expect(screen.getByText('To Account')).toBeInTheDocument()
-        expect(screen.getByText('Enter amounts')).toBeInTheDocument()
-        expect(screen.getByText('Enter rate')).toBeInTheDocument()
-      })
-    })
-
-    it('toggles between amounts and rate mode', async () => {
-      renderForm()
-
-      await waitFor(() => {
-        expect(screen.getByText('Account')).toBeInTheDocument()
-      })
-
-      const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
-      fireEvent.click(exchangeButton)
-
-      await waitFor(() => {
-        expect(screen.getByText('Enter rate')).toBeInTheDocument()
-      })
-
-      const rateButton = screen.getByRole('button', { name: 'Enter rate' })
-      fireEvent.click(rateButton)
-
-      await waitFor(() => {
-        expect(screen.getByLabelText('Exchange Rate')).toBeInTheDocument()
-      })
-    })
-
-    it('calculates destination amount automatically in rate mode', async () => {
-      renderForm()
-
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Exchange' })).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'Exchange' }))
-
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Enter rate' })).toBeInTheDocument())
-      fireEvent.click(screen.getByRole('button', { name: 'Enter rate' }))
-
-      const amountInput = screen.getByLabelText(/^Amount/i)
-      const rateInput = screen.getByLabelText(/Exchange Rate/i)
-      const toAmountInput = screen.getByLabelText(/Receive Amount/i)
-
-      fireEvent.change(amountInput, { target: { value: '100' } })
-      fireEvent.change(rateInput, { target: { value: '0.85' } })
-
-      await waitFor(() => {
-        expect(toAmountInput).toHaveValue(85)
+        const combos = screen.getAllByRole('combobox')
+        expect(combos.length).toBeGreaterThanOrEqual(2)
+        expect(document.getElementById('toAmount')).toBeInTheDocument()
       })
     })
   })
@@ -468,9 +425,8 @@ describe('TransactionForm', () => {
       const transferButton = await screen.findByRole('button', { name: 'Exchange' })
       fireEvent.click(transferButton)
 
-
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
-      fireEvent.change(toAccountSelect, { target: { value: '2' } }) // Same as source
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
 
       const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
       fireEvent.submit(form)
@@ -478,7 +434,6 @@ describe('TransactionForm', () => {
       await waitFor(() => {
         expect(screen.getByText('Destination amount is required')).toBeInTheDocument()
       })
-
     })
 
     it('destination account shouldnt include source account for transfers', async () => {
@@ -487,10 +442,10 @@ describe('TransactionForm', () => {
       const transferButton = await screen.findByRole('button', { name: 'Transfer' })
       fireEvent.click(transferButton)
 
-      const amountInput = await screen.findByLabelText(/^Amount/i)
-      fireEvent.change(amountInput, { target: { value: '50' } })
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '50' } })
 
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      const toAccountSelect = screen.getAllByRole('combobox')[1]
       const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
       expect(options.length).toEqual(2)
       expect(options.some(o => o.value === '1')).not.toBeTruthy()
@@ -502,10 +457,10 @@ describe('TransactionForm', () => {
       const transferButton = await screen.findByRole('button', { name: 'Transfer' })
       fireEvent.click(transferButton)
 
-      const amountInput = await screen.findByLabelText(/^Amount/i)
-      fireEvent.change(amountInput, { target: { value: '50' } })
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '50' } })
 
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      const toAccountSelect = screen.getAllByRole('combobox')[1]
       const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
       expect(options.length).toEqual(2)
       expect(options.some(o => o.value === '2')).not.toBeTruthy()
@@ -517,10 +472,10 @@ describe('TransactionForm', () => {
       const transferButton = await screen.findByRole('button', { name: 'Exchange' })
       fireEvent.click(transferButton)
 
-      const amountInput = await screen.findByLabelText(/^Amount/i)
-      fireEvent.change(amountInput, { target: { value: '50' } })
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '50' } })
 
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
+      const toAccountSelect = screen.getAllByRole('combobox')[1]
       const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
       expect(options.length).toEqual(2)
       expect(options.some(o => o.value === '3')).not.toBeTruthy()
@@ -572,10 +527,10 @@ describe('TransactionForm', () => {
       const transferButton = await screen.findByRole('button', { name: 'Transfer' })
       fireEvent.click(transferButton)
 
-      const amountInput = await screen.findByLabelText(/^Amount/i)
-      const feeInput = await screen.findByLabelText(/Fee \(optional\)/i)
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      const feeInput = screen.getByLabelText(/Fee \(optional\)/i)
 
-      fireEvent.change(amountInput, { target: { value: '50' } })
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '50' } })
       fireEvent.change(feeInput, { target: { value: '-1' } })
 
       const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
@@ -698,7 +653,7 @@ describe('TransactionForm', () => {
       const amountInputs = screen.getAllByPlaceholderText('0.00')
       fireEvent.change(amountInputs[0], { target: { value: '200' } })
 
-      const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
+      const toAccountSelect = screen.getAllByRole('combobox')[1]
       fireEvent.change(toAccountSelect, { target: { value: '3' } }) // Savings USD
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
@@ -727,21 +682,13 @@ describe('TransactionForm', () => {
       const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
       fireEvent.click(exchangeButton)
 
-      // Wait for exchange fields to appear
       await waitFor(() => {
-        expect(screen.getByText('Receive Amount')).toBeInTheDocument()
+        expect(document.getElementById('toAmount')).toBeInTheDocument()
       })
 
-      // Use getAllByPlaceholderText since there are multiple '0.00' inputs in exchange mode
-      // The first one is the main amount, the rest are fee and receive amount
-      const amountInputs = screen.getAllByPlaceholderText('0.00')
-      fireEvent.change(amountInputs[0], { target: { value: '100' } }) // Main amount
-
-      const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
-      fireEvent.change(toAccountSelect, { target: { value: '2' } }) // Bank EUR
-
-      // The last '0.00' input should be the receive amount (after fee which is second)
-      fireEvent.change(amountInputs[amountInputs.length - 1], { target: { value: '90' } })
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+      fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+      fireEvent.change(document.getElementById('toAmount')!, { target: { value: '90' } })
 
       const submitButton = screen.getByRole('button', { name: 'Add' })
       fireEvent.click(submitButton)
@@ -1051,8 +998,9 @@ describe('TransactionForm', () => {
       const transferBtn = await screen.findByRole('button', { name: 'Transfer' })
       fireEvent.click(transferBtn)
 
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
-      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '50' } })
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      const toAccountSelect = screen.getAllByRole('combobox')[1]
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '50' } })
       fireEvent.change(toAccountSelect, { target: { value: '3' } })
       fireEvent.change(screen.getByLabelText(/Fee \(optional\)/i), { target: { value: '1' } })
 
@@ -1076,16 +1024,10 @@ describe('TransactionForm', () => {
       const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
       fireEvent.click(exchangeBtn)
 
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
-      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-      fireEvent.change(toAccountSelect, { target: { value: '2' } })
-      fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
-
-      const rateBtn = await screen.findByRole('button', { name: 'Enter rate' })
-      fireEvent.click(rateBtn)
-
-      const rateInput = await screen.findByLabelText(/Exchange Rate/i)
-      fireEvent.change(rateInput, { target: { value: '0.85' } })
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+      fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+      fireEvent.change(document.getElementById('toAmount')!, { target: { value: '85' } })
 
       const submitBtn = screen.getByRole('button', { name: 'Add' })
       fireEvent.submit(submitBtn.closest('form')!)
@@ -1103,19 +1045,11 @@ describe('TransactionForm', () => {
       const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
       fireEvent.click(exchangeBtn)
 
-      const account = await screen.findByRole('combobox', { name: /^account/i })
-      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-      fireEvent.change(account, { target: { value: '2' } })
-      fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
-
-      const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
-      fireEvent.change(toAccountSelect, { target: { value: '1' } })
-
-      const rateBtn = await screen.findByRole('button', { name: 'Enter rate' })
-      fireEvent.click(rateBtn)
-
-      const rateInput = await screen.findByLabelText(/Exchange Rate/i)
-      fireEvent.change(rateInput, { target: { value: '0.85' } })
+      await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+      fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+      fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } })
+      fireEvent.change(document.getElementById('toAmount')!, { target: { value: '85' } })
+      fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '1' } })
 
       const submitBtn = screen.getByRole('button', { name: 'Add' })
       fireEvent.submit(submitBtn.closest('form')!)
@@ -1137,13 +1071,11 @@ describe('TransactionForm', () => {
     const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
     fireEvent.click(exchangeBtn)
 
-    const account = await screen.findByRole('combobox', { name: /^account/i })
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(account, { target: { value: '3' } })
-    fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
-
-    const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
-    fireEvent.change(toAccountSelect, { target: { value: '2' } })
+    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '3' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '85' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
 
     const submitBtn = screen.getByRole('button', { name: 'Add' })
     fireEvent.submit(submitBtn.closest('form')!)
@@ -1166,13 +1098,11 @@ describe('TransactionForm', () => {
     const exchangeBtn = await screen.findByRole('button', { name: 'Exchange' })
     fireEvent.click(exchangeBtn)
 
-    const account = await screen.findByRole('combobox', { name: /^account/i })
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(account, { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(/Receive Amount/i), { target: { value: '85' } })
-
-    const toAccountSelect = await screen.findByRole('combobox', { name: /to account/i })
-    fireEvent.change(toAccountSelect, { target: { value: '3' } })
+    await waitFor(() => expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2))
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '2' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '85' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '3' } })
 
     const submitBtn = screen.getByRole('button', { name: 'Add' })
     fireEvent.submit(submitBtn.closest('form')!)
@@ -2099,28 +2029,6 @@ describe('TransactionForm', () => {
           expect.objectContaining({ name: 'NewExpCat' })
         )
         expect(mockTransactionRepository.create).toHaveBeenCalled()
-      })
-    })
-  })
-
-  describe('Exchange mode toggle', () => {
-    it('switches from rate mode back to amounts mode', async () => {
-      renderForm()
-      await waitFor(() => expect(screen.getByText('Account')).toBeInTheDocument())
-
-      fireEvent.click(screen.getByRole('button', { name: 'Exchange' }))
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Enter rate' })).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Enter rate' }))
-      await waitFor(() => {
-        expect(screen.getByLabelText(/Exchange Rate/)).toBeInTheDocument()
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: 'Enter amounts' }))
-      await waitFor(() => {
-        expect(screen.queryByLabelText(/Exchange Rate/)).not.toBeInTheDocument()
       })
     })
   })

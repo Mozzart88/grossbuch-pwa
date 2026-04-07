@@ -5,7 +5,7 @@ import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
 import { MonthNavigator } from './MonthNavigator'
 import { MonthSummary } from './MonthSummary'
 import { TransactionItem } from './TransactionItem'
-import { Spinner } from '../ui'
+import { Spinner, ChevronIcon } from '../ui'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { blobToHex } from '../../utils/blobUtils'
 import { useDataRefresh } from '../../hooks/useDataRefresh'
@@ -28,20 +28,6 @@ function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, Tr
   }
 
   return groups
-}
-
-// Chevron icon that rotates based on expanded state
-function ChevronIcon({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-90' : 'rotate-0'}`}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  )
 }
 
 export function TransactionList() {

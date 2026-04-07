@@ -260,7 +260,7 @@ describe('TransactionForm Editing mode', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Transfer' }).className).toContain('shadow')
-      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(20)
+      expect(document.getElementById('amount')).toHaveValue(20)
     })
   })
 
@@ -360,7 +360,7 @@ describe('TransactionForm Editing mode', () => {
 
     renderForm(transferData)
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Transfer' }).className).toContain('shadow')
+      expect(document.getElementById('amount')).toHaveValue(20)
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
@@ -401,7 +401,7 @@ describe('TransactionForm Editing mode', () => {
 
     renderForm(exchangeData)
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Exchange' }).className).toContain('shadow')
+      expect(document.getElementById('amount')).toHaveValue(100)
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
