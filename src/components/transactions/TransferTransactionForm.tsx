@@ -2,25 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import type { Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, DateTimeUI } from '../ui'
+import { Button, Select, DateTimeUI, ChevronIcon } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
 import { getStep, getPlaceholder, toAmountIntFrac } from './transactionFormShared'
-
-function ChevronIcon() {
-  return (
-    <svg
-      className={`w-4 h-4 text-gray-400 transition-transform rotate-0`}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  )
-}
 
 interface TransferTransactionFormProps {
   accounts: AccountOption[]
