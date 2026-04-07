@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import type { Tag, Counterparty, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, LiveSearch, DateTimeUI, Modal } from '../ui'
+import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import { getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface IncomeTransactionFormProps {
@@ -192,22 +192,16 @@ export function IncomeTransactionForm({
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
       {/* Amount */}
-      <div className="space-y-1">
-        <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Amount {selectedAccount && `(${selectedAccount.currencySymbol})`}
-        </label>
-        <input
-          id="amount"
-          type="number"
-          step={getStep(decimalPlaces)}
-          min="0"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder={getPlaceholder(decimalPlaces)}
-          className={`w-full px-3 py-3 text-xl font-semibold rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
-        />
-        {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
-      </div>
+      <AmountInput
+        id="amount"
+        isPositive
+        label={`Amount${selectedAccount ? ` (${selectedAccount.currencySymbol})` : ''}`}
+        value={amount}
+        onChange={setAmount}
+        placeholder={getPlaceholder(decimalPlaces)}
+        error={errors.amount}
+        className={`w-full px-3 py-3 text-xl font-semibold rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 ${errors.amount ? 'border-red-500' : ''}`}
+      />
 
       {/* Account */}
       <Select
@@ -272,7 +266,7 @@ export function IncomeTransactionForm({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={2}
-          className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          className="w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none"
           placeholder="Add notes..."
         />
       </div>
@@ -306,7 +300,7 @@ export function IncomeTransactionForm({
                   className={`px-4 py-2 text-sm rounded-lg border transition-colors ${newTagType === t
                     ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
                     : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>

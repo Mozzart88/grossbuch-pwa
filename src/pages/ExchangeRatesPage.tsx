@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Button, Card, Modal, Input, Spinner, useToast } from '../components/ui'
+import { Button, Card, Modal, AmountInput, Spinner, useToast } from '../components/ui'
 import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
@@ -195,13 +195,11 @@ export function ExchangeRatesPage() {
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             How much {defaultCurrency?.code || 'default currency'} is 1 {editingCurrency?.code} worth?
           </div>
-          <Input
+          <AmountInput
             label={`Rate (in ${defaultCurrency?.code || 'default currency'})`}
-            type="number"
-            step="0.0001"
-            min="0.0001"
+            isPositive
             value={rate}
-            onChange={(e) => setRate(e.target.value)}
+            onChange={setRate}
             placeholder="e.g., 1.10"
             required
           />

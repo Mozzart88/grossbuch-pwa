@@ -1561,7 +1561,7 @@ describe('TransactionForm', () => {
       fireEvent.click(screen.getByText('+ Add category'))
       await waitFor(() => {
         expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
-        expect(screen.getAllByRole('spinbutton')).toHaveLength(3)
+        expect(document.querySelectorAll('input[type="number"]')).toHaveLength(3)
       })
     })
 
@@ -1642,13 +1642,13 @@ describe('TransactionForm', () => {
       })
       fireEvent.click(screen.getAllByRole('option', { name: /transport/ })[0])
 
-      // spinbutton[0]=readOnly main total, [1]=sub1 amount, [2]=sub2 amount
+      // numericInputs[0]=readOnly main total, [1]=sub1 amount, [2]=sub2 amount
       await waitFor(() => {
         expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
       })
-      const spinbuttons = screen.getAllByRole('spinbutton')
-      fireEvent.change(spinbuttons[1], { target: { value: '30' } })
-      fireEvent.change(spinbuttons[2], { target: { value: '20' } })
+      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      fireEvent.change(numericInputs[1], { target: { value: '30' } })
+      fireEvent.change(numericInputs[2], { target: { value: '20' } })
 
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
       await waitFor(() => {
@@ -1733,11 +1733,11 @@ describe('TransactionForm', () => {
         expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
       })
       // After switching to abs, isExpenseMainEditable=false, sub-entry amount appears
-      // spinbutton[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
-      const spinbuttons = screen.getAllByRole('spinbutton')
-      expect(spinbuttons).toHaveLength(3)
-      fireEvent.change(spinbuttons[2], { target: { value: '7.50' } })
-      expect(spinbuttons[2]).toHaveValue(7.5)
+      // numericInputs[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
+      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      expect(numericInputs).toHaveLength(3)
+      fireEvent.change(numericInputs[2], { target: { value: '7.50' } })
+      expect(numericInputs[2]).toHaveValue(7.5)
     })
 
     it('submits expense with pct common tag', async () => {
@@ -1793,10 +1793,10 @@ describe('TransactionForm', () => {
       await waitFor(() => expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument())
       fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
 
-      // spinbutton[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
-      const spinbuttons = screen.getAllByRole('spinbutton')
-      fireEvent.change(spinbuttons[1], { target: { value: '50' } })
-      fireEvent.change(spinbuttons[2], { target: { value: '5' } })
+      // numericInputs[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
+      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      fireEvent.change(numericInputs[1], { target: { value: '50' } })
+      fireEvent.change(numericInputs[2], { target: { value: '5' } })
 
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
       await waitFor(() => {
@@ -1839,15 +1839,15 @@ describe('TransactionForm', () => {
       fireEvent.click(screen.getByTitle('Switch to absolute amount'))
       await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
 
-      // spinbutton[0]=readOnly total, [1]=food amount, [2]=transport amount, [3]=discount abs
-      const spinbuttons = screen.getAllByRole('spinbutton')
-      fireEvent.change(spinbuttons[1], { target: { value: '9' } })
-      fireEvent.change(spinbuttons[2], { target: { value: '1' } })
-      fireEvent.change(spinbuttons[3], { target: { value: '1' } })
+      // numericInputs[0]=readOnly total, [1]=food amount, [2]=transport amount, [3]=discount abs
+      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      fireEvent.change(numericInputs[1], { target: { value: '9' } })
+      fireEvent.change(numericInputs[2], { target: { value: '1' } })
+      fireEvent.change(numericInputs[3], { target: { value: '1' } })
 
       // Total should be 10 - 1 = 9, not 10 + 1 = 11
       await waitFor(() => {
-        const totalInput = screen.getAllByRole('spinbutton')[0] as HTMLInputElement
+        const totalInput = document.querySelectorAll('input[type="number"]')[0] as HTMLInputElement
         expect(totalInput.value).toBe('9.00')
       })
     })

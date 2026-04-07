@@ -676,10 +676,7 @@ describe('AccountsPage', () => {
       })
     })
 
-    it('input field has min=0 attribute for browser validation', async () => {
-      // Browser enforces min=0 constraint on type="number" inputs,
-      // preventing form submission with negative values via HTML5 validation.
-      // This test verifies the correct attributes are set.
+    it('input field uses AmountInput for numeric entry', async () => {
       renderWithRouter()
 
       await waitFor(() => {
@@ -694,7 +691,7 @@ describe('AccountsPage', () => {
 
       const balanceInput = screen.getByLabelText('Initial Balance') as HTMLInputElement
       expect(balanceInput.type).toBe('number')
-      expect(balanceInput.min).toBe('0')
+      expect(balanceInput.inputMode).toBe('')
     })
 
     it('resets initial balance when modal is closed', async () => {

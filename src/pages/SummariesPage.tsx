@@ -4,7 +4,7 @@ import { useLayoutContext } from '../store/LayoutContext'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
-import { PageTabs, Card, Spinner, DropdownMenu, Modal, Input, Select, Button, useToast } from '../components/ui'
+import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast } from '../components/ui'
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrencyValue } from '../utils/formatters'
@@ -442,13 +442,11 @@ export function SummariesPage() {
             }))}
           />
 
-          <Input
+          <AmountInput
             label={`Budget Amount (${currencySymbol})`}
-            type="number"
-            step="0.01"
-            min="0"
+            isPositive
             value={budgetAmount}
-            onChange={(e) => setBudgetAmount(e.target.value)}
+            onChange={setBudgetAmount}
             placeholder="500.00"
             required
           />

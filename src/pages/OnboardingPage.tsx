@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Button, Card, Input, LiveSearch, Spinner, useToast } from '../components/ui'
+import { Button, Card, Input, AmountInput, LiveSearch, Spinner, useToast } from '../components/ui'
 import { currencyRepository, walletRepository } from '../services/repositories'
 import type { Currency } from '../types'
 
@@ -214,13 +214,11 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Initial balance (optional)
                   </label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="any"
+                  <AmountInput
                     value={initialBalance}
-                    onChange={(e) => setInitialBalance(e.target.value)}
+                    onChange={setInitialBalance}
                     placeholder="0.00"
+                    isPositive
                   />
                 </div>
               </div>
