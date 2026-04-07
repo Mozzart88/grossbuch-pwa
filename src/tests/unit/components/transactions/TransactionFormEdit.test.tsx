@@ -497,7 +497,7 @@ describe('TransactionForm Editing mode', () => {
 
     await waitFor(() => {
       // Amount in payment currency (USD)
-      expect(screen.getByRole('spinbutton', { name: /^Amount \(\$\)/i })).toHaveValue(21)
+      expect(screen.getByLabelText(/^Amount \(\$\)/i)).toHaveValue(21)
       // Payment currency should show USD code - LiveSearch shows only code in the input
       const currencyInput = screen.getByPlaceholderText('CUR')
       expect(currencyInput).toHaveValue('USD')

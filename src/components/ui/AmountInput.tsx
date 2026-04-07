@@ -16,11 +16,32 @@ export interface AmountInputProps
   className?: string
 }
 
-function getValidity(value: string, isPositive: boolean | undefined): string {
+/**
+ * Returns true when the value should be treated as "field omitted" for a non-required field.
+ * Only applies to empty strings and plain numeric zero (e.g. "", "0", "0.00").
+ * Expressions (e.g. "5-5") are never treated as omitted.
+ */
+function isOmitted(value: string): boolean {
+  const trimmed = value.trim()
+  if (trimmed === '') return true
+  if (isExpression(trimmed)) return false
+  const num = Number(trimmed)
+  return !isNaN(num) && num === 0
+}
+
+function getValidity(
+  value: string,
+  isPositive: boolean | undefined,
+  required: boolean | undefined,
+): string {
+  // For non-required fields, treat empty or plain zero as "omitted" — skip all validation
+  if (!required && isOmitted(value)) return ''
+
   if (!isExpression(value)) {
-    const num = Number(value.trim())
-    if (value.trim() !== '' && isNaN(num)) return 'Invalid number'
-    if (isPositive && value.trim() !== '' && num <= 0) return 'Value must be positive'
+    const trimmed = value.trim()
+    const num = Number(trimmed)
+    if (trimmed !== '' && isNaN(num)) return 'Invalid number'
+    if (isPositive && trimmed !== '' && num <= 0) return 'Value must be positive'
     return ''
   }
   const result = evaluateExpression(value)
@@ -38,6 +59,7 @@ export function AmountInput({
   error,
   className = '',
   id,
+  required,
   ...props
 }: AmountInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -46,7 +68,7 @@ export function AmountInput({
   const inputId = id || label?.toLowerCase().replace(/\s+/g, '-')
 
   // Derived values — no state needed
-  const internalError = getValidity(value, isPositive)
+  const internalError = getValidity(value, isPositive, required)
   const expressionResult = isExpression(value) ? evaluateExpression(value) : null
   const showPreview =
     isFocused && expressionResult !== null && !(isPositive && expressionResult <= 0)
@@ -57,10 +79,12 @@ export function AmountInput({
     inputRef.current.setCustomValidity(internalError)
   }, [internalError])
 
-  // Keep a stable ref to onChange so the form submit listener doesn't need to re-register
+  // Keep stable refs so the form submit listener closure doesn't go stale
   const onChangeRef = useRef(onChange)
+  const valueRef = useRef(value)
   useLayoutEffect(() => {
     onChangeRef.current = onChange
+    valueRef.current = value
   })
 
   useEffect(() => {
@@ -68,7 +92,9 @@ export function AmountInput({
     if (!form) return
 
     const handler = (e: Event) => {
-      const v = inputRef.current?.value ?? ''
+      // Use the prop value via ref — inputRef.current.value may be sanitized to ""
+      // by the browser when type="number" and the value is a non-numeric expression
+      const v = valueRef.current
       if (!isExpression(v)) return
 
       const result = evaluateExpression(v)
@@ -93,7 +119,7 @@ export function AmountInput({
 
     form.addEventListener('submit', handler)
     return () => form.removeEventListener('submit', handler)
-  }, [isPositive])
+  }, [isPositive, required])
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -129,13 +155,14 @@ export function AmountInput({
         <input
           ref={inputRef}
           id={inputId}
-          type="text"
-          inputMode="numeric"
+          type={isFocused ? 'text' : 'number'}
+          pattern="[0-9()+\-*/,. ]*"
           value={value}
           onChange={handleChange}
           placeholder={placeholder}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          required={required}
           className={`focus:outline-none ${className}`}
           {...props}
         />

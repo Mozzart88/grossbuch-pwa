@@ -1,6 +1,8 @@
 export { Button } from './Button'
 export { Input } from './Input'
 export type { InputProps } from './Input'
+export { AmountInput } from './AmountInput'
+export type { AmountInputProps } from './AmountInput'
 export { Select } from './Select'
 export { LiveSearch } from './LiveSearch'
 export type { LiveSearchOption } from './LiveSearch'

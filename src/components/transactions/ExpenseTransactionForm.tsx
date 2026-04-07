@@ -2,13 +2,13 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import type { Tag, Counterparty, Transaction, TransactionLine, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, walletRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, LiveSearch, DateTimeUI, Modal, Badge } from '../ui'
+import { Button, Select, LiveSearch, DateTimeUI, Modal, Badge, AmountInput } from '../ui'
 import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import { getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface SubEntry {
@@ -534,17 +534,17 @@ export function ExpenseTransactionForm({
           {paymentCurrency ? `(${paymentCurrency.symbol})` : selectedAccount && `(${selectedAccount.currencySymbol})`}
         </label>
         <div className="flex flex-row gap-0">
-          <input
-            id="amount"
-            type="number"
-            step={getStep(paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
-            min="0"
-            value={expenseDisplayAmount}
-            readOnly={!isExpenseMainEditable}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={getPlaceholder(paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
-            className={`flex-1 min-w-0 px-3 py-3 text-xl font-semibold rounded-l-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${!isExpenseMainEditable ? 'bg-gray-50 dark:bg-gray-900 cursor-default' : ''} ${errors.amount ? 'border-red-500' : ''}`}
-          />
+          <div className="flex-1 min-w-0">
+            <AmountInput
+              id="amount"
+              isPositive
+              value={expenseDisplayAmount}
+              readOnly={!isExpenseMainEditable}
+              onChange={(v) => setAmount(v)}
+              placeholder={getPlaceholder(paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
+              className={`w-full px-3 py-3 text-xl font-semibold rounded-l-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 ${!isExpenseMainEditable ? 'bg-gray-50 dark:bg-gray-900 cursor-default' : ''} ${errors.amount ? 'border-red-500' : ''}`}
+            />
+          </div>
           <div className="flex-none w-24">
             <LiveSearch
               options={sortedCurrencyOptions}
@@ -571,20 +571,16 @@ export function ExpenseTransactionForm({
       {/* Payment Amount (when expense currency differs from account) */}
       {paymentCurrencyDiffers && (
         <div className="space-y-1">
-          <label htmlFor="paymentAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Amount from account ({selectedAccount?.currencySymbol})
-          </label>
-          <input
+          <AmountInput
             id="paymentAmount"
-            type="number"
-            step={getStep(decimalPlaces)}
-            min="0"
+            isPositive
+            label={`Amount from account${selectedAccount?.currencySymbol ? ` (${selectedAccount.currencySymbol})` : ''}`}
             value={paymentAmount}
-            onChange={(e) => setPaymentAmount(e.target.value)}
+            onChange={setPaymentAmount}
             placeholder={getPlaceholder(decimalPlaces)}
-            className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.paymentAmount ? 'border-red-500' : ''}`}
+            error={errors.paymentAmount}
+            className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 ${errors.paymentAmount ? 'border-red-500' : ''}`}
           />
-          {errors.paymentAmount && <p className="text-sm text-red-600">{errors.paymentAmount}</p>}
           {(() => {
             const displayPaymentTotal = !isExpenseMainEditable
               ? expenseComputedTotal
@@ -636,14 +632,12 @@ export function ExpenseTransactionForm({
               />
             </div>
             {!isExpenseMainEditable && (
-              <input
-                type="number"
-                step={getStep(decimalPlaces)}
-                min="0"
+              <AmountInput
+                isPositive
                 value={entry.amount}
-                onChange={(e) => updateSubEntry(entry.id, { amount: e.target.value })}
+                onChange={(v) => updateSubEntry(entry.id, { amount: v })}
                 placeholder={getPlaceholder(decimalPlaces)}
-                className="w-28 px-2 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 text-right"
+                className="w-28 px-2 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 text-right"
               />
             )}
             {subEntries.length > 1 && (
@@ -679,11 +673,10 @@ export function ExpenseTransactionForm({
                     key={tag.id}
                     type="button"
                     onClick={() => toggleCommonTag(tag)}
-                    className={`px-3 py-1 text-sm rounded-full border transition-colors ${
-                      isActive
-                        ? 'bg-primary-100 border-primary-400 text-primary-700 dark:bg-primary-900/30 dark:border-primary-600 dark:text-primary-300'
-                        : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500'
-                    }`}
+                    className={`px-3 py-1 text-sm rounded-full border transition-colors ${isActive
+                      ? 'bg-primary-100 border-primary-400 text-primary-700 dark:bg-primary-900/30 dark:border-primary-600 dark:text-primary-300'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500'
+                      }`}
                   >
                     {isActive ? `${tag.name} ✓` : `+ ${tag.name}`}
                   </button>
@@ -703,16 +696,14 @@ export function ExpenseTransactionForm({
                 >
                   {entry.amtType === 'pct' ? '%' : (paymentCurrencyDiffers ? paymentCurrency?.symbol : selectedAccount?.currencySymbol) || '$'}
                 </button>
-                <input
-                  type="number"
-                  min="0"
-                  step={entry.amtType === 'pct' ? '0.01' : getStep(paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
+                <AmountInput
+                  isPositive
                   value={entry.amtType === 'pct' ? entry.pct : entry.abs}
-                  onChange={(e) => updateCommonEntry(entry.tagId,
-                    entry.amtType === 'pct' ? { pct: e.target.value } : { abs: e.target.value }
+                  onChange={(v) => updateCommonEntry(entry.tagId,
+                    entry.amtType === 'pct' ? { pct: v } : { abs: v }
                   )}
                   placeholder={entry.amtType === 'pct' ? '15' : getPlaceholder(paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
-                  className="flex-1 min-w-0 px-2 py-1 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="flex-1 min-w-0 px-2 py-1 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 text-sm"
                 />
                 {entry.amtType === 'pct' && expensePlainBase > 0 && (parseFloat(entry.pct) || 0) > 0 && (
                   <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
@@ -786,7 +777,7 @@ export function ExpenseTransactionForm({
                   className={`px-4 py-2 text-sm rounded-lg border transition-colors ${newTagType === t
                     ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
                     : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </button>

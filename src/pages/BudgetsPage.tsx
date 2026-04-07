@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Button, Card, Modal, Input, Select, Spinner, useToast } from '../components/ui'
+import { Button, Card, Modal, AmountInput, Select, Spinner, useToast } from '../components/ui'
 import { budgetRepository, tagRepository, currencyRepository } from '../services/repositories'
 import type { Budget, BudgetInput, Tag, Currency } from '../types'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
@@ -310,13 +310,11 @@ export function BudgetsPage() {
             }))}
           />
 
-          <Input
+          <AmountInput
             label={`Amount (${defaultCurrency?.symbol ?? '$'})`}
-            type="number"
-            step="0.01"
-            min="0"
+            isPositive
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={setAmount}
             placeholder="500.00"
             required
           />

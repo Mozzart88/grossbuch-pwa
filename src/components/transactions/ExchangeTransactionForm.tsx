@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import type { Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, DateTimeUI, ChevronIcon } from '../ui'
+import { Button, Select, DateTimeUI, ChevronIcon, AmountInput } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface ExchangeTransactionFormProps {
@@ -228,22 +228,15 @@ export function ExchangeTransactionForm({
           error={errors.accountId}
           className={`rounded-r-none py-3 font-semibold border-r-0`}
         />
-        <div className="space-y-1">
-          {/* <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300"> */}
-          {/*   Amount {selectedAccount && `(${selectedAccount.currencySymbol})`} */}
-          {/* </label> */}
-          <input
-            id="amount"
-            type="number"
-            step={getStep(decimalPlaces)}
-            min="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder={getPlaceholder(decimalPlaces)}
-            className={`w-full px-3 py-3 font-semibold rounded-r-lg border border-l-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none  ${errors.amount ? 'border-red-500' : ''} text-right`}
-          />
-          {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
-        </div>
+        <AmountInput
+          id="amount"
+          isPositive
+          value={amount}
+          onChange={setAmount}
+          placeholder={getPlaceholder(decimalPlaces)}
+          error={errors.amount}
+          className={`w-full px-3 py-3 font-semibold rounded-r-lg border border-l-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 ${errors.amount ? 'border-red-500' : ''} text-right`}
+        />
       </div>
 
       <div
@@ -267,22 +260,15 @@ export function ExchangeTransactionForm({
           error={errors.toAccountId}
           className={`rounded-r-none py-3 font-semibold border-r-0`}
         />
-        <div className="space-y-1">
-          {/* <label htmlFor="toAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300"> */}
-          {/*   Receive {selectedToAccount && `(${selectedToAccount.currencySymbol})`} */}
-          {/* </label> */}
-          <input
-            id="toAmount"
-            type="number"
-            step={getStep(toDecimalPlaces)}
-            min="0"
-            value={toAmount}
-            onChange={(e) => setToAmount(e.target.value)}
-            placeholder={getPlaceholder(toDecimalPlaces)}
-            className={`w-full px-3 py-3 font-semibold rounded-r-lg border border-l-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none ${errors.toAmount ? 'border-red-500' : ''} text-right`}
-          />
-          {errors.toAmount && <p className="text-sm text-red-600">{errors.toAmount}</p>}
-        </div>
+        <AmountInput
+          id="toAmount"
+          isPositive
+          value={toAmount}
+          onChange={setToAmount}
+          placeholder={getPlaceholder(toDecimalPlaces)}
+          error={errors.toAmount}
+          className={`w-full px-3 py-3 font-semibold rounded-r-lg border border-l-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 ${errors.toAmount ? 'border-red-500' : ''} text-right`}
+        />
       </div>
 
       {/* Effective rate */}
@@ -300,26 +286,20 @@ export function ExchangeTransactionForm({
       />
 
       {/* Fee */}
-      <div className="space-y-1">
-        <label htmlFor="fee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Fee (optional) {selectedAccount && `(${selectedAccount.currencySymbol})`}
-        </label>
-        <input
-          id="fee"
-          type="number"
-          step={getStep(decimalPlaces)}
-          min="0"
-          value={fee}
-          onChange={(e) => {
-            if (e.target.value === '' || e.target.value === '0') setFeeTagId('')
-            else setFeeTagId(SYSTEM_TAGS.FEE.toString())
-            setFee(e.target.value)
-          }}
-          placeholder="0.00"
-          className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
-        />
-        {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
-      </div>
+      <AmountInput
+        id="fee"
+        isPositive
+        label={`Fee (optional)${selectedAccount ? ` (${selectedAccount.currencySymbol})` : ''}`}
+        value={fee}
+        onChange={(v: string) => {
+          if (v === '' || v === '0') setFeeTagId('')
+          else setFeeTagId(SYSTEM_TAGS.FEE.toString())
+          setFee(v)
+        }}
+        placeholder="0.00"
+        error={errors.fee}
+        className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+      />
 
       {/* Notes */}
       <div className="space-y-1">

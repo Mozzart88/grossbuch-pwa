@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Modal, Input, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui'
+import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
 import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
@@ -162,7 +162,7 @@ export function AccountsPage() {
 
     setSubmitting(true)
     try {
-      // Parse initial balance (HTML5 input type="number" min="0" ensures valid non-negative input)
+      // Parse initial balance (AmountInput resolves any expression before submit)
       const balanceValue = initialBalance.trim() ? parseFloat(initialBalance) : 0
 
       const currencyId = parseInt(selectedCurrencyId)
@@ -462,14 +462,12 @@ export function AccountsPage() {
               .map(c => ({ value: c.id, label: `${c.code} - ${c.name}` }))}
             placeholder="Search currencies"
           />
-          <Input
+          <AmountInput
             label="Initial Balance"
-            type="number"
-            min="0"
-            step="any"
+            isPositive
             placeholder="0.00"
             value={initialBalance}
-            onChange={(e) => setInitialBalance(e.target.value)}
+            onChange={setInitialBalance}
           />
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={closeCurrencyModal} className="flex-1">
@@ -490,13 +488,12 @@ export function AccountsPage() {
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Current balance: <strong>{formatBalance(adjustingAccount.balance_int, adjustingAccount.balance_frac, getCurrency(adjustingAccount.currency_id))}</strong>
               </p>
-              <Input
+              <AmountInput
                 label="Target Balance"
-                type="number"
-                step="any"
                 placeholder="0.00"
+                isPositive
                 value={targetBalance}
-                onChange={(e) => setTargetBalance(e.target.value)}
+                onChange={setTargetBalance}
                 required
               />
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -521,14 +518,12 @@ export function AccountsPage() {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Enter exchange rate for <strong>{rateCurrencyCode}</strong> (in <strong>{currencies.find(c => c.is_system)?.code || 'default currency'}</strong>)
           </p>
-          <Input
+          <AmountInput
             label="Exchange Rate"
-            type="number"
-            step="0.0001"
-            min="0.0001"
+            isPositive
             placeholder="1.0000"
             value={manualRate}
-            onChange={(e) => setManualRate(e.target.value)}
+            onChange={setManualRate}
             required
           />
           <p className="text-xs text-gray-500 dark:text-gray-400">
