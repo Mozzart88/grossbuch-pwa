@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import type { Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, Input, DateTimeUI } from '../ui'
+import { Button, Select, DateTimeUI } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, formatBalance, toAmountIntFrac } from './transactionFormShared'
+import { getStep, getPlaceholder, toAmountIntFrac } from './transactionFormShared'
 
 interface ExchangeTransactionFormProps {
   accounts: AccountOption[]
@@ -16,6 +16,19 @@ interface ExchangeTransactionFormProps {
   onSubmit: () => void
   onCancel: () => void
   useActionBar?: boolean
+}
+
+function ChevronIcon() {
+  return (
+    <svg
+      className={`w-4 h-4 text-gray-400 transition-transform rotate-90`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  )
 }
 
 export function ExchangeTransactionForm({
@@ -33,8 +46,6 @@ export function ExchangeTransactionForm({
   const [accountId, setAccountId] = useState(defaultAccountId)
   const [toAccountId, setToAccountId] = useState('')
   const [toAmount, setToAmount] = useState('')
-  const [exchangeRate, setExchangeRate] = useState('')
-  const [exchangeMode, setExchangeMode] = useState<'amounts' | 'rate'>('amounts')
   const [fee, setFee] = useState('')
   const [feeTagId, setFeeTagId] = useState('')
   const [note, setNote] = useState('')
@@ -57,7 +68,6 @@ export function ExchangeTransactionForm({
     const toAmt = fromIntFrac(toLine.amount_int, toLine.amount_frac)
     setAmount(fromAmt.toString())
     setToAmount(toAmt.toString())
-    setExchangeRate((toAmt / fromAmt).toFixed(6))
     if (feeLine) {
       setFee(fromIntFrac(feeLine.amount_int, feeLine.amount_frac).toString())
       setFeeTagId(feeLine.tag_id.toString())
@@ -78,18 +88,17 @@ export function ExchangeTransactionForm({
     return () => { setActionBarConfig(null) }
   }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
 
-  // Auto-calculate toAmount from rate
-  useEffect(() => {
-    if (exchangeMode === 'rate' && amount && exchangeRate) {
-      const toDecimalPlaces = accounts.find(a => a.id.toString() === toAccountId)?.decimalPlaces ?? 2
-      setToAmount((parseFloat(amount) * parseFloat(exchangeRate)).toFixed(toDecimalPlaces))
-    }
-  }, [amount, exchangeRate, exchangeMode, toAccountId, accounts])
-
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const selectedToAccount = accounts.find(a => a.id.toString() === toAccountId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
   const toDecimalPlaces = selectedToAccount?.decimalPlaces ?? 2
+
+  const effectiveRate =
+    amount && toAmount && parseFloat(amount) > 0 && parseFloat(toAmount) > 0
+      ? (parseFloat(toAmount) / parseFloat(amount)).toFixed(6)
+      : null
+  const fromCurrencyCode = selectedAccount?.currencyCode ?? ''
+  const toCurrencyCode = selectedToAccount?.currencyCode ?? ''
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -157,25 +166,25 @@ export function ExchangeTransactionForm({
         rate_int: number
         rate_frac: number
       }[] = [
-        {
-          account_id: parseInt(accountId),
-          tag_id: SYSTEM_TAGS.EXCHANGE,
-          sign: '-',
-          amount_int: amountInt,
-          amount_frac: amountFrac,
-          rate_int: fromRateIF.int,
-          rate_frac: fromRateIF.frac,
-        },
-        {
-          account_id: parseInt(toAccountId),
-          tag_id: SYSTEM_TAGS.EXCHANGE,
-          sign: '+',
-          amount_int: toAmountIF.int,
-          amount_frac: toAmountIF.frac,
-          rate_int: toRateIF.int,
-          rate_frac: toRateIF.frac,
-        },
-      ]
+          {
+            account_id: parseInt(accountId),
+            tag_id: SYSTEM_TAGS.EXCHANGE,
+            sign: '-',
+            amount_int: amountInt,
+            amount_frac: amountFrac,
+            rate_int: fromRateIF.int,
+            rate_frac: fromRateIF.frac,
+          },
+          {
+            account_id: parseInt(toAccountId),
+            tag_id: SYSTEM_TAGS.EXCHANGE,
+            sign: '+',
+            amount_int: toAmountIF.int,
+            amount_frac: toAmountIF.frac,
+            rate_int: toRateIF.int,
+            rate_frac: toRateIF.frac,
+          },
+        ]
 
       if (feeIntFrac) {
         lines.push({
@@ -210,125 +219,82 @@ export function ExchangeTransactionForm({
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
-      {/* Amount */}
-      <div className="space-y-1">
-        <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Amount {selectedAccount && `(${selectedAccount.currencySymbol})`}
-        </label>
-        <input
-          id="amount"
-          type="number"
-          step={getStep(decimalPlaces)}
-          min="0"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder={getPlaceholder(decimalPlaces)}
-          className={`w-full px-3 py-3 text-xl font-semibold rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
-        />
-        {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
-      </div>
 
-      {/* Account */}
-      <Select
-        label="Account"
-        value={accountId}
-        onChange={(e) => setAccountId(e.target.value)}
-        options={accounts.map((a) => ({
-          value: a.id,
-          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
-        }))}
-        placeholder="Select account"
-        error={errors.accountId}
-      />
-
-      {/* To Account (different currency, excludes source) */}
-      <Select
-        label="To Account"
-        value={toAccountId}
-        onChange={(e) => setToAccountId(e.target.value)}
-        options={accounts
-          .filter(a => a.id !== selectedAccount?.id)
-          .filter(a => a.currency_id !== selectedAccount?.currency_id)
-          .map((a) => ({
+      {/* Row 1: from amount + from account */}
+      <div className="grid grid-cols-2 gap-0 mb-2">
+        <Select
+          // label="From"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          options={accounts.map((a) => ({
             value: a.id,
-            label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
+            label: `${a.walletName}:${a.currencyCode}`,
           }))}
-        placeholder="Select destination account"
-        error={errors.toAccountId}
-      />
-
-      {/* Fee */}
-      <div className="space-y-2">
+          placeholder="Account"
+          error={errors.accountId}
+          className={`rounded-r-none py-3 font-semibold border-r-0`}
+        />
         <div className="space-y-1">
-          <label htmlFor="fee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Fee (optional) {selectedAccount && `(${selectedAccount.currencySymbol})`}
-          </label>
+          {/* <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300"> */}
+          {/*   Amount {selectedAccount && `(${selectedAccount.currencySymbol})`} */}
+          {/* </label> */}
           <input
-            id="fee"
+            id="amount"
             type="number"
             step={getStep(decimalPlaces)}
             min="0"
-            value={fee}
-            onChange={(e) => {
-              if (e.target.value === '' || e.target.value === '0') setFeeTagId('')
-              else setFeeTagId(SYSTEM_TAGS.FEE.toString())
-              setFee(e.target.value)
-            }}
-            placeholder="0.00"
-            className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder={getPlaceholder(decimalPlaces)}
+            className={`w-full px-3 py-3 font-semibold rounded-r-lg border border-l-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none  ${errors.amount ? 'border-red-500' : ''} text-right`}
           />
-          {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
+          {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
         </div>
       </div>
 
-      {/* Exchange mode toggle */}
-      <div className="flex gap-2 text-sm">
-        <button
-          type="button"
-          onClick={() => setExchangeMode('amounts')}
-          className={`px-3 py-1 rounded ${exchangeMode === 'amounts' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400'}`}
-        >
-          Enter amounts
-        </button>
-        <button
-          type="button"
-          onClick={() => setExchangeMode('rate')}
-          className={`px-3 py-1 rounded ${exchangeMode === 'rate' ? 'bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400'}`}
-        >
-          Enter rate
-        </button>
+      <div
+        className="flex justify-center mb-2"
+      ><ChevronIcon /></div>
+
+      {/* Row 2: to amount + to account */}
+      <div className="grid grid-cols-2 gap-0">
+        <Select
+          // label="To"
+          value={toAccountId}
+          onChange={(e) => setToAccountId(e.target.value)}
+          options={accounts
+            .filter(a => a.id !== selectedAccount?.id)
+            .filter(a => a.currency_id !== selectedAccount?.currency_id)
+            .map((a) => ({
+              value: a.id,
+              label: `${a.walletName}:${a.currencyCode}`,
+            }))}
+          placeholder="Account"
+          error={errors.toAccountId}
+          className={`rounded-r-none py-3 font-semibold border-r-0`}
+        />
+        <div className="space-y-1">
+          {/* <label htmlFor="toAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300"> */}
+          {/*   Receive {selectedToAccount && `(${selectedToAccount.currencySymbol})`} */}
+          {/* </label> */}
+          <input
+            id="toAmount"
+            type="number"
+            step={getStep(toDecimalPlaces)}
+            min="0"
+            value={toAmount}
+            onChange={(e) => setToAmount(e.target.value)}
+            placeholder={getPlaceholder(toDecimalPlaces)}
+            className={`w-full px-3 py-3 font-semibold rounded-r-lg border border-l-0 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none ${errors.toAmount ? 'border-red-500' : ''} text-right`}
+          />
+          {errors.toAmount && <p className="text-sm text-red-600">{errors.toAmount}</p>}
+        </div>
       </div>
 
-      {exchangeMode === 'rate' && (
-        <Input
-          label="Exchange Rate"
-          type="number"
-          step="any"
-          min="0"
-          value={exchangeRate}
-          onChange={(e) => setExchangeRate(e.target.value)}
-          placeholder="1.00"
-        />
-      )}
-
-      {/* Receive Amount */}
-      <div className="space-y-1">
-        <label htmlFor="toAmount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Receive Amount {selectedToAccount && `(${selectedToAccount.currencySymbol})`}
-        </label>
-        <input
-          id="toAmount"
-          type="number"
-          step={getStep(toDecimalPlaces)}
-          min="0"
-          value={toAmount}
-          onChange={(e) => setToAmount(e.target.value)}
-          disabled={exchangeMode === 'rate'}
-          placeholder={getPlaceholder(toDecimalPlaces)}
-          className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100 dark:disabled:bg-gray-900 ${errors.toAmount ? 'border-red-500' : ''}`}
-        />
-        {errors.toAmount && <p className="text-sm text-red-600">{errors.toAmount}</p>}
-      </div>
+      {/* Effective rate */}
+      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+        Rate: 1 {fromCurrencyCode || '...'} = {effectiveRate || '0.00'} {toCurrencyCode || '...'}
+      </p>
 
       {/* Date/Time */}
       <DateTimeUI
@@ -336,6 +302,28 @@ export function ExchangeTransactionForm({
         onChange={e => setDateTime(new Date(e.target.value).getTime())}
         value={toDateTimeLocal(new Date(datetime))}
       />
+
+      {/* Fee */}
+      <div className="space-y-1">
+        <label htmlFor="fee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Fee (optional) {selectedAccount && `(${selectedAccount.currencySymbol})`}
+        </label>
+        <input
+          id="fee"
+          type="number"
+          step={getStep(decimalPlaces)}
+          min="0"
+          value={fee}
+          onChange={(e) => {
+            if (e.target.value === '' || e.target.value === '0') setFeeTagId('')
+            else setFeeTagId(SYSTEM_TAGS.FEE.toString())
+            setFee(e.target.value)
+          }}
+          placeholder="0.00"
+          className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+        />
+        {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
+      </div>
 
       {/* Notes */}
       <div className="space-y-1">

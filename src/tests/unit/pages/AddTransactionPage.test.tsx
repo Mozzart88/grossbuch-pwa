@@ -257,11 +257,11 @@ describe('AddTransactionPage', () => {
       </MemoryRouter>
     )
 
+    // Exchange button should be active — wait for the exchange form to render
     await waitFor(() => {
-      expect(screen.getByText('Account')).toBeInTheDocument()
+      expect(screen.getByRole('combobox', { name: /^from$/i })).toBeInTheDocument()
     })
 
-    // Exchange button should be active
     const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
     expect(exchangeButton.className).toContain('bg-white')
   })

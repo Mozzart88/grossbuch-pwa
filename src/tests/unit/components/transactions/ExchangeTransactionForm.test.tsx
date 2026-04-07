@@ -79,53 +79,42 @@ describe('ExchangeTransactionForm', () => {
     mockTransactionRepository.update.mockResolvedValue({} as any)
   })
 
-  it('renders amount, account, to-account, receive-amount fields', () => {
+  it('renders amount, from account, to amount, and to account fields', () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
     expect(screen.getByLabelText(/^Amount/i)).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /^account$/i })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /to account/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/receive amount/i)).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /^from$/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/^receive/i)).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /^to$/i })).toBeInTheDocument()
   })
 
-  it('to-account only shows accounts with different currency than source', () => {
+  it('to account only shows accounts with different currency than source', () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
+    const toAccountSelect = screen.getByRole('combobox', { name: /^to$/i })
     // Account 1 (USD, source) and Account 3 (USD) should be excluded; Account 2 (EUR) included
     expect(toAccountSelect.innerHTML).toContain('Bank')
     expect(toAccountSelect.innerHTML).not.toContain('Cash')
     expect(toAccountSelect.innerHTML).not.toContain('Savings')
   })
 
-  it('shows exchange mode toggle buttons', () => {
+  it('shows effective rate when both amounts are filled', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    expect(screen.getByRole('button', { name: 'Enter amounts' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Enter rate' })).toBeInTheDocument()
-  })
-
-  it('shows rate input when rate mode selected', async () => {
-    render(<ExchangeTransactionForm {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Enter rate' }))
-    await waitFor(() => {
-      expect(screen.getByLabelText(/exchange rate/i)).toBeInTheDocument()
-    })
-  })
-
-  it('calculates receive amount from rate', async () => {
-    render(<ExchangeTransactionForm {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Enter rate' }))
-
+    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
     fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByLabelText(/exchange rate/i), { target: { value: '0.9' } })
-
+    fireEvent.change(screen.getByLabelText(/^receive/i), { target: { value: '90' } })
     await waitFor(() => {
-      expect(screen.getByLabelText(/receive amount/i)).toHaveValue(90)
+      expect(screen.getByText(/1 USD = 0\.900000 EUR/i)).toBeInTheDocument()
     })
+  })
+
+  it('does not show effective rate when amounts are empty', () => {
+    render(<ExchangeTransactionForm {...defaultProps} />)
+    expect(screen.queryByText(/Rate:/i)).not.toBeInTheDocument()
   })
 
   it('shows validation errors for missing destination amount', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
     fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => {
       expect(screen.getByText('Destination amount is required')).toBeInTheDocument()
@@ -135,8 +124,8 @@ describe('ExchangeTransactionForm', () => {
   it('submits correct exchange payload', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
     fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(/receive amount/i), { target: { value: '90' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/^receive/i), { target: { value: '90' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
     await waitFor(() => {
@@ -182,12 +171,12 @@ describe('ExchangeTransactionForm', () => {
     }
     render(<ExchangeTransactionForm {...defaultProps} initialData={initialData} />)
     expect(screen.getByLabelText(/^Amount/i)).toHaveValue(200)
-    expect(screen.getByLabelText(/receive amount/i)).toHaveValue(180)
+    expect(screen.getByLabelText(/^receive/i)).toHaveValue(180)
   })
 
   it('allows changing account', () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    const accountSelect = screen.getByRole('combobox', { name: /^account$/i })
+    const accountSelect = screen.getByRole('combobox', { name: /^from$/i })
     fireEvent.change(accountSelect, { target: { value: '2' } })
     expect(accountSelect).toHaveValue('2')
   })
@@ -202,8 +191,8 @@ describe('ExchangeTransactionForm', () => {
   it('submits with note in payload', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
     fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(/receive amount/i), { target: { value: '90' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/^receive/i), { target: { value: '90' } })
     fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'fx note' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => {
