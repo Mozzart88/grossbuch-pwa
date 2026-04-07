@@ -7,7 +7,20 @@ import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, formatBalance, toAmountIntFrac } from './transactionFormShared'
+import { getStep, getPlaceholder, toAmountIntFrac } from './transactionFormShared'
+
+function ChevronIcon() {
+  return (
+    <svg
+      className={`w-4 h-4 text-gray-400 transition-transform rotate-0`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  )
+}
 
 interface TransferTransactionFormProps {
   accounts: AccountOption[]
@@ -112,25 +125,25 @@ export function TransferTransactionForm({
         rate_int: number
         rate_frac: number
       }[] = [
-        {
-          account_id: parseInt(accountId),
-          tag_id: SYSTEM_TAGS.TRANSFER,
-          sign: '-',
-          amount_int: amountInt,
-          amount_frac: amountFrac,
-          rate_int: accountRateData.int,
-          rate_frac: accountRateData.frac,
-        },
-        {
-          account_id: parseInt(toAccountId),
-          tag_id: SYSTEM_TAGS.TRANSFER,
-          sign: '+',
-          amount_int: amountInt,
-          amount_frac: amountFrac,
-          rate_int: accountRateData.int,
-          rate_frac: accountRateData.frac,
-        },
-      ]
+          {
+            account_id: parseInt(accountId),
+            tag_id: SYSTEM_TAGS.TRANSFER,
+            sign: '-',
+            amount_int: amountInt,
+            amount_frac: amountFrac,
+            rate_int: accountRateData.int,
+            rate_frac: accountRateData.frac,
+          },
+          {
+            account_id: parseInt(toAccountId),
+            tag_id: SYSTEM_TAGS.TRANSFER,
+            sign: '+',
+            amount_int: amountInt,
+            amount_frac: amountFrac,
+            rate_int: accountRateData.int,
+            rate_frac: accountRateData.frac,
+          },
+        ]
 
       if (feeIntFrac) {
         lines.push({
@@ -165,11 +178,9 @@ export function TransferTransactionForm({
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
+
       {/* Amount */}
       <div className="space-y-1">
-        <label htmlFor="amount" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-          Amount {selectedAccount && `(${selectedAccount.currencySymbol})`}
-        </label>
         <input
           id="amount"
           type="number"
@@ -178,61 +189,44 @@ export function TransferTransactionForm({
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder={getPlaceholder(decimalPlaces)}
-          className={`w-full px-3 py-3 text-xl font-semibold rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.amount ? 'border-red-500' : ''}`}
+          className={`w-full px-3 py-3 text-xl font-semibold rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none ${errors.amount ? 'border-red-500' : ''} text-right`}
         />
         {errors.amount && <p className="text-sm text-red-600">{errors.amount}</p>}
       </div>
 
-      {/* Account */}
-      <Select
-        label="Account"
-        value={accountId}
-        onChange={(e) => setAccountId(e.target.value)}
-        options={accounts.map((a) => ({
-          value: a.id,
-          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
-        }))}
-        placeholder="Select account"
-        error={errors.accountId}
-      />
-
-      {/* To Account (same currency, excludes source) */}
-      <Select
-        label="To Account"
-        value={toAccountId}
-        onChange={(e) => setToAccountId(e.target.value)}
-        options={accounts
-          .filter(a => a.id !== selectedAccount?.id)
-          .filter(a => a.currency_id === selectedAccount?.currency_id)
-          .map((a) => ({
-            value: a.id,
-            label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
-          }))}
-        placeholder="Select destination account"
-        error={errors.toAccountId}
-      />
-
-      {/* Fee */}
-      <div className="space-y-2">
-        <div className="space-y-1">
-          <label htmlFor="fee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-            Fee (optional) {selectedAccount && `(${selectedAccount.currencySymbol})`}
-          </label>
-          <input
-            id="fee"
-            type="number"
-            step={getStep(decimalPlaces)}
-            min="0"
-            value={fee}
-            onChange={(e) => {
-              if (e.target.value === '' || e.target.value === '0') setFeeTagId('')
-              else setFeeTagId(SYSTEM_TAGS.FEE.toString())
-              setFee(e.target.value)
-            }}
-            placeholder="0.00"
-            className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+      {/* From > To account row */}
+      <div className="flex justify-between gap-2">
+        <div className="grow">
+          <Select
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            options={accounts.map((a) => ({
+              value: a.id,
+              label: `${a.walletName}:${a.currencyCode}`,
+            }))}
+            placeholder="From"
+            error={errors.accountId}
           />
-          {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
+        </div>
+        <div className="grow-0 flex items-center justify-center ">
+          <ChevronIcon />
+        </div>
+        <div
+          className="grow"
+        >
+          <Select
+            value={toAccountId}
+            onChange={(e) => setToAccountId(e.target.value)}
+            options={accounts
+              .filter(a => a.id !== selectedAccount?.id)
+              .filter(a => a.currency_id === selectedAccount?.currency_id)
+              .map((a) => ({
+                value: a.id,
+                label: `${a.walletName}:${a.currencyCode}`,
+              }))}
+            placeholder="To"
+            error={errors.toAccountId}
+          />
         </div>
       </div>
 
@@ -242,6 +236,28 @@ export function TransferTransactionForm({
         onChange={e => setDateTime(new Date(e.target.value).getTime())}
         value={toDateTimeLocal(new Date(datetime))}
       />
+
+      {/* Fee */}
+      <div className="space-y-1">
+        <label htmlFor="fee" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Fee (optional) {selectedAccount && `(${selectedAccount.currencySymbol})`}
+        </label>
+        <input
+          id="fee"
+          type="number"
+          step={getStep(decimalPlaces)}
+          min="0"
+          value={fee}
+          onChange={(e) => {
+            if (e.target.value === '' || e.target.value === '0') setFeeTagId('')
+            else setFeeTagId(SYSTEM_TAGS.FEE.toString())
+            setFee(e.target.value)
+          }}
+          placeholder="0.00"
+          className={`w-full px-3 py-2 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500 ${errors.fee ? 'border-red-500' : ''}`}
+        />
+        {errors.fee && <p className="text-sm text-red-600">{errors.fee}</p>}
+      </div>
 
       {/* Notes */}
       <div className="space-y-1">

@@ -292,9 +292,11 @@ export function ExchangeTransactionForm({
       </div>
 
       {/* Effective rate */}
-      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-        Rate: 1 {fromCurrencyCode || '...'} = {effectiveRate || '0.00'} {toCurrencyCode || '...'}
-      </p>
+      {effectiveRate && (
+        <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+          Rate: 1 {fromCurrencyCode} = {effectiveRate} {toCurrencyCode}
+        </p>
+      )}
 
       {/* Date/Time */}
       <DateTimeUI

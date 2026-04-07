@@ -259,7 +259,7 @@ describe('AddTransactionPage', () => {
 
     // Exchange button should be active — wait for the exchange form to render
     await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: /^from$/i })).toBeInTheDocument()
+      expect(screen.getAllByRole('combobox')[0]).toBeInTheDocument()
     })
 
     const exchangeButton = screen.getByRole('button', { name: 'Exchange' })

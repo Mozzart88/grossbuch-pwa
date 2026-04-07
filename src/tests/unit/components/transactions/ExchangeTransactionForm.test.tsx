@@ -81,15 +81,15 @@ describe('ExchangeTransactionForm', () => {
 
   it('renders amount, from account, to amount, and to account fields', () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    expect(screen.getByLabelText(/^Amount/i)).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /^from$/i })).toBeInTheDocument()
-    expect(screen.getByLabelText(/^receive/i)).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /^to$/i })).toBeInTheDocument()
+    expect(document.getElementById('amount')).toBeInTheDocument()
+    expect(screen.getAllByRole('combobox')[0]).toBeInTheDocument()
+    expect(document.getElementById('toAmount')).toBeInTheDocument()
+    expect(screen.getAllByRole('combobox')[1]).toBeInTheDocument()
   })
 
   it('to account only shows accounts with different currency than source', () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    const toAccountSelect = screen.getByRole('combobox', { name: /^to$/i })
+    const toAccountSelect = screen.getAllByRole('combobox')[1]
     // Account 1 (USD, source) and Account 3 (USD) should be excluded; Account 2 (EUR) included
     expect(toAccountSelect.innerHTML).toContain('Bank')
     expect(toAccountSelect.innerHTML).not.toContain('Cash')
@@ -98,9 +98,9 @@ describe('ExchangeTransactionForm', () => {
 
   it('shows effective rate when both amounts are filled', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByLabelText(/^receive/i), { target: { value: '90' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '90' } })
     await waitFor(() => {
       expect(screen.getByText(/1 USD = 0\.900000 EUR/i)).toBeInTheDocument()
     })
@@ -113,8 +113,8 @@ describe('ExchangeTransactionForm', () => {
 
   it('shows validation errors for missing destination amount', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => {
       expect(screen.getByText('Destination amount is required')).toBeInTheDocument()
@@ -123,9 +123,9 @@ describe('ExchangeTransactionForm', () => {
 
   it('submits correct exchange payload', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(/^receive/i), { target: { value: '90' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '90' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
     await waitFor(() => {
@@ -170,13 +170,13 @@ describe('ExchangeTransactionForm', () => {
       ],
     }
     render(<ExchangeTransactionForm {...defaultProps} initialData={initialData} />)
-    expect(screen.getByLabelText(/^Amount/i)).toHaveValue(200)
-    expect(screen.getByLabelText(/^receive/i)).toHaveValue(180)
+    expect(document.getElementById('amount')).toHaveValue(200)
+    expect(document.getElementById('toAmount')).toHaveValue(180)
   })
 
   it('allows changing account', () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    const accountSelect = screen.getByRole('combobox', { name: /^from$/i })
+    const accountSelect = screen.getAllByRole('combobox')[0]
     fireEvent.change(accountSelect, { target: { value: '2' } })
     expect(accountSelect).toHaveValue('2')
   })
@@ -190,9 +190,9 @@ describe('ExchangeTransactionForm', () => {
 
   it('submits with note in payload', async () => {
     render(<ExchangeTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /^to$/i }), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText(/^receive/i), { target: { value: '90' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '90' } })
     fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'fx note' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => {
@@ -257,7 +257,7 @@ describe('ExchangeTransactionForm', () => {
 
   it('shows validation errors for missing account', async () => {
     render(<ExchangeTransactionForm {...defaultProps} defaultAccountId="" />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => {
       expect(screen.getByText('Account is required')).toBeInTheDocument()
@@ -295,7 +295,7 @@ describe('ExchangeTransactionForm', () => {
     }
 
     render(<ExchangeTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue(100))
+    await waitFor(() => expect(document.getElementById('amount')).toHaveValue(100))
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()

@@ -75,15 +75,15 @@ describe('TransferTransactionForm', () => {
 
   it('renders amount, account, to-account, fee fields', () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    expect(screen.getByLabelText(/^Amount/i)).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /^account$/i })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: /to account/i })).toBeInTheDocument()
+    expect(document.getElementById('amount')).toBeInTheDocument()
+    expect(screen.getAllByRole('combobox')[0]).toBeInTheDocument()
+    expect(screen.getAllByRole('combobox')[1]).toBeInTheDocument()
     expect(screen.getByLabelText(/fee.*optional/i)).toBeInTheDocument()
   })
 
   it('to-account only shows accounts with the same currency as source', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    const toAccountSelect = screen.getByRole('combobox', { name: /to account/i })
+    const toAccountSelect = screen.getAllByRole('combobox')[1]
     const options = within(toAccountSelect).getAllByRole('option') as HTMLOptionElement[]
     const valueOptions = options.filter(o => o.value !== '')
     // Account 2 (USD) should appear, account 3 (EUR) should not, account 1 (source) excluded
@@ -103,8 +103,8 @@ describe('TransferTransactionForm', () => {
 
   it('shows fee validation error for negative fee', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
     fireEvent.change(screen.getByLabelText(/fee.*optional/i), { target: { value: '-5' } })
     const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
     fireEvent.submit(form)
@@ -115,8 +115,8 @@ describe('TransferTransactionForm', () => {
 
   it('submits correct transfer payload', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '250' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '250' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
     await waitFor(() => {
@@ -133,8 +133,8 @@ describe('TransferTransactionForm', () => {
 
   it('includes fee line when fee is set', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
     fireEvent.change(screen.getByLabelText(/fee.*optional/i), { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
@@ -179,12 +179,12 @@ describe('TransferTransactionForm', () => {
       ],
     }
     render(<TransferTransactionForm {...defaultProps} initialData={initialData} />)
-    expect(screen.getByLabelText(/^Amount/i)).toHaveValue(75)
+    expect(document.getElementById('amount')).toHaveValue(75)
   })
 
   it('allows changing account', () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    const accountSelect = screen.getByRole('combobox', { name: /^account$/i })
+    const accountSelect = screen.getAllByRole('combobox')[0]
     fireEvent.change(accountSelect, { target: { value: '2' } })
     expect(accountSelect).toHaveValue('2')
   })
@@ -198,8 +198,8 @@ describe('TransferTransactionForm', () => {
 
   it('submits with note in payload', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
     fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'my note' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => {
@@ -280,9 +280,9 @@ describe('TransferTransactionForm', () => {
 
   it('shows account required error when account cleared', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /^account$/i }), { target: { value: '' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: '' } })
     const form = screen.getByRole('button', { name: 'Add' }).closest('form')!
     fireEvent.submit(form)
     await waitFor(() => {
@@ -292,8 +292,8 @@ describe('TransferTransactionForm', () => {
 
   it('submits with zero fee (covers feeTagId empty branch)', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
-    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /to account/i }), { target: { value: '2' } })
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
     // Set fee to 5 first (sets feeTagId), then clear to '0' (clears feeTagId)
     const feeInput = screen.getByLabelText(/fee.*optional/i)
     fireEvent.change(feeInput, { target: { value: '5' } })
@@ -335,7 +335,7 @@ describe('TransferTransactionForm', () => {
     }
 
     render(<TransferTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50))
+    await waitFor(() => expect(document.getElementById('amount')).toHaveValue(50))
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
