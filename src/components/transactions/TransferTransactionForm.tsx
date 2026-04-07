@@ -7,7 +7,8 @@ import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, toAmountIntFrac } from './transactionFormShared'
+import { getStep, getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface TransferTransactionFormProps {
   accounts: AccountOption[]
@@ -99,9 +100,10 @@ export function TransferTransactionForm({
     try {
       const { int: amountInt, frac: amountFrac } = toAmountIntFrac(amount)
       const feeIntFrac = fee ? toAmountIntFrac(fee) : undefined
-      const accountRateData = await currencyRepository.getRateForCurrency(
-        accounts.find(a => a.id.toString() === accountId)!.currency_id
-      )
+      const accountCurrencyId = accounts.find(a => a.id.toString() === accountId)!.currency_id
+      const accountRateData = isDateInPast(datetime)
+        ? await getRateForDate(accountCurrencyId, toDateString(datetime))
+        : await currencyRepository.getRateForCurrency(accountCurrencyId)
 
       const lines: {
         account_id: number

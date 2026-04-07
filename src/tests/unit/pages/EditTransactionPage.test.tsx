@@ -7,6 +7,10 @@ import { LayoutProvider } from '../../../store/LayoutContext'
 import { TestActionBar } from '../../helpers/TestActionBar'
 import type { Transaction } from '../../../types'
 
+vi.mock('../../../services/exchangeRate/historicalRateService', () => ({
+  getRateForDate: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
+}))
+
 // Mock react-router-dom
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {

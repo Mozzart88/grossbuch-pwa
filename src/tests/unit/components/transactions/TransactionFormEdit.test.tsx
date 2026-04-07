@@ -5,6 +5,10 @@ import { TransactionForm } from '../../../../components/transactions/Transaction
 import type { Wallet, Tag, Currency, Account, Transaction } from '../../../../types'
 import { SYSTEM_TAGS } from '../../../../types'
 
+vi.mock('../../../../services/exchangeRate/historicalRateService', () => ({
+  getRateForDate: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
+}))
+
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
   walletRepository: {

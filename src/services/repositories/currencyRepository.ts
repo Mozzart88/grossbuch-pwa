@@ -164,6 +164,24 @@ export const currencyRepository = {
     )
   },
 
+  async getExchangeRateForDate(currencyId: number, date: string): Promise<ExchangeRate | null> {
+    return queryOne<ExchangeRate>(
+      `SELECT * FROM exchange_rate WHERE currency_id = ? AND date(updated_at, 'unixepoch') = ? ORDER BY updated_at DESC LIMIT 1`,
+      [currencyId, date]
+    )
+  },
+
+  async getExchangeRateNearDate(currencyId: number, date: string, maxOffsetDays: number): Promise<ExchangeRate | null> {
+    return queryOne<ExchangeRate>(
+      `SELECT * FROM exchange_rate
+       WHERE currency_id = ?
+         AND date(updated_at, 'unixepoch') BETWEEN date(?, '-' || ? || ' days') AND date(?, '+' || ? || ' days')
+       ORDER BY ABS(julianday(date(updated_at, 'unixepoch')) - julianday(?))
+       LIMIT 1`,
+      [currencyId, date, maxOffsetDays, date, maxOffsetDays, date]
+    )
+  },
+
   async getAllExchangeRates(): Promise<ExchangeRate[]> {
     return querySQL<ExchangeRate>(`
       SELECT er.*
@@ -176,11 +194,19 @@ export const currencyRepository = {
     `)
   },
 
-  async setExchangeRate(currencyId: number, rateInt: number, rateFrac: number): Promise<void> {
-    await execSQL(
-      'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
-      [currencyId, rateInt, rateFrac]
-    )
+  async setExchangeRate(currencyId: number, rateInt: number, rateFrac: number, dateStr?: string): Promise<void> {
+    if (dateStr) {
+      const updatedAt = Math.floor(new Date(dateStr).getTime() / 1000)
+      await execSQL(
+        'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac, updated_at) VALUES (?, ?, ?, ?)',
+        [currencyId, rateInt, rateFrac, updatedAt]
+      )
+    } else {
+      await execSQL(
+        'INSERT INTO exchange_rate (currency_id, rate_int, rate_frac) VALUES (?, ?, ?)',
+        [currencyId, rateInt, rateFrac]
+      )
+    }
   },
 
   /**

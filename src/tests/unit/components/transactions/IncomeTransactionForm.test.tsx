@@ -11,6 +11,10 @@ vi.mock('../../../../services/repositories', () => ({
   transactionRepository: { create: vi.fn(), update: vi.fn() },
 }))
 
+vi.mock('../../../../services/exchangeRate/historicalRateService', () => ({
+  getRateForDate: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
+}))
+
 import {
   tagRepository,
   counterpartyRepository,

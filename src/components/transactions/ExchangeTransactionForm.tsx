@@ -7,7 +7,8 @@ import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
-import { getStep, getPlaceholder, toAmountIntFrac } from './transactionFormShared'
+import { getStep, getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface ExchangeTransactionFormProps {
   accounts: AccountOption[]
@@ -127,19 +128,25 @@ export function ExchangeTransactionForm({
       let toRateIF = { int: 1, frac: 0 }
 
       if (fromCurrency && toCurrency && fromDisplay > 0 && toDisplay > 0) {
-        fromRateIF = await currencyRepository.getRateForCurrency(fromCurrency.currency_id)
-        toRateIF = await currencyRepository.getRateForCurrency(toCurrency.currency_id)
+        const txDateStr = toDateString(datetime)
+        const isPast = isDateInPast(datetime)
+        fromRateIF = isPast
+          ? await getRateForDate(fromCurrency.currency_id, txDateStr)
+          : await currencyRepository.getRateForCurrency(fromCurrency.currency_id)
+        toRateIF = isPast
+          ? await getRateForDate(toCurrency.currency_id, txDateStr)
+          : await currencyRepository.getRateForCurrency(toCurrency.currency_id)
 
         const defaultCurrency = await currencyRepository.findSystem()
         if (defaultCurrency) {
           if (fromCurrency.currency_id === defaultCurrency.id) {
             const rateValue = toDisplay / fromDisplay
             toRateIF = toIntFrac(rateValue)
-            await currencyRepository.setExchangeRate(toCurrency.currency_id, toRateIF.int, toRateIF.frac)
+            await currencyRepository.setExchangeRate(toCurrency.currency_id, toRateIF.int, toRateIF.frac, txDateStr)
           } else if (toCurrency.currency_id === defaultCurrency.id) {
             const rateValue = fromDisplay / toDisplay
             fromRateIF = toIntFrac(rateValue)
-            await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRateIF.int, fromRateIF.frac)
+            await currencyRepository.setExchangeRate(fromCurrency.currency_id, fromRateIF.int, fromRateIF.frac, txDateStr)
           }
         }
       }
