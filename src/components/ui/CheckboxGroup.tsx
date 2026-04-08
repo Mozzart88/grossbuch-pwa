@@ -73,7 +73,7 @@ export function CheckboxGroup({ label, options, selected, onChange }: CheckboxGr
                   type="checkbox"
                   checked={selected.includes(option.value)}
                   onChange={() => toggle(option.value)}
-                  className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700"
+                  className="rounded border-gray-300 dark:border-gray-600 text-primary-600 dark:bg-gray-700"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300 truncate">
                   {option.label}

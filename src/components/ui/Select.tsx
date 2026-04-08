@@ -42,7 +42,7 @@ export function Select({
           border-gray-300 dark:border-gray-600
           focus:outline-none focus:ring-2
           disabled:bg-gray-100 disabled:dark:bg-gray-900 disabled:cursor-not-allowed
-          ${error ? 'border-red-500 focus:ring-red-500' : 'focus:ring-primary-500'}
+          ${error ? 'border-red-500 focus:ring-red-500' : ''}
           ${className}
         `}
         {...props}
