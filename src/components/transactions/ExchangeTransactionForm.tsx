@@ -217,7 +217,6 @@ export function ExchangeTransactionForm({
       {/* Row 1: from amount + from account */}
       <div className="grid grid-cols-2 gap-0 mb-2">
         <Select
-          // label="From"
           value={accountId}
           onChange={(e) => setAccountId(e.target.value)}
           options={accounts.map((a) => ({
@@ -246,7 +245,6 @@ export function ExchangeTransactionForm({
       {/* Row 2: to amount + to account */}
       <div className="grid grid-cols-2 gap-0">
         <Select
-          // label="To"
           value={toAccountId}
           onChange={(e) => setToAccountId(e.target.value)}
           options={accounts
