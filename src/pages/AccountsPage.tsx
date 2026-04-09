@@ -98,7 +98,7 @@ export function AccountsPage() {
     setEditingWallet(null)
   }
 
-  const handleWalletSubmit = async (e: React.FormEvent) => {
+  const handleWalletSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!walletName.trim()) return
 
@@ -156,7 +156,7 @@ export function AccountsPage() {
     setInitialBalance('')
   }
 
-  const handleAddCurrency = async (e: React.FormEvent) => {
+  const handleAddCurrency = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!targetWallet || !selectedCurrencyId) return
 
@@ -244,7 +244,7 @@ export function AccountsPage() {
     setTargetBalance('')
   }
 
-  const handleAdjustBalance = async (e: React.FormEvent) => {
+  const handleAdjustBalance = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!adjustingAccount || !targetBalance.trim()) return
 
@@ -287,7 +287,7 @@ export function AccountsPage() {
     setManualRate('')
   }
 
-  const handleManualRateSubmit = async (e: React.FormEvent) => {
+  const handleManualRateSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!rateCurrencyId || !manualRate.trim()) return
 

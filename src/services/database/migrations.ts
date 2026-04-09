@@ -1442,7 +1442,7 @@ ORDER BY id
 
 export async function runMigrations(): Promise<void> {
   // Check current version
-  let currentVersion = 0
+  let currentVersion: number
 
   try {
     const result = await queryOne<{ value: string }>(

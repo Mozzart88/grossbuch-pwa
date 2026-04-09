@@ -93,7 +93,7 @@ export function BudgetsPage() {
     setEditingBudget(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (tagId === '' || !amount.trim()) return
 

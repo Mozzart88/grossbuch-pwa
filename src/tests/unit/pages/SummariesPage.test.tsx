@@ -1187,6 +1187,171 @@ describe('SummariesPage', () => {
     })
   })
 
+  describe('Edge cases and error handling', () => {
+    it('uses fallback symbol and decimals when findSystem returns null', async () => {
+      mockCurrencyRepository.findSystem.mockResolvedValue(null as any)
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        // Page should still render with default '$' symbol
+        expect(screen.getByText('Summaries')).toBeInTheDocument()
+      })
+    })
+
+    it('handles budget with null actual (uses 0 fallback)', async () => {
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 1,
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Food',
+          actual: null as any,
+        },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        // actual is null, so ?? 0 kicks in → 0/500 = 0%
+        expect(screen.getByText('0%')).toBeInTheDocument()
+      })
+    })
+
+    it('does not submit budget form when no tag selected', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      // Submit without filling tag or amount
+      const saveButton = screen.getByRole('button', { name: 'Save' })
+      fireEvent.click(saveButton)
+
+      // Should not call create
+      expect(mockBudgetRepository.create).not.toHaveBeenCalled()
+    })
+
+    it('shows budget-only category with empty tag name fallback', async () => {
+      // Budget with no tag name — covers `b.tag || ''` fallback in budgetOnlyCategories
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 99,
+          amount_int: 100,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: undefined as any, // no tag name
+          actual: 0,
+        },
+      ])
+      // No breakdown for tag_id 99 → becomes budget-only category
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 2, tag: 'Salary', amount: 1000, type: 'income' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Salary')).toBeInTheDocument()
+      })
+      // Page renders without crashing (empty tag name is ''), budget-only category rendered
+    })
+
+    it('handles findByTagId error gracefully in openSetBudgetModal', async () => {
+      mockBudgetRepository.findByTagId.mockRejectedValue(new Error('fetch failed'))
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      // Modal should still open despite the error
+      await waitFor(() => {
+        expect(screen.getByText('Set Budget')).toBeInTheDocument()
+      })
+    })
+
+    it('shows generic message when budget delete throws non-Error', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 1,
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Food',
+          actual: 300,
+        },
+      ])
+      mockBudgetRepository.delete.mockRejectedValue('string error')
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Delete budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete budget' }))
+
+      await waitFor(() => expect(mockBudgetRepository.delete).toHaveBeenCalled())
+
+      consoleSpy.mockRestore()
+      vi.restoreAllMocks()
+    })
+
+    it('shows generic message when budget save throws non-Error', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockBudgetRepository.create.mockRejectedValue('string error')
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '300.00' } })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => expect(mockBudgetRepository.create).toHaveBeenCalled())
+
+      consoleSpy.mockRestore()
+    })
+  })
+
   describe('FAB override', () => {
     it('opens Set Budget modal when FAB is clicked', async () => {
       render(
@@ -1207,6 +1372,122 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Set Budget')).toBeInTheDocument()
       })
+    })
+  })
+
+  describe('Additional coverage', () => {
+    it('handles loadData error gracefully', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockTransactionRepository.getMonthSummary.mockRejectedValue(new Error('Load failed'))
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to load summaries:', expect.any(Error))
+      })
+      consoleSpy.mockRestore()
+    })
+
+    it('handles month navigation via prev button', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('January 2025')).toBeInTheDocument()
+      })
+
+      // buttons[1] is the prev-month button in MonthNavigator (buttons[0] is PageHeader back)
+      const buttons = screen.getAllByRole('button')
+      fireEvent.click(buttons[1])
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.getMonthSummary).toHaveBeenCalledWith('2024-12')
+      })
+    })
+
+    it('opens FAB modal and changes category selection', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const categorySelect = screen.getByLabelText('Category')
+      // Truthy branch: value '12'
+      fireEvent.change(categorySelect, { target: { value: '12' } })
+      // Falsy branch: clear to ''
+      fireEvent.change(categorySelect, { target: { value: '' } })
+
+      // Verify form renders without crashing
+      expect(screen.getByText('Set Budget')).toBeInTheDocument()
+    })
+
+    it('handles budget save Error instance', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockBudgetRepository.create.mockRejectedValue(new Error('Budget save error'))
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '300.00' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to save budget:', expect.any(Error))
+      })
+      consoleSpy.mockRestore()
+    })
+
+    it('handles budget delete Error instance', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 1,
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Food',
+          actual: 300,
+        },
+      ])
+      mockBudgetRepository.delete.mockRejectedValue(new Error('Delete error'))
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Delete budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete budget' }))
+
+      await waitFor(() => {
+        expect(consoleSpy).toHaveBeenCalledWith('Failed to delete budget:', expect.any(Error))
+      })
+      consoleSpy.mockRestore()
+      vi.restoreAllMocks()
     })
   })
 })

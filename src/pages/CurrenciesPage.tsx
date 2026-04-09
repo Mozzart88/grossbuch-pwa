@@ -61,7 +61,7 @@ export function CurrenciesPage() {
     setEditingCurrency(null)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!code.trim() || !name.trim() || !symbol.trim()) return
 

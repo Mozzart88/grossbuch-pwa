@@ -34,9 +34,10 @@ export function DownloadPage() {
   const refreshFileList = useCallback(async () => {
     const d = await navigator.storage.getDirectory()
     const fileList: OpfsList = []
-    // @ts-expect-error OPFS entries() returns AsyncIterableIterator but TS types are incomplete
     for await (const [name, handle] of d.entries()) {
-      fileList.push({ name, handle })
+      if (handle.kind === 'file') {
+        fileList.push({ name, handle: handle as FileSystemFileHandle })
+      }
     }
     setFiles(fileList)
   }, [])
@@ -106,7 +107,7 @@ export function DownloadPage() {
       refreshFileList()
     } catch (error) {
       console.error('Failed to rename file:', error)
-      throw new Error('Failed to rename file')
+      throw new Error('Failed to rename file', { cause: error })
     }
   }
 
@@ -119,7 +120,7 @@ export function DownloadPage() {
       refreshFileList()
     } catch (error) {
       console.error('Failed to upload:', error)
-      throw new Error('Failed to upload file')
+      throw new Error('Failed to upload file', { cause: error })
     }
   }
 

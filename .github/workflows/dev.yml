@@ -35,11 +35,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
       - name: Build project
         run: npm run build
       - name: Upload Build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-dev-${{ steps.build-version.outputs.current }}
           path: dist
@@ -62,9 +62,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
       - name: Download currnet build
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: build-dev-${{ needs.build.outputs.build-version }}
           path: dist/

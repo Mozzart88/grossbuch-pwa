@@ -7,6 +7,12 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(version)
   },
+  // Vite 8 denies absolute-path public-dir assets (e.g. /dark-favicon.svg?url) by default
+  server: {
+    fs: {
+      strict: false,
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

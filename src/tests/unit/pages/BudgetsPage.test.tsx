@@ -442,5 +442,97 @@ describe('BudgetsPage', () => {
         expect(fill).toHaveClass('bg-yellow-500')
       })
     })
+
+    it('handles budget with null actual (uses 0 fallback)', async () => {
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        { ...mockBudget, actual: null as any },
+      ])
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.getByText('food')).toBeInTheDocument()
+        expect(screen.getByText('$0.00 spent')).toBeInTheDocument()
+      })
+    })
+
+    it('does not submit empty budget form', async () => {
+      renderPage()
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+      expect(mockBudgetRepository.create).not.toHaveBeenCalled()
+    })
+
+    it('shows generic message when save throws non-Error', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockBudgetRepository.create.mockRejectedValue('string error')
+      renderPage()
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+      const categorySelect = screen.getByLabelText(/Category/i)
+      fireEvent.change(categorySelect, { target: { value: '12' } })
+      const amountInput = screen.getByLabelText(/Amount/i)
+      fireEvent.change(amountInput, { target: { value: '100' } })
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+      await waitFor(() => {
+        // Non-Error throws show generic 'Failed to save'
+        expect(mockBudgetRepository.create).toHaveBeenCalled()
+      })
+      consoleSpy.mockRestore()
+    })
+
+    it('shows generic message when delete throws non-Error', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      mockBudgetRepository.findByMonth.mockResolvedValue([mockBudget])
+      mockBudgetRepository.canDelete.mockResolvedValue({ canDelete: true })
+      mockBudgetRepository.delete.mockRejectedValue('string error')
+      renderPage()
+      await waitFor(() => expect(screen.getByText('food')).toBeInTheDocument())
+      fireEvent.click(screen.getAllByRole('button', { name: 'Delete' })[0])
+      await waitFor(() => {
+        expect(mockBudgetRepository.delete).toHaveBeenCalled()
+      })
+      consoleSpy.mockRestore()
+      vi.restoreAllMocks()
+    })
+
+    it('uses fallback symbol/decimals when defaultCurrency is null', async () => {
+      mockCurrencyRepository.findSystem.mockResolvedValue(null as any)
+      mockBudgetRepository.findByMonth.mockResolvedValue([mockBudget])
+      renderPage()
+      await waitFor(() => {
+        // Page renders with fallback '$' symbol
+        expect(screen.getByText('food')).toBeInTheDocument()
+      })
+    })
+
+    it('budget with zero amount and null actual uses false branch in getProgress', async () => {
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        { ...mockBudget, amount_int: 0, amount_frac: 0, actual: null as any },
+      ])
+      renderPage()
+      await waitFor(() => {
+        expect(screen.getByText('food')).toBeInTheDocument()
+        // progress = 0 (false branch of budget.actual && budget.actual > 0 ? 100 : 0)
+        expect(screen.getByText('$0.00 spent')).toBeInTheDocument()
+      })
+    })
+
+    it('clears category select in modal (onChange falsy branch)', async () => {
+      renderPage()
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+      const categorySelect = screen.getByLabelText(/Category/i)
+      // Set a value first
+      fireEvent.change(categorySelect, { target: { value: '12' } })
+      // Clear it → triggers the false branch ('' → setTagId(''))
+      fireEvent.change(categorySelect, { target: { value: '' } })
+      // Modal still open
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
   })
 })

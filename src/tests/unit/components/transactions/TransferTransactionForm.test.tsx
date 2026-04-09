@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { TransferTransactionForm } from '../../../../components/transactions/TransferTransactionForm'
 import type { Transaction } from '../../../../types'
 import { SYSTEM_TAGS } from '../../../../types'
+import { LayoutProvider } from '../../../../store/LayoutContext'
 
 vi.mock('../../../../services/repositories', () => ({
   currencyRepository: { getRateForCurrency: vi.fn() },
@@ -344,6 +345,37 @@ describe('TransferTransactionForm', () => {
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
       expect(mockTransactionRepository.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('useActionBar with LayoutProvider', () => {
+    const renderWithLayout = (props = {}) =>
+      render(
+        <LayoutProvider>
+          <TransferTransactionForm {...defaultProps} useActionBar={true} {...props} />
+        </LayoutProvider>
+      )
+
+    it('sets up action bar (covers branches [5][1],[6][1],[7][1] - Submit label)', () => {
+      // useActionBar=true + LayoutProvider → setActionBarConfig defined → enters false branch of if(!useActionBar||!config)
+      // No initialData → 'Submit' cond-expr branch[7][1]
+      renderWithLayout()
+      // Action bar buttons replace the form buttons
+      expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument()
+    })
+
+    it('sets Update label with initialData (branch[7][0])', () => {
+      const initialData: Transaction = {
+        id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+        timestamp: 1704803400,
+        lines: [
+          { id: new Uint8Array(8), trx_id: new Uint8Array([1,2,3,4,5,6,7,8]), account_id: 1, tag_id: SYSTEM_TAGS.TRANSFER, sign: '-', amount_int: 50, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+          { id: new Uint8Array(8), trx_id: new Uint8Array([1,2,3,4,5,6,7,8]), account_id: 2, tag_id: SYSTEM_TAGS.TRANSFER, sign: '+', amount_int: 50, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+        ],
+      }
+      // initialData → 'Update' cond-expr branch[7][0]
+      renderWithLayout({ initialData })
+      expect(screen.queryByRole('button', { name: 'Update' })).not.toBeInTheDocument()
     })
   })
 })

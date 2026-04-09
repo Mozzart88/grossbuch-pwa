@@ -19,8 +19,8 @@ export function PinSetupPage() {
   const { setupPin, error: authError } = useAuth()
 
   const handleShareSubmit = () => {
-    let uuid: string | null = null
-    let pub: string | null = null
+    let uuid: string | null
+    let pub: string | null
     try {
       const url = new URL(shareLink)
       if (url.pathname !== '/share') {

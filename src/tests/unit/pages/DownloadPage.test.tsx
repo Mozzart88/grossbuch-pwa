@@ -43,6 +43,7 @@ const mockShowToast = vi.fn()
 
 // Mock FileSystemFileHandle
 const createMockFileHandle = (name: string, content = 'test content') => ({
+  kind: 'file' as const,
   name,
   getFile: vi.fn().mockResolvedValue(new File([content], name)),
   remove: vi.fn().mockResolvedValue(undefined),
@@ -247,6 +248,7 @@ describe('DownloadPage', () => {
 
     it('deletes file using directory.removeEntry() as fallback', async () => {
       const mockFileHandle = {
+        kind: 'file' as const,
         name: 'test.db',
         getFile: vi.fn().mockResolvedValue(new File(['content'], 'test.db')),
         // No 'remove' method - simulating older browser
@@ -297,6 +299,21 @@ describe('DownloadPage', () => {
     await waitFor(() => {
       expect(mockGetDirectory).toHaveBeenCalled()
     })
+  })
+
+  it('skips non-file entries in OPFS directory listing (branch[0][1])', async () => {
+    const mockFileHandle = createMockFileHandle('test.db')
+    const mockDirEntry = { kind: 'directory' as const, name: 'subdir' }
+    mockGetDirectory.mockResolvedValue(
+      createMockDirectoryHandle([
+        ['test.db', mockFileHandle],
+        ['subdir', mockDirEntry],
+      ])
+    )
+    renderWithRouter()
+    await waitFor(() => expect(screen.getByText('test.db')).toBeInTheDocument())
+    // Directory entry should not appear as a file card
+    expect(screen.queryByText('subdir')).not.toBeInTheDocument()
   })
 
   describe('Download Decrypted functionality', () => {
@@ -595,6 +612,67 @@ describe('DownloadPage', () => {
       await waitFor(() => {
         expect(screen.queryByText('Upload File')).not.toBeInTheDocument()
       })
+    })
+
+    it('fileSystemFallback: resolves with selected file (branch[5][0], branch[6][1])', async () => {
+      mockGetDirectory.mockResolvedValue(createMockDirectoryHandle([]))
+      // Remove showOpenFilePicker so fallback path is taken
+      const orig = (window as any).showOpenFilePicker
+      delete (window as any).showOpenFilePicker
+
+      const mockFile = new File(['content'], 'fallback.db')
+      const origCreate = document.createElement.bind(document)
+      vi.spyOn(document, 'createElement').mockImplementation((tag: string, ...args: any[]) => {
+        const el = origCreate(tag, ...args)
+        if (tag === 'input') {
+          // Override click to immediately fire onchange with a file
+          el.click = () => {
+            Object.defineProperty(el, 'files', { value: [mockFile], configurable: true })
+            ;(el as any).onchange?.({})
+          }
+        }
+        return el
+      })
+
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Upload DB file')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Upload DB file'))
+
+      // fileSystemFallback resolves with file → modal opens
+      await waitFor(() => expect(screen.getByText('Upload File')).toBeInTheDocument())
+
+      vi.restoreAllMocks()
+      if (orig) (window as any).showOpenFilePicker = orig
+    })
+
+    it('fileSystemFallback: rejects with "file not selected" — caught silently (branch[5][1], branch[7][1])', async () => {
+      mockGetDirectory.mockResolvedValue(createMockDirectoryHandle([]))
+      const orig = (window as any).showOpenFilePicker
+      delete (window as any).showOpenFilePicker
+
+      const origCreate = document.createElement.bind(document)
+      vi.spyOn(document, 'createElement').mockImplementation((tag: string, ...args: any[]) => {
+        const el = origCreate(tag, ...args)
+        if (tag === 'input') {
+          // Override click to immediately fire onchange with no files
+          el.click = () => {
+            Object.defineProperty(el, 'files', { value: [], configurable: true })
+            ;(el as any).onchange?.({})
+          }
+        }
+        return el
+      })
+
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Upload DB file')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('Upload DB file'))
+
+      // Rejection is caught silently — no toast, no modal
+      await waitFor(() => expect(screen.queryByText('Upload File')).not.toBeInTheDocument())
+      expect(mockShowToast).not.toHaveBeenCalled()
+
+      vi.restoreAllMocks()
+      if (orig) (window as any).showOpenFilePicker = orig
     })
   })
 })

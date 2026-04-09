@@ -392,4 +392,78 @@ describe('ExportPage', () => {
       })
     })
   })
+
+  describe('branch coverage', () => {
+    it('skips wallet without accounts property (branch[1][1])', async () => {
+      // Wallet without accounts → if(w.accounts) false → branch[1][1]
+      const walletNoAccounts = [{ id: 99, name: 'Empty Wallet', color: '#000' }] as any[]
+      vi.mocked(walletRepository.findAll).mockResolvedValue(walletNoAccounts)
+      renderPage()
+      // Open the Wallets group to see options
+      await waitFor(() => expect(screen.getByRole('button', { name: /Wallets/i })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: /Wallets/i }))
+      await waitFor(() => expect(screen.getByLabelText('Empty Wallet')).toBeInTheDocument())
+    })
+
+    it('buildFilters with selected wallet/account/tag/counterparty IDs (branches [4][0],[5][0],[6][0],[7][0])', async () => {
+      const mockTags = [{ id: 10, name: 'Food', sort_order: 1, is_income: false, is_system: false }]
+      const mockCps = [{ id: 20, name: 'Amazon', note: null, tag_ids: [], sort_order: 1 }]
+      vi.mocked(tagRepository.findAll).mockResolvedValue(mockTags as any)
+      vi.mocked(counterpartyRepository.findAll).mockResolvedValue(mockCps as any)
+
+      renderPage()
+      await waitFor(() => expect(screen.getByRole('button', { name: /Wallets/i })).toBeInTheDocument())
+
+      // Open and select wallet
+      fireEvent.click(screen.getByRole('button', { name: /Wallets/i }))
+      await waitFor(() => expect(screen.getByLabelText('Cash')).toBeInTheDocument())
+      fireEvent.click(screen.getByLabelText('Cash'))
+
+      // Open and select account (label format is "WalletName - Currency")
+      fireEvent.click(screen.getByRole('button', { name: /Accounts/i }))
+      await waitFor(() => expect(screen.getByLabelText('Cash - USD')).toBeInTheDocument())
+      fireEvent.click(screen.getByLabelText('Cash - USD'))
+
+      // Open and select tag
+      fireEvent.click(screen.getByRole('button', { name: /Tags/i }))
+      await waitFor(() => expect(screen.getByLabelText('Food')).toBeInTheDocument())
+      fireEvent.click(screen.getByLabelText('Food'))
+
+      // Open and select counterparty
+      fireEvent.click(screen.getByRole('button', { name: /Counterparties/i }))
+      await waitFor(() => expect(screen.getByLabelText('Amazon')).toBeInTheDocument())
+      fireEvent.click(screen.getByLabelText('Amazon'))
+
+      // Trigger export
+      fireEvent.click(screen.getByRole('button', { name: /Export to CSV/i }))
+      await waitFor(() => expect(screen.getByText('Confirm Export')).toBeInTheDocument())
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+      fireEvent.click(screen.getByRole('button', { name: /Confirm/i }))
+
+      await waitFor(() => {
+        expect(mockExportTransactionsToCSV).toHaveBeenCalledWith(
+          expect.objectContaining({
+            walletIds: expect.arrayContaining([1]),
+            tagIds: expect.arrayContaining([10]),
+            counterpartyIds: expect.arrayContaining([20]),
+          })
+        )
+      })
+    })
+
+    it('shows Exporting... while export runs (branch[11][0])', async () => {
+      mockExportTransactionsToCSV.mockReturnValue(new Promise(() => {})) // never resolves
+      renderPage()
+      await waitFor(() => expect(screen.getByRole('button', { name: /Export to CSV/i })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: /Export to CSV/i }))
+      await waitFor(() => expect(screen.getByText('Confirm Export')).toBeInTheDocument())
+      const pinInput = screen.getByLabelText(/Enter PIN/i)
+      fireEvent.change(pinInput, { target: { value: '123456' } })
+      fireEvent.click(screen.getByRole('button', { name: /Confirm/i }))
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Exporting...' })).toBeInTheDocument()
+      })
+    })
+  })
 })
