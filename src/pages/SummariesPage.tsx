@@ -230,7 +230,7 @@ export function SummariesPage() {
     setBudgetPeriod(getCurrentMonth())
   }
 
-  const handleBudgetSubmit = async (e: React.FormEvent) => {
+  const handleBudgetSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (selectedTagId === '' || !budgetAmount.trim()) return
 

@@ -355,7 +355,7 @@ export function ExpenseTransactionForm({
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)

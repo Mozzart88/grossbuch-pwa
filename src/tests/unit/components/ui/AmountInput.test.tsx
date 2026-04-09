@@ -293,7 +293,7 @@ describe('AmountInput', () => {
   describe('form submit integration', () => {
     it('resolves valid expression and calls onChange on form submit', async () => {
       const onChange = vi.fn()
-      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault())
+      const onSubmit = vi.fn((e: React.SyntheticEvent<HTMLFormElement>) => e.preventDefault())
       render(
         <form onSubmit={onSubmit}>
           <AmountInput value="10+5" onChange={onChange} />
@@ -307,7 +307,7 @@ describe('AmountInput', () => {
     })
 
     it('prevents form submit and sets validity for invalid expression', async () => {
-      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault())
+      const onSubmit = vi.fn((e: React.SyntheticEvent<HTMLFormElement>) => e.preventDefault())
       const { container } = render(
         <form onSubmit={onSubmit}>
           <AmountInput value="10+" onChange={() => {}} />
@@ -337,7 +337,7 @@ describe('AmountInput', () => {
 
     it('does not interfere with plain number values on form submit', async () => {
       const onChange = vi.fn()
-      const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault())
+      const onSubmit = vi.fn((e: React.SyntheticEvent<HTMLFormElement>) => e.preventDefault())
       render(
         <form onSubmit={onSubmit}>
           <AmountInput value="42" onChange={onChange} />
