@@ -427,4 +427,63 @@ describe('CurrenciesPage', () => {
 
     expect(mockCurrencyRepository.create).not.toHaveBeenCalled()
   })
+
+  it('updates currency on edit form submit', async () => {
+    renderWithRouter()
+    await waitFor(() => expect(screen.getAllByText('Edit').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByText('Edit')[0])
+    await waitFor(() => expect(screen.getByDisplayValue('USD')).toBeInTheDocument())
+    // Change the name
+    const nameInput = screen.getByPlaceholderText('e.g., Bitcoin, British Pound')
+    fireEvent.change(nameInput, { target: { value: 'US Dollar Updated' } })
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => {
+      expect(mockCurrencyRepository.update).toHaveBeenCalledWith(
+        1, expect.objectContaining({ name: 'US Dollar Updated' })
+      )
+    })
+  })
+
+  it('shows generic message when save throws non-Error', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+    mockCurrencyRepository.create.mockRejectedValue('string error')
+    renderWithRouter()
+    await waitFor(() => expect(screen.getByText('Add')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Add'))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    fireEvent.change(screen.getByPlaceholderText('e.g., BTC, GBP'), { target: { value: 'GBP' } })
+    fireEvent.change(screen.getByPlaceholderText('e.g., Bitcoin, British Pound'), { target: { value: 'British Pound' } })
+    fireEvent.change(screen.getByPlaceholderText('e.g., B, L'), { target: { value: '£' } })
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to save', 'error')
+    })
+    consoleSpy.mockRestore()
+  })
+
+  it('shows generic message when delete throws non-Error', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockCurrencyRepository.delete.mockRejectedValue('string error')
+    renderWithRouter()
+    await waitFor(() => expect(screen.getAllByText('Delete').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByText('Delete')[0])
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to delete', 'error')
+    })
+    consoleSpy.mockRestore()
+    vi.restoreAllMocks()
+  })
+
+  it('shows generic message when set system throws non-Error', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+    mockCurrencyRepository.setSystem.mockRejectedValue('string error')
+    renderWithRouter()
+    await waitFor(() => expect(screen.getAllByText('Set Default').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByText('Set Default')[0])
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to set system', 'error')
+    })
+    consoleSpy.mockRestore()
+  })
 })

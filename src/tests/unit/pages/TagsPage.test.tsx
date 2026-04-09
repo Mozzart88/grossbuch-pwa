@@ -211,4 +211,71 @@ describe('TagsPage', () => {
         })
         consoleSpy.mockRestore()
     })
+
+    it('does not submit empty tag name', async () => {
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+        await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        expect(tagRepository.create).not.toHaveBeenCalled()
+    })
+
+    it('creates income-type tag correctly', async () => {
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+        await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+        const nameInput = screen.getByPlaceholderText('e.g., Groceries')
+        fireEvent.change(nameInput, { target: { value: 'Freelance' } })
+        // Switch to income type
+        fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await waitFor(() => {
+            expect(tagRepository.create).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    name: 'Freelance',
+                    parent_ids: expect.arrayContaining([SYSTEM_TAGS.INCOME]),
+                })
+            )
+        })
+    })
+
+    it('shows generic message when save throws non-Error', async () => {
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+        vi.mocked(tagRepository.create).mockRejectedValue('string error')
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+        await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+        const nameInput = screen.getByPlaceholderText('e.g., Groceries')
+        fireEvent.change(nameInput, { target: { value: 'NewTag' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+        await waitFor(() => {
+            expect(tagRepository.create).toHaveBeenCalled()
+        })
+        consoleSpy.mockRestore()
+    })
+
+    it('shows generic message when delete throws non-Error', async () => {
+        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+        mockConfirm.mockReturnValue(true)
+        vi.mocked(tagRepository.canDelete).mockResolvedValue({ canDelete: true })
+        vi.mocked(tagRepository.delete).mockRejectedValue('string error')
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+        fireEvent.click(screen.getAllByText('Delete')[0])
+        await waitFor(() => expect(tagRepository.delete).toHaveBeenCalled())
+        consoleSpy.mockRestore()
+    })
+
+    it('does not delete when confirm is cancelled', async () => {
+        mockConfirm.mockReturnValue(false)
+        vi.mocked(tagRepository.canDelete).mockResolvedValue({ canDelete: true })
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+        fireEvent.click(screen.getAllByText('Delete')[0])
+        await waitFor(() => expect(tagRepository.canDelete).toHaveBeenCalled())
+        expect(tagRepository.delete).not.toHaveBeenCalled()
+    })
 })

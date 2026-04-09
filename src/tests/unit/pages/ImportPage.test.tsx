@@ -489,4 +489,90 @@ describe('ImportPage', () => {
       })
     })
   })
+
+  describe('hidden input onChange edge cases', () => {
+    it('does nothing when onChange fires with no files (branch[6][1])', async () => {
+      renderPage()
+      const hiddenInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      // Fire change with no files (files is empty/null) → if(f) is false → branch[6][1]
+      Object.defineProperty(hiddenInput, 'files', { value: { length: 0 }, writable: false, configurable: true })
+      fireEvent.change(hiddenInput)
+      // File display should not appear
+      expect(screen.queryByText(/data rows/)).not.toBeInTheDocument()
+    })
+
+    it('shows Importing... and spinner while import runs (branch[9][0], branch[10][1])', async () => {
+      // Make import take forever so importing=true persists
+      mockImportTransactionsFromCSV.mockReturnValue(new Promise(() => {}))
+      renderPage()
+      await selectFile()
+      fireEvent.click(screen.getByRole('button', { name: /^Import$/i }))
+      await submitPin()
+      await waitFor(() => {
+        // branch[9][0]: importing=true → 'Importing...' text
+        expect(screen.getByRole('button', { name: 'Importing...' })).toBeInTheDocument()
+        // branch[10][1]: {importing && <Spinner>} → spinner visible
+        expect(document.querySelector('.animate-spin')).toBeTruthy()
+      })
+    })
+  })
+
+  describe('handleFileSelect (Select CSV File button)', () => {
+    it('selects file via showOpenFilePicker when available', async () => {
+      const mockFile = createMockFile('header\nrow1\nrow2', 'picked.csv')
+      const mockHandle = { getFile: vi.fn().mockResolvedValue(mockFile) }
+      const mockShowOpenFilePicker = vi.fn().mockResolvedValue([mockHandle])
+      Object.defineProperty(window, 'showOpenFilePicker', {
+        value: mockShowOpenFilePicker,
+        writable: true,
+        configurable: true,
+      })
+
+      renderPage()
+      const selectButton = screen.getByRole('button', { name: 'Select CSV File' })
+      fireEvent.click(selectButton)
+
+      await waitFor(() => {
+        expect(screen.getByText('picked.csv')).toBeInTheDocument()
+      })
+
+      delete (window as any).showOpenFilePicker
+    })
+
+    it('falls back to input element when showOpenFilePicker unavailable', async () => {
+      // Ensure showOpenFilePicker is not available
+      const originalPicker = (window as any).showOpenFilePicker
+      delete (window as any).showOpenFilePicker
+
+      renderPage()
+      const selectButton = screen.getByRole('button', { name: 'Select CSV File' })
+
+      // Click triggers input.click() internally - just verify no error thrown
+      // The input click doesn't do anything in jsdom without a real file dialog
+      fireEvent.click(selectButton)
+
+      // Restore
+      if (originalPicker) (window as any).showOpenFilePicker = originalPicker
+    })
+
+    it('handles file picker cancellation gracefully (non-standard error)', async () => {
+      const mockShowOpenFilePicker = vi.fn().mockRejectedValue(new DOMException('User cancelled', 'AbortError'))
+      Object.defineProperty(window, 'showOpenFilePicker', {
+        value: mockShowOpenFilePicker,
+        writable: true,
+        configurable: true,
+      })
+
+      renderPage()
+      const selectButton = screen.getByRole('button', { name: 'Select CSV File' })
+      fireEvent.click(selectButton)
+
+      // No toast shown for cancellation (AbortError is an Error, not 'file not selected')
+      await waitFor(() => {
+        expect(mockShowOpenFilePicker).toHaveBeenCalled()
+      })
+
+      delete (window as any).showOpenFilePicker
+    })
+  })
 })

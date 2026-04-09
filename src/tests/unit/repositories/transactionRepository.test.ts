@@ -1637,4 +1637,249 @@ describe('transactionRepository', () => {
       )
     })
   })
+
+  describe('create with note', () => {
+    it('inserts note when note is provided', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ id: mockId() })
+        .mockResolvedValueOnce({ id: mockId2() })
+        .mockResolvedValueOnce(sampleLine)
+        .mockResolvedValueOnce({ id: mockId(), timestamp: 1704803400 })
+      mockQuerySQL.mockResolvedValue([sampleLine])
+
+      await transactionRepository.create({
+        note: 'test note',
+        lines: [{ account_id: 1, tag_id: 10, sign: '-', amount_int: 50, amount_frac: 0, rate_int: 1, rate_frac: 0 }],
+      })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_note'),
+        expect.arrayContaining(['test note'])
+      )
+    })
+  })
+
+  describe('updateLine with frac fields', () => {
+    it('updates amount_frac', async () => {
+      mockQueryOne.mockResolvedValue(sampleLine)
+
+      await transactionRepository.updateLine(mockId(), { amount_frac: 500000000000000000 })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('amount_frac = ?'),
+        expect.arrayContaining([500000000000000000])
+      )
+    })
+
+    it('updates rate_frac', async () => {
+      mockQueryOne.mockResolvedValue(sampleLine)
+
+      await transactionRepository.updateLine(mockId(), { rate_frac: 250000000000000000 })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('rate_frac = ?'),
+        expect.arrayContaining([250000000000000000])
+      )
+    })
+  })
+
+  describe('findAllForExportDetailed', () => {
+    it('returns all rows with no filters', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({})
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('SELECT')
+      expect(params).toEqual([])
+    })
+
+    it('applies startDate filter', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({ startDate: '2025-01-01' })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('t.timestamp >=')
+      expect(params).toHaveLength(1)
+    })
+
+    it('applies endDate filter', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({ endDate: '2025-01-31' })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('t.timestamp <=')
+      expect(params).toHaveLength(1)
+    })
+
+    it('applies walletIds filter', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({ walletIds: [1, 2] })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('w.id IN')
+      expect(params).toEqual([1, 2])
+    })
+
+    it('applies accountIds filter', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({ accountIds: [3] })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('tb.account_id IN')
+      expect(params).toEqual([3])
+    })
+
+    it('applies tagIds filter', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({ tagIds: [10, 11] })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('tb.tag_id IN')
+      expect(params).toEqual([10, 11])
+    })
+
+    it('applies counterpartyIds filter', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({ counterpartyIds: [5] })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('t2c.counterparty_id IN')
+      expect(params).toEqual([5])
+    })
+
+    it('combines multiple filters', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findAllForExportDetailed({
+        startDate: '2025-01-01',
+        endDate: '2025-01-31',
+        walletIds: [1],
+      })
+
+      const [sql, params] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('WHERE')
+      expect(params).toHaveLength(3)
+    })
+  })
+
+  describe('existsByTrxId', () => {
+    it('returns true when transaction exists', async () => {
+      mockQueryOne.mockResolvedValue({ count: 1 })
+
+      const result = await transactionRepository.existsByTrxId(mockId())
+
+      expect(result).toBe(true)
+    })
+
+    it('returns false when transaction does not exist', async () => {
+      mockQueryOne.mockResolvedValue({ count: 0 })
+
+      const result = await transactionRepository.existsByTrxId(mockId())
+
+      expect(result).toBe(false)
+    })
+
+    it('returns false when query returns null', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await transactionRepository.existsByTrxId(mockId())
+
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('createWithId', () => {
+    it('inserts transaction with provided id and timestamp', async () => {
+      await transactionRepository.createWithId(mockId(), 1704803400)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx'),
+        [mockId(), 1704803400]
+      )
+    })
+  })
+
+  describe('addImportLine', () => {
+    it('inserts line with provided values', async () => {
+      const line: TransactionLineInput = {
+        account_id: 1,
+        tag_id: 10,
+        sign: '-',
+        amount_int: 50,
+        amount_frac: 0,
+        rate_int: 1,
+        rate_frac: 0,
+      }
+
+      await transactionRepository.addImportLine(mockId(), line)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_base'),
+        expect.arrayContaining([1, 10, '-', 50])
+      )
+    })
+
+    it('defaults rate values to 0 when not provided', async () => {
+      const line: TransactionLineInput = {
+        account_id: 1,
+        tag_id: 10,
+        sign: '+',
+        amount_int: 100,
+        amount_frac: 0,
+      }
+
+      await transactionRepository.addImportLine(mockId(), line)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO trx_base'),
+        expect.arrayContaining([0, 0])
+      )
+    })
+  })
+
+  describe('getAccountTransactionsAfterMonth', () => {
+    it('returns net sum of transactions after given month', async () => {
+      mockQueryOne.mockResolvedValue({ net: 250 })
+
+      const result = await transactionRepository.getAccountTransactionsAfterMonth(1, '2025-01')
+
+      expect(result).toBe(250)
+    })
+
+    it('returns 0 when no transactions after month', async () => {
+      mockQueryOne.mockResolvedValue({ net: 0 })
+
+      const result = await transactionRepository.getAccountTransactionsAfterMonth(1, '2025-01')
+
+      expect(result).toBe(0)
+    })
+
+    it('returns 0 when query returns null', async () => {
+      mockQueryOne.mockResolvedValue(null)
+
+      const result = await transactionRepository.getAccountTransactionsAfterMonth(1, '2025-01')
+
+      expect(result).toBe(0)
+    })
+
+    it('passes correct timestamp for start of next month', async () => {
+      mockQueryOne.mockResolvedValue({ net: 0 })
+
+      await transactionRepository.getAccountTransactionsAfterMonth(1, '2025-01')
+
+      // 2025-02-01 00:00:00 UTC
+      const expectedTs = Math.floor(new Date(2025, 1, 1).getTime() / 1000)
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining('t.timestamp >='),
+        [expectedTs, 1]
+      )
+    })
+  })
 })

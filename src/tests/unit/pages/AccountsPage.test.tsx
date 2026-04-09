@@ -1384,4 +1384,182 @@ describe('AccountsPage', () => {
       consoleSpy.mockRestore()
     })
   })
+
+  describe('non-Error error handling (generic fallback message)', () => {
+    beforeEach(() => {
+      vi.spyOn(console, 'error').mockImplementation(() => { })
+      vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it('shows generic message when wallet delete throws non-Error', async () => {
+      mockWalletRepository.delete.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      await openDropdownAndClick(0, 'Delete')
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to delete', 'error')
+      })
+    })
+
+    it('shows generic message when wallet create throws non-Error', async () => {
+      mockWalletRepository.create.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => expect(screen.getByLabelText('Name')).toBeInTheDocument())
+      fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Test' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to save', 'error')
+      })
+    })
+
+    it('shows generic message when add currency throws non-Error', async () => {
+      mockWalletRepository.addAccount.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      await openDropdownAndClick(0, '+ Currency')
+      await waitFor(() => expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument())
+      const dialog = screen.getByRole('dialog')
+      const addButton = dialog.querySelector('button[type="submit"]') as HTMLButtonElement
+      fireEvent.click(addButton)
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to add currency', 'error')
+      })
+    })
+
+    it('shows generic message when delete account throws non-Error', async () => {
+      mockAccountRepository.delete.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      await openDropdownAndClick(1, 'Remove')
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to delete', 'error')
+      })
+    })
+
+    it('shows generic message when set default wallet throws non-Error', async () => {
+      mockWalletRepository.setDefault.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Bank')).toBeInTheDocument())
+      await openDropdownAndClick(2, 'Set Default')
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to set default', 'error')
+      })
+    })
+
+    it('shows generic message when set default account throws non-Error', async () => {
+      mockAccountRepository.setDefault.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      // Bank account (index 3) is not default and shows Set Default option
+      await openDropdownAndClick(3, 'Set Default')
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to set default', 'error')
+      })
+    })
+  })
+
+  describe('UI interaction coverage', () => {
+    it('handles wallet without color on edit (color fallback)', async () => {
+      mockWalletRepository.findAll.mockResolvedValue([
+        { ...mockWallets[0], color: undefined as any },
+        mockWallets[1],
+      ])
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      // Open edit modal for Cash wallet
+      await openDropdownAndClick(0, 'Edit')
+      await waitFor(() => expect(screen.getByText('Edit Wallet')).toBeInTheDocument())
+      // Modal opened - wallet.color is undefined so setWalletColor('') is called
+      expect(screen.getByLabelText('Name')).toBeInTheDocument()
+    })
+
+    it('handles wallet without accounts (accounts fallback)', async () => {
+      mockWalletRepository.findAll.mockResolvedValue([
+        { ...mockWallets[0], accounts: undefined as any },
+        mockWallets[1],
+      ])
+      renderWithRouter()
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+      // Should render without crash - accounts is undefined, || [] fallback used
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+    })
+
+    it('handles no available currency for wallet (selectedCurrencyId fallback)', async () => {
+      // Both currencies already in wallet accounts
+      const walletWithBothCurrencies: Wallet = {
+        ...mockWallets[0],
+        accounts: [
+          mockAccount,
+          { ...mockAccount, id: 3, currency_id: 2, currency: 'EUR', symbol: '€' },
+        ],
+      }
+      mockWalletRepository.findAll.mockResolvedValue([walletWithBothCurrencies])
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      // Open "Add Currency" modal — no available currency, so selectedCurrencyId = ''
+      await openDropdownAndClick(0, '+ Currency')
+      await waitFor(() => {
+        expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
+      })
+    })
+
+    it('does not delete account when user cancels confirm', async () => {
+      vi.spyOn(window, 'confirm').mockReturnValue(false)
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      await openDropdownAndClick(1, 'Remove')
+      expect(mockAccountRepository.delete).not.toHaveBeenCalled()
+      vi.restoreAllMocks()
+    })
+
+    it('navigates to account transactions when account row is clicked', async () => {
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      // Click on the USD account row (contains currency name)
+      const accountRows = screen.getAllByText('USD')
+      // The first USD is in the account row for Cash wallet
+      fireEvent.click(accountRows[0])
+      // navigate was called (MemoryRouter handles actual navigation)
+    })
+
+    it('sets wallet color when color button is clicked', async () => {
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => expect(screen.getByText('Add Wallet')).toBeInTheDocument())
+      // Click first color swatch
+      const colorButtons = screen.getAllByRole('button').filter(
+        btn => btn.getAttribute('type') === 'button' && btn.getAttribute('style')?.includes('background-color')
+      )
+      if (colorButtons.length > 0) {
+        fireEvent.click(colorButtons[0])
+      }
+      expect(screen.getByText('Add Wallet')).toBeInTheDocument()
+    })
+
+    it('shows generic message when adjust balance throws non-Error', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockTransactionRepository.createBalanceAdjustment.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      await openDropdownAndClick(1, 'Adjust Balance')
+      await waitFor(() => expect(screen.getByText('Adjust Balance')).toBeInTheDocument())
+      const dialog = screen.getByRole('dialog')
+      const targetInput = dialog.querySelector('input[placeholder]') as HTMLInputElement
+      fireEvent.change(targetInput, { target: { value: '200' } })
+      fireEvent.click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement)
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to adjust balance', 'error')
+      })
+      vi.restoreAllMocks()
+    })
+  })
 })

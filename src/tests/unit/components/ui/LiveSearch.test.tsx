@@ -623,4 +623,335 @@ describe('LiveSearch', () => {
       expect(screen.getByRole('combobox')).toHaveValue('')
     })
   })
+
+  describe('getDisplayValue prop', () => {
+    it('shows display value in input when option is selected', () => {
+      render(
+        <LiveSearch
+          options={[{ value: '1', label: 'USD - United States Dollar' }]}
+          value="1"
+          onChange={vi.fn()}
+          getDisplayValue={(opt) => opt.label.split(' - ')[0]}
+        />
+      )
+      expect(screen.getByRole('combobox')).toHaveValue('USD')
+    })
+
+    it('shows full label in dropdown even with getDisplayValue set', async () => {
+      render(
+        <LiveSearch
+          options={[
+            { value: '1', label: 'USD - United States Dollar' },
+            { value: '2', label: 'EUR - Euro' },
+          ]}
+          value="1"
+          onChange={vi.fn()}
+          getDisplayValue={(opt) => opt.label.split(' - ')[0]}
+        />
+      )
+      fireEvent.focus(screen.getByRole('combobox'))
+      await waitFor(() => {
+        expect(screen.getByRole('option', { name: 'USD - United States Dollar' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: 'EUR - Euro' })).toBeInTheDocument()
+      })
+    })
+
+    it('uses getDisplayValue when selecting via click', async () => {
+      const onChange = vi.fn()
+      render(
+        <LiveSearch
+          options={[{ value: '2', label: 'EUR - Euro' }]}
+          value=""
+          onChange={onChange}
+          getDisplayValue={(opt) => opt.label.split(' - ')[0]}
+        />
+      )
+      fireEvent.focus(screen.getByRole('combobox'))
+      await waitFor(() => expect(screen.getByRole('option', { name: 'EUR - Euro' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: 'EUR - Euro' }))
+      expect(onChange).toHaveBeenCalledWith('2', 'EUR - Euro')
+    })
+
+    it('uses getDisplayValue when committing via Tab', async () => {
+      const onChange = vi.fn()
+      render(
+        <LiveSearch
+          options={[{ value: '1', label: 'Option One' }]}
+          value=""
+          onChange={onChange}
+          getDisplayValue={(opt) => opt.label.split(' ')[0]}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'Option One' } })
+      fireEvent.keyDown(input, { key: 'Tab' })
+      expect(onChange).toHaveBeenCalledWith('1', 'Option One')
+    })
+
+    it('restores display value on Escape when option is selected', async () => {
+      render(
+        <LiveSearch
+          options={[{ value: '1', label: 'USD - United States Dollar' }]}
+          value="1"
+          onChange={vi.fn()}
+          getDisplayValue={(opt) => opt.label.split(' - ')[0]}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'something' } })
+      fireEvent.keyDown(input, { key: 'Escape' })
+      await waitFor(() => expect(input).toHaveValue('USD'))
+    })
+  })
+
+  describe('isShowingSelectedValue — all options shown when input matches selection', () => {
+    it('shows all options (not filtered) when focused with selected value', async () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value="1"
+          onChange={vi.fn()}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      expect(input).toHaveValue('Option One')
+      fireEvent.focus(input)
+      await waitFor(() => {
+        // All three options visible even though input has "Option One"
+        expect(screen.getByRole('option', { name: 'Option One' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: 'Option Two' })).toBeInTheDocument()
+        expect(screen.getByRole('option', { name: 'Option Three' })).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('commitValue edge cases', () => {
+    it('calls onCreateNew when Tab pressed with no exact match', async () => {
+      const onCreateNew = vi.fn()
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+          onCreateNew={onCreateNew}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'Brand New' } })
+      fireEvent.keyDown(input, { key: 'Tab' })
+      expect(onCreateNew).toHaveBeenCalledWith('Brand New')
+    })
+
+    it('clears selection when Tab pressed with empty input', async () => {
+      const onChange = vi.fn()
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value="1"
+          onChange={onChange}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: '' } })
+      fireEvent.keyDown(input, { key: 'Tab' })
+      expect(onChange).toHaveBeenCalledWith('', '')
+    })
+  })
+
+  describe('keyboard navigation edge cases', () => {
+    it('ArrowDown opens dropdown when closed', async () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      // Don't focus (so dropdown stays closed), then press ArrowDown
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+    })
+
+    it('ArrowUp wraps to last option', async () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      // ArrowUp from first option (index 0) wraps to last
+      fireEvent.keyDown(input, { key: 'ArrowUp' })
+      await waitFor(() => {
+        const options = screen.getAllByRole('option')
+        expect(options[options.length - 1]).toHaveAttribute('aria-selected', 'true')
+      })
+    })
+
+    it('Enter when dropdown closed does nothing', () => {
+      const onChange = vi.fn()
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={onChange}
+        />
+      )
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' })
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('Enter on create option calls handleCreateNew', async () => {
+      const onCreateNew = vi.fn()
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+          onCreateNew={onCreateNew}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'Brand New' } })
+      await waitFor(() => expect(screen.getByText(/Create "Brand New"/)).toBeInTheDocument())
+      // ArrowDown to navigate to the create option (it's after filtered options)
+      const options = screen.getAllByRole('option')
+      const createOptionIndex = options.findIndex(o => o.textContent?.includes('Create'))
+      for (let i = 0; i < createOptionIndex; i++) {
+        fireEvent.keyDown(input, { key: 'ArrowDown' })
+      }
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onCreateNew).toHaveBeenCalledWith('Brand New')
+    })
+
+    it('Escape when no value and no pendingNewValue clears input', async () => {
+      render(
+        <LiveSearch
+          options={mockOptions}
+          value=""
+          onChange={vi.fn()}
+        />
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'partial' } })
+      fireEvent.keyDown(input, { key: 'Escape' })
+      await waitFor(() => expect(input).toHaveValue(''))
+    })
+  })
+
+  describe('click outside', () => {
+    it('commits value and closes dropdown on outside click', async () => {
+      const onChange = vi.fn()
+      render(
+        <div>
+          <LiveSearch
+            options={mockOptions}
+            value=""
+            onChange={onChange}
+          />
+          <div data-testid="outside">outside</div>
+        </div>
+      )
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'Option One' } })
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      fireEvent.mouseDown(screen.getByTestId('outside'))
+      await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+      expect(onChange).toHaveBeenCalledWith('1', 'Option One')
+    })
+  })
+
+  describe('branch coverage', () => {
+    it('scrolls highlighted item into view when scrollIntoView is available (branch[17][0])', async () => {
+      HTMLElement.prototype.scrollIntoView = vi.fn()
+      render(<LiveSearch options={mockOptions} value="" onChange={vi.fn()} />)
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      // ArrowDown changes highlightedIndex → scrollIntoView effect fires
+      fireEvent.keyDown(input, { key: 'ArrowDown' })
+      await waitFor(() => {
+        expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled()
+      })
+      // @ts-ignore
+      delete HTMLElement.prototype.scrollIntoView
+    })
+
+    it('commitValue with no match (branch[21][1]): Tab when input has no matching option', async () => {
+      const onChange = vi.fn()
+      render(<LiveSearch options={mockOptions} value="" onChange={onChange} />)
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      fireEvent.change(input, { target: { value: 'xyznotexist' } })
+      // Tab calls commitValue → trimmedInput is non-empty but no match found → branch[21][1]
+      fireEvent.keyDown(input, { key: 'Tab' })
+      // onChange NOT called since no match and no onCreateNew
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('mousedown inside container does not close dropdown (branch[22][1])', async () => {
+      render(<LiveSearch options={mockOptions} value="" onChange={vi.fn()} />)
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      // Mousedown on the input itself (inside container) → contains=true → condition=false → branch[22][1]
+      fireEvent.mouseDown(input)
+      // Dropdown should still be open
+      expect(screen.getByRole('listbox')).toBeInTheDocument()
+    })
+
+    it('ArrowUp when dropdown is closed does nothing (branch[31][1])', () => {
+      render(<LiveSearch options={mockOptions} value="" onChange={vi.fn()} />)
+      const input = screen.getByRole('combobox')
+      // Don't focus → dropdown is closed
+      fireEvent.keyDown(input, { key: 'ArrowUp' })
+      // No dropdown, no error
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+    })
+
+    it('Enter with empty filteredOptions and no onCreateNew (branch[35][1])', async () => {
+      const onChange = vi.fn()
+      render(<LiveSearch options={mockOptions} value="" onChange={onChange} />)
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      // Type something that matches nothing → filteredOptions=[] → listbox hidden, but isOpen=true
+      fireEvent.change(input, { target: { value: 'zzznomatch' } })
+      await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+      // Enter: isOpen=true, showCreateNew=false, filteredOptions[0]=undefined → branch[35][1]
+      fireEvent.keyDown(input, { key: 'Enter' })
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('Escape with value not found in options (branch[37][1])', async () => {
+      render(<LiveSearch options={mockOptions} value="999" onChange={vi.fn()} />)
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      // Escape: value='999' truthy, but no option with value='999' → opt=undefined → branch[37][1]
+      fireEvent.keyDown(input, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument())
+    })
+
+    it('Escape with value found but no getDisplayValue (branch[38][1]: uses opt.label)', async () => {
+      render(<LiveSearch options={mockOptions} value="1" onChange={vi.fn()} />)
+      const input = screen.getByRole('combobox')
+      fireEvent.focus(input)
+      await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+      // Escape: value='1', opt={value:'1',label:'Option One'}, no getDisplayValue → opt.label used → branch[38][1]
+      fireEvent.keyDown(input, { key: 'Escape' })
+      await waitFor(() => expect(input).toHaveValue('Option One'))
+    })
+  })
 })
