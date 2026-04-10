@@ -184,7 +184,7 @@ describe('TransferTransactionForm', () => {
       ],
     }
     render(<TransferTransactionForm {...defaultProps} initialData={initialData} />)
-    expect(document.getElementById('amount')).toHaveValue(75)
+    expect(document.getElementById('amount')).toHaveValue((75).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
   })
 
   it('allows changing account', () => {
@@ -227,7 +227,7 @@ describe('TransferTransactionForm', () => {
     const feeInput = screen.getByLabelText(/fee.*optional/i)
     fireEvent.change(feeInput, { target: { value: '5' } })
     fireEvent.change(feeInput, { target: { value: '0' } })
-    expect(feeInput).toHaveValue(0)
+    expect(feeInput).toHaveValue((0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
   })
 
   it('populates fee from initialData with fee line', async () => {
@@ -272,7 +272,7 @@ describe('TransferTransactionForm', () => {
     }
     render(<TransferTransactionForm {...defaultProps} initialData={initialData} />)
     await waitFor(() => {
-      expect(screen.getByLabelText(/fee.*optional/i)).toHaveValue(3)
+      expect(screen.getByLabelText(/fee.*optional/i)).toHaveValue((3).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
   })
 
@@ -340,7 +340,7 @@ describe('TransferTransactionForm', () => {
     }
 
     render(<TransferTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(document.getElementById('amount')).toHaveValue(50))
+    await waitFor(() => expect(document.getElementById('amount')).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()

@@ -171,7 +171,7 @@ describe('IncomeTransactionForm', () => {
 
     render(<IncomeTransactionForm {...defaultProps} initialData={initialData} />)
 
-    expect(screen.getByLabelText(/^Amount/i)).toHaveValue(3000)
+    expect(screen.getByLabelText(/^Amount/i)).toHaveValue((3000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     expect(screen.getByDisplayValue(/monthly/i)).toBeInTheDocument()
   })
 
@@ -193,7 +193,7 @@ describe('IncomeTransactionForm', () => {
     }
 
     render(<IncomeTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue(500))
+    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue((500).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {

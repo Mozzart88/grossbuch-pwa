@@ -11,9 +11,14 @@ describe('AmountInput', () => {
     expect(getInput(container)).toBeInTheDocument()
   })
 
-  it('uses type="number" when unfocused for mobile numeric keyboard', () => {
+  it('uses type="number" when unfocused and value is empty (mobile numeric keyboard)', () => {
     const { container } = render(<AmountInput />)
     expect(getInput(container)).toHaveAttribute('type', 'number')
+  })
+
+  it('uses type="text" when unfocused and value is a valid number', () => {
+    const { container } = render(<AmountInput value="42" onChange={() => {}} />)
+    expect(getInput(container)).toHaveAttribute('type', 'text')
   })
 
   it('switches to type="text" when focused to allow expression input', async () => {
@@ -27,7 +32,7 @@ describe('AmountInput', () => {
 
   it('renders with provided value', () => {
     const { container } = render(<AmountInput value="42" onChange={() => {}} />)
-    expect(getInput(container)).toHaveValue(42)
+    expect(getInput(container)).toHaveValue((42).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
   })
 
   it('calls onChange with the raw string on every keystroke', () => {
@@ -73,6 +78,42 @@ describe('AmountInput', () => {
     })
   })
 
+  describe('formatting', () => {
+    it('displays formatted value when unfocused with a valid number', () => {
+      const { container } = render(<AmountInput value="11111111.1" onChange={() => {}} />)
+      expect(getInput(container).value).toBe((11111111.1).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    })
+
+    it('preserves trailing zeros in formatted display', () => {
+      const { container } = render(<AmountInput value="1234.50" onChange={() => {}} />)
+      expect(getInput(container).value).toBe((1234.5).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    })
+
+    it('shows raw value when focused', async () => {
+      const { container } = render(<AmountInput value="11111111.1" onChange={() => {}} />)
+      const input = getInput(container)
+      fireEvent.focus(input)
+      await waitFor(() => expect(input.value).toBe('11111111.1'))
+    })
+
+    it('does not format an expression value when unfocused', () => {
+      const { container } = render(<AmountInput value="10+5" onChange={() => {}} />)
+      expect(getInput(container).value).toBe('10+5')
+    })
+
+    it('calls onChange with the raw unformatted string on keystroke', () => {
+      const onChange = vi.fn()
+      const { container } = render(<AmountInput value="1234" onChange={onChange} />)
+      fireEvent.change(getInput(container), { target: { value: '12345' } })
+      expect(onChange).toHaveBeenCalledWith('12345')
+    })
+
+    it('does not add trailing zeros when decimalPlaces is 0', () => {
+      const { container } = render(<AmountInput value="10000" decimalPlaces={0} onChange={() => {}} />)
+      expect(getInput(container).value).toBe((10000).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }))
+    })
+  })
+
   describe('error display', () => {
     it('shows external error from parent', () => {
       render(<AmountInput error="Required field" />)
@@ -98,6 +139,15 @@ describe('AmountInput', () => {
       await waitFor(() => {
         expect(screen.getByTestId('amount-expression-result')).toBeInTheDocument()
         expect(screen.getByTestId('amount-expression-result').textContent).toContain('15')
+      })
+    })
+
+    it('shows formatted result in expression preview', async () => {
+      const { container } = render(<AmountInput value="10000+5" onChange={() => {}} />)
+      fireEvent.focus(getInput(container))
+      await waitFor(() => {
+        const preview = screen.getByTestId('amount-expression-result')
+        expect(preview.textContent).toContain((10005).toLocaleString())
       })
     })
 

@@ -358,7 +358,7 @@ describe('EditTransactionPage', () => {
     renderPage()
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50)
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
     })
 

@@ -26,6 +26,7 @@ interface CommonEntry {
   amtType: 'pct' | 'abs'
   pct: string
   abs: string
+  lockedAbs?: string
 }
 
 interface CurrencyOption extends LiveSearchOption {
@@ -133,15 +134,17 @@ export function ExpenseTransactionForm({
         const baseAmt = expenseLines.reduce((s, l) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
         setActiveCommons(commonLines.map(l => {
           const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
+          const absStr = commonAmt.toString()
           const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
           const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
           return {
             tagId: l.tag_id,
             tagName: l.tag || '',
             isIncome: l.sign === '+',
-            amtType: 'pct' as const,
+            amtType: 'abs' as const,
             pct: pctStr,
-            abs: '',
+            abs: absStr,
+            lockedAbs: absStr,
           }
         }))
       }
@@ -174,15 +177,17 @@ export function ExpenseTransactionForm({
       const baseAmt = plainLines.reduce((s: number, l: TransactionLine) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
       setActiveCommons(commonLines.map((l: TransactionLine) => {
         const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
+        const absStr = commonAmt.toString()
         const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
         const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
         return {
           tagId: l.tag_id,
           tagName: l.tag || '',
           isIncome: l.sign === '+',
-          amtType: 'pct' as const,
+          amtType: 'abs' as const,
           pct: pctStr,
-          abs: '',
+          abs: absStr,
+          lockedAbs: absStr,
         }
       }))
     }
@@ -302,30 +307,53 @@ export function ExpenseTransactionForm({
 
   // Common tag handlers
   const toggleCommonTag = (tag: Tag) => {
-    setActiveCommons(prev => {
-      const exists = prev.find(c => c.tagId === tag.id)
-      if (exists) return prev.filter(c => c.tagId !== tag.id)
-      return [...prev, {
-        tagId: tag.id,
-        tagName: tag.name,
-        isIncome: tag.id === SYSTEM_TAGS.DISCOUNT,
-        amtType: 'pct' as const,
-        pct: '',
-        abs: '',
-      }]
-    })
+    const exists = activeCommons.find(c => c.tagId === tag.id)
+    if (exists) {
+      setActiveCommons(prev => prev.filter(c => c.tagId !== tag.id))
+      return
+    }
+    // Adding an abs add-on exits simple mode — copy main amount to sub-entry
+    const wasSimple = subEntries.length === 1 && activeCommons.every(c => c.amtType === 'pct')
+    if (wasSimple && amount) {
+      setSubEntries(prev => [{ ...prev[0], amount }])
+    }
+    setActiveCommons(prev => [...prev, {
+      tagId: tag.id,
+      tagName: tag.name,
+      isIncome: tag.id === SYSTEM_TAGS.DISCOUNT,
+      amtType: 'abs' as const,
+      pct: '',
+      abs: '',
+    }])
   }
   const toggleCommonAmtType = (tagId: number) => {
     const currentEntry = activeCommons.find(c => c.tagId === tagId)
     if (currentEntry?.amtType === 'pct') {
+      // pct → abs
       const wasSimple = subEntries.length === 1 && activeCommons.every(c => c.amtType === 'pct')
       if (wasSimple && amount) {
         setSubEntries(prev => [{ ...prev[0], amount }])
       }
+      setActiveCommons(prev => prev.map(c => {
+        if (c.tagId !== tagId) return c
+        if (c.lockedAbs !== undefined) {
+          return { ...c, amtType: 'abs', abs: c.lockedAbs }
+        }
+        const dp = paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces
+        const computedAbs = expensePlainBase * (parseFloat(c.pct) || 0) / 100
+        const absStr = computedAbs > 0 ? computedAbs.toFixed(dp) : ''
+        return { ...c, amtType: 'abs', abs: absStr }
+      }))
+    } else {
+      // abs → pct
+      setActiveCommons(prev => prev.map(c => {
+        if (c.tagId !== tagId) return c
+        const absNum = parseFloat(c.abs) || 0
+        const computedPct = expensePlainBase > 0 ? (absNum / expensePlainBase) * 100 : 0
+        const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
+        return { ...c, amtType: 'pct', pct: pctStr }
+      }))
     }
-    setActiveCommons(prev => prev.map(c =>
-      c.tagId === tagId ? { ...c, amtType: c.amtType === 'pct' ? 'abs' : 'pct' } : c
-    ))
   }
   const updateCommonEntry = (tagId: number, updates: Partial<CommonEntry>) => {
     setActiveCommons(prev => prev.map(c => c.tagId === tagId ? { ...c, ...updates } : c))
@@ -700,7 +728,7 @@ export function ExpenseTransactionForm({
                   isPositive
                   value={entry.amtType === 'pct' ? entry.pct : entry.abs}
                   onChange={(v) => updateCommonEntry(entry.tagId,
-                    entry.amtType === 'pct' ? { pct: v } : { abs: v }
+                    entry.amtType === 'pct' ? { pct: v, lockedAbs: undefined } : { abs: v }
                   )}
                   placeholder={entry.amtType === 'pct' ? '15' : getPlaceholder(paymentCurrencyDiffers ? paymentCurrencyDecimalPlaces : decimalPlaces)}
                   className="flex-1 min-w-0 px-2 py-1 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 text-sm"

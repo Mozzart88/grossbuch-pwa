@@ -174,7 +174,7 @@ describe('ExpenseTransactionForm', () => {
     }
 
     render(<ExpenseTransactionForm {...defaultProps} initialData={initialData} />)
-    expect(screen.getByLabelText(/^Amount/i)).toHaveValue(25)
+    expect(screen.getByLabelText(/^Amount/i)).toHaveValue((25).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     expect(screen.getByDisplayValue('lunch')).toBeInTheDocument()
   })
 
@@ -196,7 +196,7 @@ describe('ExpenseTransactionForm', () => {
     }
 
     render(<ExpenseTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue(30))
+    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue((30).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
@@ -338,29 +338,31 @@ describe('ExpenseTransactionForm', () => {
       render(<ExpenseTransactionForm {...defaultProps} commonTags={[tipTag]} />)
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
       fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
       await waitFor(() => expect(screen.getByPlaceholderText('15')).toBeInTheDocument())
       fireEvent.change(screen.getByPlaceholderText('15'), { target: { value: '10' } })
       await waitFor(() => expect(screen.getByText(/= \$10\.00/)).toBeInTheDocument())
     })
 
-    it('toggles common amount type from pct to abs', async () => {
+    it('toggles common amount type from abs to pct', async () => {
       render(<ExpenseTransactionForm {...defaultProps} commonTags={[tipTag]} />)
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
       fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
-      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
-      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
-    })
-
-    it('toggles common amount type back from abs to pct', async () => {
-      render(<ExpenseTransactionForm {...defaultProps} commonTags={[tipTag]} />)
-      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
-      fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
-      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
       await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
       fireEvent.click(screen.getByTitle('Switch to percentage'))
       await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+    })
+
+    it('toggles common amount type back from pct to abs', async () => {
+      render(<ExpenseTransactionForm {...defaultProps} commonTags={[tipTag]} />)
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+      fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
+      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
     })
 
     it('includes common tag lines in submission', async () => {
@@ -372,8 +374,9 @@ describe('ExpenseTransactionForm', () => {
       await waitFor(() => expect(screen.getByRole('option', { name: 'Food' })).toBeInTheDocument())
       fireEvent.click(screen.getByRole('option', { name: 'Food' }))
       fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
-      await waitFor(() => expect(screen.getByPlaceholderText('15')).toBeInTheDocument())
-      fireEvent.change(screen.getByPlaceholderText('15'), { target: { value: '10' } })
+      // abs mode: [0]=Total, [1]=sub-entry amount, [2]=addon abs input
+      await waitFor(() => expect(screen.getAllByPlaceholderText('0.00')[2]).toBeInTheDocument())
+      fireEvent.change(screen.getAllByPlaceholderText('0.00')[2], { target: { value: '10' } })
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
       await waitFor(() => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
@@ -440,7 +443,7 @@ describe('ExpenseTransactionForm', () => {
 
       await waitFor(() => {
         // With a single expense line, isExpenseMainEditable is true, label is "Amount"
-        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue(50)
+        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
 
@@ -483,7 +486,8 @@ describe('ExpenseTransactionForm', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue(100)
+        // Common line loaded in abs mode → isExpenseMainEditable=false → label "Total", total=base(100)+tip(10)=110
+        expect(screen.getByLabelText(/^Total/i)).toHaveValue((110).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
   })
@@ -631,7 +635,46 @@ describe('ExpenseTransactionForm', () => {
         />
       )
       await waitFor(() => {
-        expect(screen.getByLabelText(/^Amount/i)).toHaveValue(100)
+        // Common line loaded in abs mode → isExpenseMainEditable=false → label "Total", total=base(100)+tip(10)=110
+        expect(screen.getByLabelText(/^Total/i)).toHaveValue((110).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      })
+    })
+
+    it('restores original abs value when toggling abs→pct→abs on loaded data', async () => {
+      const plainWithCommon = {
+        id: new Uint8Array(8),
+        timestamp: 1704803400,
+        lines: [
+          {
+            id: new Uint8Array(8), trx_id: new Uint8Array(8),
+            account_id: 1, tag_id: 10, sign: '-',
+            amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0, currency: 'USD',
+          },
+          {
+            id: new Uint8Array(8), trx_id: new Uint8Array(8),
+            account_id: 1, tag_id: SYSTEM_TAGS.TIP, sign: '-',
+            amount_int: 10, amount_frac: 0, rate_int: 1, rate_frac: 0, currency: 'USD',
+            is_common: 1, tag: 'Tip',
+          },
+        ] as any,
+      }
+      const tipTag: Tag = { id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }
+      render(
+        <ExpenseTransactionForm
+          {...defaultProps}
+          initialData={plainWithCommon}
+          commonTags={[tipTag]}
+        />
+      )
+      // Addon loaded in abs mode with lockedAbs='10'
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      // Toggle abs → pct
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
+      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+      // Toggle pct → abs: should restore lockedAbs value
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => {
+        expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
       })
     })
 
@@ -704,6 +747,8 @@ describe('ExpenseTransactionForm', () => {
       const amountFromAccount = screen.getAllByLabelText(/^Amount/i)[1]
       fireEvent.change(amountFromAccount, { target: { value: '110' } })
       fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
       await waitFor(() => expect(screen.getByPlaceholderText('15')).toBeInTheDocument())
       fireEvent.change(screen.getByPlaceholderText('15'), { target: { value: '10' } })
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
@@ -716,6 +761,29 @@ describe('ExpenseTransactionForm', () => {
           })
         )
       })
+    })
+
+    it('toggles common tag pct→abs in multi-currency mode computing abs from pct', async () => {
+      const walletRepository = await import('../../../../services/repositories').then(m => m.walletRepository)
+      vi.mocked(walletRepository.findOrCreateAccountForCurrency).mockResolvedValue({ id: 2 } as any)
+      render(
+        <ExpenseTransactionForm
+          {...defaultProps}
+          defaultPaymentCurrencyId={2}
+          commonTags={[{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]}
+        />
+      )
+      fireEvent.change(screen.getAllByLabelText(/^Amount/i)[0], { target: { value: '100' } })
+      fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
+      // abs default → toggle to pct
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
+      await waitFor(() => expect(screen.getByPlaceholderText('15')).toBeInTheDocument())
+      fireEvent.change(screen.getByPlaceholderText('15'), { target: { value: '10' } })
+      // pct → abs: covers paymentCurrencyDiffers=true branch and computedAbs>0 branch
+      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
     })
 
     it('submits common tag in abs mode for plain expense', async () => {
@@ -732,11 +800,9 @@ describe('ExpenseTransactionForm', () => {
       await waitFor(() => expect(screen.getByRole('option', { name: 'Food' })).toBeInTheDocument())
       fireEvent.click(screen.getByRole('option', { name: 'Food' }))
       fireEvent.click(screen.getByRole('button', { name: '+ Tip' }))
-      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
       await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
-      // Enter abs amount (second input with placeholder 0.00 - first is the main Amount)
-      fireEvent.change(screen.getAllByPlaceholderText('0.00')[1], { target: { value: '5' } })
+      // Add-on already starts in abs mode — [0]=Total, [1]=sub-entry, [2]=addon abs input
+      fireEvent.change(screen.getAllByPlaceholderText('0.00')[2], { target: { value: '5' } })
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
       await waitFor(() => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
