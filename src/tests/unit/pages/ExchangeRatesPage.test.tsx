@@ -186,7 +186,7 @@ describe('ExchangeRatesPage', () => {
     })
 
     // Change rate
-    const rateInput = screen.getByRole('spinbutton')
+    const rateInput = screen.getByPlaceholderText('e.g., 1.10')
     fireEvent.change(rateInput, { target: { value: '1.15' } })
 
     // Submit
@@ -261,8 +261,8 @@ describe('ExchangeRatesPage', () => {
 
     await waitFor(() => {
       // Should show existing rate (fromIntFrac(0, 920000000000000000) = 0.92) in input
-      const rateInput = screen.getByRole('spinbutton')
-      expect(rateInput).toHaveValue(0.92)
+      const rateInput = screen.getByPlaceholderText('e.g., 1.10')
+      expect(rateInput).toHaveValue((0.92).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }))
     })
   })
 
@@ -284,7 +284,7 @@ describe('ExchangeRatesPage', () => {
     })
 
     // Enter invalid rate
-    const rateInput = screen.getByRole('spinbutton')
+    const rateInput = screen.getByPlaceholderText('e.g., 1.10')
     fireEvent.change(rateInput, { target: { value: '0' } })
 
     // Submit
@@ -316,7 +316,7 @@ describe('ExchangeRatesPage', () => {
     })
 
     // Enter valid rate
-    const rateInput = screen.getByRole('spinbutton')
+    const rateInput = screen.getByPlaceholderText('e.g., 1.10')
     fireEvent.change(rateInput, { target: { value: '1.15' } })
 
     // Submit
@@ -338,7 +338,7 @@ describe('ExchangeRatesPage', () => {
     const eurRow = screen.getByText('EUR').closest('div[class*="cursor-pointer"]')
     if (eurRow) fireEvent.click(eurRow)
     await waitFor(() => expect(screen.getByText(/Edit EUR Rate/i)).toBeInTheDocument())
-    const rateInput = screen.getByRole('spinbutton')
+    const rateInput = screen.getByPlaceholderText('e.g., 1.10')
     fireEvent.change(rateInput, { target: { value: '1.15' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => {

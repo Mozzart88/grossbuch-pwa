@@ -175,8 +175,8 @@ describe('ExchangeTransactionForm', () => {
       ],
     }
     render(<ExchangeTransactionForm {...defaultProps} initialData={initialData} />)
-    expect(document.getElementById('amount')).toHaveValue(200)
-    expect(document.getElementById('toAmount')).toHaveValue(180)
+    expect(document.getElementById('amount')).toHaveValue((200).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+    expect(document.getElementById('toAmount')).toHaveValue((180).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
   })
 
   it('allows changing account', () => {
@@ -249,7 +249,7 @@ describe('ExchangeTransactionForm', () => {
     }
     render(<ExchangeTransactionForm {...defaultProps} initialData={initialData} />)
     await waitFor(() => {
-      expect(screen.getByLabelText(/fee.*optional/i)).toHaveValue(2)
+      expect(screen.getByLabelText(/fee.*optional/i)).toHaveValue((2).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
   })
 
@@ -300,7 +300,7 @@ describe('ExchangeTransactionForm', () => {
     }
 
     render(<ExchangeTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(document.getElementById('amount')).toHaveValue(100))
+    await waitFor(() => expect(document.getElementById('amount')).toHaveValue((100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
@@ -344,7 +344,7 @@ describe('ExchangeTransactionForm', () => {
       const feeInput = screen.getByLabelText(/fee.*optional/i)
       fireEvent.change(feeInput, { target: { value: '5' } })
       fireEvent.change(feeInput, { target: { value: '0' } })
-      expect(feeInput).toHaveValue(0)
+      expect(feeInput).toHaveValue((0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
   })
 

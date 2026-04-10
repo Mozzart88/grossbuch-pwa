@@ -14,6 +14,23 @@ export interface AmountInputProps
   /** External validation error supplied by the parent form */
   error?: string
   className?: string
+  /** Number of decimal places for the currency. Controls minimum fraction digits in display formatting. Defaults to 2. */
+  decimalPlaces?: number
+}
+
+function formatDisplayValue(value: string, decimalPlaces: number): string {
+  const trimmed = value.trim()
+  if (!trimmed || isExpression(trimmed)) return value
+  const num = Number(trimmed)
+  if (!isFinite(num)) return value
+  const dotIndex = trimmed.indexOf('.')
+  const actualFractionDigits = dotIndex >= 0 ? trimmed.length - dotIndex - 1 : 0
+  const minFractionDigits = decimalPlaces === 0 ? 0 : 2
+  const maxFractionDigits = Math.max(actualFractionDigits, minFractionDigits)
+  return num.toLocaleString(undefined, {
+    minimumFractionDigits: minFractionDigits,
+    maximumFractionDigits: maxFractionDigits,
+  })
 }
 
 /**
@@ -60,6 +77,7 @@ export function AmountInput({
   className = '',
   id,
   required,
+  decimalPlaces = 2,
   ...props
 }: AmountInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -72,6 +90,9 @@ export function AmountInput({
   const expressionResult = isExpression(value) ? evaluateExpression(value) : null
   const showPreview =
     isFocused && expressionResult !== null && !(isPositive && expressionResult <= 0)
+  const isValidNumber =
+    !isFocused && !isExpression(value) && value.trim() !== '' && isFinite(Number(value.trim()))
+  const useTextType = isFocused || value.trim() !== ''
 
   // Keep custom validity in sync with value
   useEffect(() => {
@@ -155,9 +176,9 @@ export function AmountInput({
         <input
           ref={inputRef}
           id={inputId}
-          type={isFocused ? 'text' : 'number'}
+          type={useTextType ? 'text' : 'number'}
           pattern="[0-9()+\-*/,. ]*"
-          value={value}
+          value={isValidNumber ? formatDisplayValue(value, decimalPlaces) : value}
           onChange={handleChange}
           placeholder={placeholder}
           onFocus={() => setIsFocused(true)}
@@ -177,7 +198,7 @@ export function AmountInput({
             onClick={handleResultClick}
             data-testid="amount-expression-result"
           >
-            = {expressionResult}
+            = {new Intl.NumberFormat().format(expressionResult!)}
           </div>
         )}
       </div>

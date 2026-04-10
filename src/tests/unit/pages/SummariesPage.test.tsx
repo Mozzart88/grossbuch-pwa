@@ -557,7 +557,7 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         const amountInput = screen.getByLabelText(/Budget Amount/) as HTMLInputElement
-        expect(amountInput.value).toBe('300.00')
+        expect(amountInput.value).toBe((300).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
 
@@ -806,7 +806,7 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Edit Budget')).toBeInTheDocument()
         const amountInput = screen.getByLabelText(/Budget Amount/) as HTMLInputElement
-        expect(amountInput.value).toBe('500')
+        expect(amountInput.value).toBe((500).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
 

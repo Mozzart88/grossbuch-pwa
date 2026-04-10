@@ -190,7 +190,7 @@ describe('TransactionForm Editing mode', () => {
     renderForm(expenseData)
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50)
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('1')
       // LiveSearch shows the label (category name) not the value (ID)
       expect(screen.getByPlaceholderText('Select category')).toHaveValue('Food')
@@ -224,7 +224,7 @@ describe('TransactionForm Editing mode', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Income' }).className).toContain('shadow')
-      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(1000)
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue((1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       // LiveSearch shows the label (category name) not the value (ID)
       expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('Salary')
     })
@@ -264,7 +264,7 @@ describe('TransactionForm Editing mode', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Transfer' }).className).toContain('shadow')
-      expect(document.getElementById('amount')).toHaveValue(20)
+      expect(document.getElementById('amount')).toHaveValue((20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
   })
 
@@ -290,7 +290,7 @@ describe('TransactionForm Editing mode', () => {
     renderForm(expenseData)
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(50)
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
     })
 
@@ -323,7 +323,7 @@ describe('TransactionForm Editing mode', () => {
 
     renderForm(incomeData)
     await waitFor(() => {
-      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(1000)
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue((1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
@@ -364,7 +364,7 @@ describe('TransactionForm Editing mode', () => {
 
     renderForm(transferData)
     await waitFor(() => {
-      expect(document.getElementById('amount')).toHaveValue(20)
+      expect(document.getElementById('amount')).toHaveValue((20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
@@ -405,7 +405,7 @@ describe('TransactionForm Editing mode', () => {
 
     renderForm(exchangeData)
     await waitFor(() => {
-      expect(document.getElementById('amount')).toHaveValue(100)
+      expect(document.getElementById('amount')).toHaveValue((100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
@@ -497,7 +497,7 @@ describe('TransactionForm Editing mode', () => {
 
     await waitFor(() => {
       // Amount in payment currency (USD)
-      expect(screen.getByLabelText(/^Amount \(\$\)/i)).toHaveValue(21)
+      expect(screen.getByLabelText(/^Amount \(\$\)/i)).toHaveValue((21).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       // Payment currency should show USD code - LiveSearch shows only code in the input
       const currencyInput = screen.getByPlaceholderText('CUR')
       expect(currencyInput).toHaveValue('USD')

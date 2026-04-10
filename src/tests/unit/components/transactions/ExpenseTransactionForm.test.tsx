@@ -174,7 +174,7 @@ describe('ExpenseTransactionForm', () => {
     }
 
     render(<ExpenseTransactionForm {...defaultProps} initialData={initialData} />)
-    expect(screen.getByLabelText(/^Amount/i)).toHaveValue(25)
+    expect(screen.getByLabelText(/^Amount/i)).toHaveValue((25).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     expect(screen.getByDisplayValue('lunch')).toBeInTheDocument()
   })
 
@@ -196,7 +196,7 @@ describe('ExpenseTransactionForm', () => {
     }
 
     render(<ExpenseTransactionForm {...defaultProps} initialData={initialData} />)
-    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue(30))
+    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue((30).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
@@ -440,7 +440,7 @@ describe('ExpenseTransactionForm', () => {
 
       await waitFor(() => {
         // With a single expense line, isExpenseMainEditable is true, label is "Amount"
-        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue(50)
+        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
 
@@ -483,7 +483,7 @@ describe('ExpenseTransactionForm', () => {
       )
 
       await waitFor(() => {
-        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue(100)
+        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue((100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
   })
@@ -631,7 +631,7 @@ describe('ExpenseTransactionForm', () => {
         />
       )
       await waitFor(() => {
-        expect(screen.getByLabelText(/^Amount/i)).toHaveValue(100)
+        expect(screen.getByLabelText(/^Amount/i)).toHaveValue((100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
 

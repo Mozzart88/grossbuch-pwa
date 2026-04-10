@@ -1561,7 +1561,7 @@ describe('TransactionForm', () => {
       fireEvent.click(screen.getByText('+ Add category'))
       await waitFor(() => {
         expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
-        expect(document.querySelectorAll('input[type="number"]')).toHaveLength(3)
+        expect(document.querySelectorAll('input[pattern]')).toHaveLength(3)
       })
     })
 
@@ -1646,7 +1646,7 @@ describe('TransactionForm', () => {
       await waitFor(() => {
         expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
       })
-      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      const numericInputs = Array.from(document.querySelectorAll('input[pattern]'))
       fireEvent.change(numericInputs[1], { target: { value: '30' } })
       fireEvent.change(numericInputs[2], { target: { value: '20' } })
 
@@ -1720,7 +1720,7 @@ describe('TransactionForm', () => {
       })
       const pctInput = screen.getByPlaceholderText('15')
       fireEvent.change(pctInput, { target: { value: '10' } })
-      expect(pctInput).toHaveValue(10)
+      expect(pctInput).toHaveValue((10).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
     it('updates common tag abs input', async () => {
@@ -1734,10 +1734,10 @@ describe('TransactionForm', () => {
       })
       // After switching to abs, isExpenseMainEditable=false, sub-entry amount appears
       // numericInputs[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
-      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      const numericInputs = Array.from(document.querySelectorAll('input[pattern]'))
       expect(numericInputs).toHaveLength(3)
       fireEvent.change(numericInputs[2], { target: { value: '7.50' } })
-      expect(numericInputs[2]).toHaveValue(7.5)
+      expect(numericInputs[2]).toHaveValue((7.5).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
     it('submits expense with pct common tag', async () => {
@@ -1794,7 +1794,7 @@ describe('TransactionForm', () => {
       fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
 
       // numericInputs[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
-      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      const numericInputs = Array.from(document.querySelectorAll('input[pattern]'))
       fireEvent.change(numericInputs[1], { target: { value: '50' } })
       fireEvent.change(numericInputs[2], { target: { value: '5' } })
 
@@ -1840,15 +1840,15 @@ describe('TransactionForm', () => {
       await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
 
       // numericInputs[0]=readOnly total, [1]=food amount, [2]=transport amount, [3]=discount abs
-      const numericInputs = Array.from(document.querySelectorAll('input[type="number"]'))
+      const numericInputs = Array.from(document.querySelectorAll('input[pattern]'))
       fireEvent.change(numericInputs[1], { target: { value: '9' } })
       fireEvent.change(numericInputs[2], { target: { value: '1' } })
       fireEvent.change(numericInputs[3], { target: { value: '1' } })
 
       // Total should be 10 - 1 = 9, not 10 + 1 = 11
       await waitFor(() => {
-        const totalInput = document.querySelectorAll('input[type="number"]')[0] as HTMLInputElement
-        expect(totalInput.value).toBe('9.00')
+        const totalInput = document.querySelectorAll('input[pattern]')[0] as HTMLInputElement
+        expect(totalInput.value).toBe((9).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
   })
