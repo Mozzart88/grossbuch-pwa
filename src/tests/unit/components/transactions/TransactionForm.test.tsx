@@ -1702,12 +1702,13 @@ describe('TransactionForm', () => {
       renderForm()
       await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
       fireEvent.click(screen.getByText('+ ServiceFee'))
-      await waitFor(() => {
-        expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument()
-      })
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      // Default is abs mode — toggle to pct, then back to abs
       await waitFor(() => {
         expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
+      await waitFor(() => {
+        expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument()
       })
     })
 
@@ -1715,6 +1716,9 @@ describe('TransactionForm', () => {
       renderForm()
       await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
       fireEvent.click(screen.getByText('+ ServiceFee'))
+      // Default is abs — toggle to pct first
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
       await waitFor(() => {
         expect(screen.getByPlaceholderText('15')).toBeInTheDocument()
       })
@@ -1727,12 +1731,11 @@ describe('TransactionForm', () => {
       renderForm()
       await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
       fireEvent.click(screen.getByText('+ ServiceFee'))
-      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
+      // Default is abs mode — confirm toggle button shown
       await waitFor(() => {
         expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
       })
-      // After switching to abs, isExpenseMainEditable=false, sub-entry amount appears
+      // After abs add-on, isExpenseMainEditable=false, sub-entry amount appears
       // numericInputs[0]=readOnly main, [1]=sub-entry amount, [2]=abs common amount
       const numericInputs = Array.from(document.querySelectorAll('input[pattern]'))
       expect(numericInputs).toHaveLength(3)
@@ -1754,8 +1757,10 @@ describe('TransactionForm', () => {
       await waitFor(() => expect(screen.getAllByRole('option', { name: /food/ })[0]).toBeInTheDocument())
       fireEvent.click(screen.getAllByRole('option', { name: /food/ })[0])
 
-      // Toggle pct common tag on and set 10%
+      // Toggle common tag on, switch to pct mode, then set 10%
       fireEvent.click(screen.getByText('+ ServiceFee'))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.click(screen.getByTitle('Switch to percentage'))
       await waitFor(() => expect(screen.getByPlaceholderText('15')).toBeInTheDocument())
       fireEvent.change(screen.getByPlaceholderText('15'), { target: { value: '10' } })
 
@@ -1776,13 +1781,10 @@ describe('TransactionForm', () => {
       renderForm()
       await waitFor(() => expect(screen.getByText('+ ServiceFee')).toBeInTheDocument())
 
-      // Toggle on and switch to abs mode
+      // Toggle on — default abs mode, isExpenseMainEditable=false → label becomes Total
       fireEvent.click(screen.getByText('+ ServiceFee'))
-      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
       await waitFor(() => {
         expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument()
-        // isExpenseMainEditable=false since abs common → label becomes Total
         expect(screen.getByLabelText(/^Total/)).toBeInTheDocument()
       })
 
@@ -1832,11 +1834,9 @@ describe('TransactionForm', () => {
       await waitFor(() => expect(screen.getAllByRole('option', { name: /transport/ })[0]).toBeInTheDocument())
       fireEvent.click(screen.getAllByRole('option', { name: /transport/ })[0])
 
-      // Toggle Discount on and switch to abs
+      // Toggle Discount on — default abs mode
       await waitFor(() => expect(screen.getByText('+ Discount')).toBeInTheDocument())
       fireEvent.click(screen.getByText('+ Discount'))
-      await waitFor(() => expect(screen.getByTitle('Switch to absolute amount')).toBeInTheDocument())
-      fireEvent.click(screen.getByTitle('Switch to absolute amount'))
       await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
 
       // numericInputs[0]=readOnly total, [1]=food amount, [2]=transport amount, [3]=discount abs
