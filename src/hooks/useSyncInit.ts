@@ -12,10 +12,9 @@ export function useSyncInit({ enabled = true }: { enabled?: boolean } = {}) {
   const location = useLocation()
   const lastPollRef = useRef(0)
   const isPollingRef = useRef(false)
-  const doneRef = useRef(false)
 
   useEffect(() => {
-    if (!enabled || doneRef.current) return
+    if (!enabled) return
 
     const now = Date.now()
     if (now - lastPollRef.current < THROTTLE_MS) return
@@ -25,11 +24,6 @@ export function useSyncInit({ enabled = true }: { enabled?: boolean } = {}) {
     lastPollRef.current = now
 
     pollAndProcessInit()
-      .then((result) => {
-        if (result.done) {
-          doneRef.current = true
-        }
-      })
       .catch((err) => {
         console.warn('[useSyncInit] Poll failed:', err)
       })
