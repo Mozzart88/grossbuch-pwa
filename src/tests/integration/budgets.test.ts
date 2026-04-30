@@ -203,7 +203,7 @@ describe('Budget Integration', () => {
       amount_int: 50,
       amount_frac: 0,
       start: Math.floor(new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime() / 1000),
-      end: Math.floor(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getTime() / 1000),
+      end: Math.floor(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).getTime() / 1000),
     })
 
     // Insert transaction: amount_int=20, rate_int=1 (rate=1.0)

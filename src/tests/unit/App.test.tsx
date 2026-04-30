@@ -285,6 +285,23 @@ describe('App', () => {
       expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
       expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
     })
+
+    it('does not show OnboardingPage after SHARED_UUID is consumed from localStorage', () => {
+      // Regression: old code read localStorage on every render, so removing SHARED_UUID
+      // (as useInstallationRegistration does after 2s) would re-trigger OnboardingPage.
+      // New code snapshots it at mount time via useState initializer.
+      localStorage.setItem('gb_shared_uuid', 'some-uuid')
+      mockAuthState.isFirstSetup = true
+
+      const { rerender } = render(<App />)
+
+      // Simulate useInstallationRegistration consuming the key
+      localStorage.removeItem('gb_shared_uuid')
+      rerender(<App />)
+
+      expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
+      expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+    })
   })
 
   describe('BiometricSetupPrompt flow', () => {
@@ -359,6 +376,107 @@ describe('App', () => {
 
       render(<App />)
       fireEvent.click(screen.getByText('Complete Onboarding'))
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Skip'))
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+        expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+      })
+    })
+  })
+
+  // Share link can be captured three ways before AppContent mounts:
+  //   1. Opening /share?uuid=… URL (ShareLinkCapture writes to localStorage)
+  //   2. Scanning a QR code (same URL, same flow)
+  //   3. Pasting the link into the "Have a share link?" field on PinSetupPage
+  // In all cases SHARED_UUID is in localStorage when AppContent first mounts.
+  describe('Share-link install flow', () => {
+    beforeEach(() => {
+      localStorage.setItem('gb_shared_uuid', 'some-uuid')
+      mockAuthState.isFirstSetup = true
+      mockAuthState.clearFirstSetup = vi.fn().mockImplementation(() => {
+        mockAuthState.isFirstSetup = false
+      })
+    })
+
+    it('calls clearFirstSetup without showing OnboardingPage', async () => {
+      render(<App />)
+
+      await waitFor(() => {
+        expect(mockAuthState.clearFirstSetup).toHaveBeenCalled()
+      })
+      expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
+    })
+
+    it('shows BiometricSetupPrompt when biometrics are available', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = false
+
+      render(<App />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
+      })
+      expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
+    })
+
+    it('goes straight to main app when biometrics are not available', async () => {
+      mockAuthState.biometricsAvailable = false
+
+      render(<App />)
+
+      await waitFor(() => {
+        expect(mockAuthState.clearFirstSetup).toHaveBeenCalled()
+      })
+      expect(screen.queryByTestId('onboarding-page')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+      expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+    })
+
+    it('goes straight to main app when biometrics are already enabled', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = true
+
+      render(<App />)
+
+      await waitFor(() => {
+        expect(mockAuthState.clearFirstSetup).toHaveBeenCalled()
+      })
+      expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+      expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+    })
+
+    it('can enable biometrics from the share-link flow', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = false
+      const enableBiometrics = vi.fn().mockResolvedValue(undefined)
+      mockAuthState.enableBiometrics = enableBiometrics
+
+      render(<App />)
+
+      await waitFor(() => {
+        expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Enable Biometrics'))
+
+      await waitFor(() => {
+        expect(enableBiometrics).toHaveBeenCalledOnce()
+        expect(screen.queryByTestId('biometric-setup-prompt')).not.toBeInTheDocument()
+        expect(screen.getByTestId('transactions-page')).toBeInTheDocument()
+      })
+    })
+
+    it('can skip biometrics from the share-link flow', async () => {
+      mockAuthState.biometricsAvailable = true
+      mockAuthState.biometricsEnabled = false
+
+      render(<App />)
 
       await waitFor(() => {
         expect(screen.getByTestId('biometric-setup-prompt')).toBeInTheDocument()
