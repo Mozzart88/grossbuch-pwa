@@ -98,6 +98,9 @@ export function SharePage() {
           <p className="text-xs font-mono text-gray-500 dark:text-gray-400 break-all text-center">
             {shareUrl}
           </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
+            Open this link on your new device within 1 hour
+          </p>
         </Card>
 
         {newDeviceFound && (

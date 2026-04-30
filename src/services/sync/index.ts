@@ -157,7 +157,7 @@ export async function pullSync(): Promise<ImportResult[]> {
   }
 
   if (ackedIds.length > 0) {
-    await syncApi.ack({ package_ids: ackedIds }, installData.jwt)
+    await syncApi.ack({ package_ids: ackedIds, installation_id: installData.id }, installData.jwt)
     await updateSyncTimestamp(installData.id)
 
     // Always advance last_push_at so imported rows are not re-pushed

@@ -340,7 +340,7 @@ describe('sync index', () => {
       expect(results).toHaveLength(1)
       expect(mockDecryptSyncPackage).toHaveBeenCalledWith(encPkg, 'inst-1', 'private-key-data')
       expect(mockImportSyncPackage).toHaveBeenCalledWith(decryptedPkg)
-      expect(mockApiAck).toHaveBeenCalledWith({ package_ids: ['pkg-1'] }, 'token')
+      expect(mockApiAck).toHaveBeenCalledWith({ installation_id: 'inst-1', package_ids: ['pkg-1'] }, 'token')
       expect(mockUpdateSyncTimestamp).toHaveBeenCalledWith('inst-1')
     })
 
@@ -486,7 +486,7 @@ describe('sync index', () => {
       const results = await pullSync()
 
       expect(results).toHaveLength(1)
-      expect(mockApiAck).toHaveBeenCalledWith({ package_ids: ['pkg-ok'] }, 'token')
+      expect(mockApiAck).toHaveBeenCalledWith({ installation_id: 'inst-1', package_ids: ['pkg-ok'] }, 'token')
     })
 
     it('calls syncSingleRate for currencies without rates after import', async () => {

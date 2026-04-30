@@ -136,6 +136,7 @@ export interface SyncPullResponse {
 
 export interface SyncAckRequest {
   package_ids: string[]
+  installation_id: string
 }
 
 export interface SyncAckResponse {
