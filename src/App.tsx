@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { DatabaseProvider, useDatabase } from './store/DatabaseContext'
 import { AuthProvider, useAuth } from './store/AuthContext'
@@ -104,6 +104,24 @@ function AppContent() {
   const { isFirstSetup, clearFirstSetup, biometricsAvailable, biometricsEnabled, enableBiometrics } = useAuth()
   const [pendingBiometricSetup, setPendingBiometricSetup] = useState(false)
 
+  // Snapshot at mount time — useInstallationRegistration removes SHARED_UUID from
+  // localStorage 2s later, so reading it on every render would produce false negatives.
+  const [isShareLinkInstall] = useState(
+    () => isFirstSetup && !!localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)
+  )
+
+  // For share-link installs: skip full onboarding, clear the flag, offer biometrics only.
+  const shareLinkSetupHandled = useRef(false)
+  useEffect(() => {
+    if (isFirstSetup && isShareLinkInstall && !shareLinkSetupHandled.current) {
+      shareLinkSetupHandled.current = true
+      clearFirstSetup()
+      if (biometricsAvailable && !biometricsEnabled) {
+        setPendingBiometricSetup(true)
+      }
+    }
+  }, [isFirstSetup, isShareLinkInstall, clearFirstSetup, biometricsAvailable, biometricsEnabled])
+
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
 
@@ -142,7 +160,7 @@ function AppContent() {
     )
   }
 
-  if (isFirstSetup && !localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)) {
+  if (isFirstSetup && !isShareLinkInstall) {
     function handleOnboardingComplete() {
       clearFirstSetup()
       if (biometricsAvailable && !biometricsEnabled) {
