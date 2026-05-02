@@ -449,4 +449,106 @@ describe('syncImport', () => {
       expect(updateCalls).toHaveLength(0)
     })
   })
+
+  describe('tag name conflict resolution', () => {
+    it('force-renames conflicting local IDs and inserts incoming tags (v16 migration scenario)', async () => {
+      // Child has Tips=24, add-on=25 from v16 migration (fresh timestamps = very new).
+      // Parent package has: Dividends=24 (old), Education=25 (old), Tips=44 (newer), add-on=56 (newer).
+      // LWW alone would refuse to rename 24 and 25 (migration ts > parent ts),
+      // leaving 'Tips' and 'add-on' taken → INSERT for 44 and 56 would fail.
+      const MIGRATION_TS = 9999
+      const PARENT_TS = 500
+
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM tag WHERE id = ?') {
+          const id = params[0]
+          if (id === 24 || id === 25) return Promise.resolve({ id })
+          return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id FROM tag WHERE name = ?') {
+          const name = params[0]
+          if (name === 'Tips') return Promise.resolve({ id: 24 })
+          if (name === 'add-on') return Promise.resolve({ id: 25 })
+          return Promise.resolve(null)
+        }
+        if (sql.includes('SELECT name, updated_at FROM tag WHERE id = ?')) {
+          const id = params[0]
+          if (id === 24) return Promise.resolve({ name: 'Tips', updated_at: MIGRATION_TS })
+          if (id === 25) return Promise.resolve({ name: 'add-on', updated_at: MIGRATION_TS })
+          return Promise.resolve(null)
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.tags = [
+        { id: 24, name: 'Dividends', updated_at: PARENT_TS, parents: [], children: [], icon: null },
+        { id: 25, name: 'Education', updated_at: PARENT_TS, parents: [], children: [], icon: null },
+        { id: 44, name: 'Tips', updated_at: PARENT_TS + 100, parents: [], children: [], icon: null },
+        { id: 56, name: 'add-on', updated_at: PARENT_TS + 100, parents: [], children: [], icon: null },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      // Pre-flight must force-rename the conflicting migration tags
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE tag SET name = ?, updated_at = ? WHERE id = ?',
+        ['Dividends', PARENT_TS, 24]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE tag SET name = ?, updated_at = ? WHERE id = ?',
+        ['Education', PARENT_TS, 25]
+      )
+
+      // Freed names must now be inserted under the parent's canonical IDs
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO tag (id, name, updated_at) VALUES (?, ?, ?)',
+        [44, 'Tips', PARENT_TS + 100]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO tag (id, name, updated_at) VALUES (?, ?, ?)',
+        [56, 'add-on', PARENT_TS + 100]
+      )
+
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('remaps all FK references when the conflicting local ID is absent from the package', async () => {
+      // Child has Tips=24 from migration; parent package only has Tips=44 (no id=24 at all).
+      // Pre-flight should remap 24→44 across all reference tables then delete id=24.
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM tag WHERE id = ?') {
+          if (params[0] === 24) return Promise.resolve({ id: 24 })
+          return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id FROM tag WHERE name = ?') {
+          if (params[0] === 'Tips') return Promise.resolve({ id: 24 })
+          return Promise.resolve(null)
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.tags = [
+        { id: 44, name: 'Tips', updated_at: 600, parents: [], children: [], icon: null },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE trx_base SET tag_id = ? WHERE tag_id = ?', [44, 24]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE budget SET tag_id = ? WHERE tag_id = ?', [44, 24]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM tag WHERE id = ?', [24]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO tag (id, name, updated_at) VALUES (?, ?, ?)',
+        [44, 'Tips', 600]
+      )
+      expect(result.errors).toHaveLength(0)
+    })
+  })
 })
