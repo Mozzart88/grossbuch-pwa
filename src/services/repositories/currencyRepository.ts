@@ -1,6 +1,7 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Currency, CurrencyInput, ExchangeRate } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
+import { fromIntFrac } from '../../utils/amount'
 import type { IntFrac } from '../../utils/amount'
 
 export const currencyRepository = {
@@ -210,11 +211,10 @@ export const currencyRepository = {
   },
 
   /**
-   * Get the exchange rate for a currency to convert to default currency.
+   * Get the exchange rate for a currency relative to the App base currency (USD).
    * Returns IntFrac:
-   * - {int: 1, frac: 0} for the system currency (1.00 rate)
-   * - Latest rate from exchange_rate table for non-system currencies
-   * - {int: 1, frac: 0} as fallback if no rate exists
+   * - {int: 1, frac: 0} for USD (the immutable App base currency) or if no rate exists
+   * - Latest rate from exchange_rate table for all other currencies (including system currency)
    */
   async getRateForCurrency(currencyId: number): Promise<IntFrac> {
     const currency = await this.findById(currencyId)
@@ -222,16 +222,31 @@ export const currencyRepository = {
       return { int: 1, frac: 0 }
     }
 
-    // Check if this is the system currency
-    if (currency.is_system) {
+    // USD is the App base currency — rate is always 1
+    if (currency.code === 'USD') {
       return { int: 1, frac: 0 }
     }
 
-    // Get latest rate from exchange_rate table
+    // Get latest rate from exchange_rate table (rate = currency units per 1 USD)
     const rate = await this.getExchangeRate(currencyId)
     if (rate) {
       return { int: rate.rate_int, frac: rate.rate_frac }
     }
     return { int: 1, frac: 0 }
+  },
+
+  /**
+   * Get the system currency's rate relative to USD and its ID.
+   * Used by summary queries to convert USD intermediate values to the display currency.
+   * Returns rate=1 and currencyId=-1 if no system currency is configured.
+   */
+  async getSystemRateInfo(): Promise<{ rate: number; currencyId: number }> {
+    const system = await this.findSystem()
+    if (!system) return { rate: 1, currencyId: -1 }
+    const rate = await this.getExchangeRate(system.id)
+    return {
+      rate: rate ? fromIntFrac(rate.rate_int, rate.rate_frac) : 1,
+      currencyId: system.id,
+    }
   },
 }

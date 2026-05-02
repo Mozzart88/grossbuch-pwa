@@ -71,8 +71,8 @@ export function ExchangeRatesPage() {
   }
 
   const openModal = (currency: CurrencyWithRate) => {
-    if (currency.is_system) {
-      showToast('Cannot edit rate for default currency', 'error')
+    if (currency.code === 'USD') {
+      showToast('USD is the base currency and cannot be edited', 'error')
       return
     }
     setEditingCurrency(currency)
@@ -113,7 +113,7 @@ export function ExchangeRatesPage() {
   }
 
   const formatRate = (currency: CurrencyWithRate): string => {
-    if (currency.is_system) {
+    if (currency.code === 'USD') {
       return '1.00'
     }
     return currency.currentRate.toFixed(currency.decimal_places + 2)
@@ -133,18 +133,14 @@ export function ExchangeRatesPage() {
     )
   }
 
-  const defaultCurrency = currencies.find((c) => c.is_system)
-
   return (
     <div>
       <PageHeader title="Exchange Rates" showBack />
 
       <div className="p-4 space-y-4">
-        {defaultCurrency && (
-          <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-            Rates are relative to {defaultCurrency.code} ({defaultCurrency.symbol})
-          </div>
-        )}
+        <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+          Rates are relative to USD ($)
+        </div>
 
         <Card className="divide-y divide-gray-200 dark:divide-gray-700">
           {currencies.map((currency) => (
@@ -185,18 +181,18 @@ export function ExchangeRatesPage() {
         </Card>
 
         <div className="text-xs text-gray-400 dark:text-gray-500 text-center">
-          <p>Rate = 1 unit of currency in {defaultCurrency?.code || 'default currency'}</p>
-          <p>e.g., EUR rate 1.10 means 1 EUR = 1.10 {defaultCurrency?.code || 'USD'}</p>
+          <p>Rate = 1 unit of currency in USD</p>
+          <p>e.g., EUR rate 1.10 means 1 EUR = 1.10 USD</p>
         </div>
       </div>
 
       <Modal isOpen={modalOpen} onClose={closeModal} title={`Edit ${editingCurrency?.code} Rate`}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            How much {defaultCurrency?.code || 'default currency'} is 1 {editingCurrency?.code} worth?
+            How much USD is 1 {editingCurrency?.code} worth?
           </div>
           <AmountInput
-            label={`Rate (in ${defaultCurrency?.code || 'default currency'})`}
+            label="Rate (in USD)"
             isPositive
             value={rate}
             onChange={setRate}

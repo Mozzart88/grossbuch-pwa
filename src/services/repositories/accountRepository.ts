@@ -137,20 +137,26 @@ export const accountRepository = {
 
   // Calculate total balance across all accounts in default currency
   async getTotalBalance(): Promise<number> {
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
     const result = await queryOne<{ total: number }>(`
       SELECT
         COALESCE(SUM(
-          (a.balance_int + a.balance_frac * 1e-18)
-          / (COALESCE(
-            (SELECT (er.rate_int + er.rate_frac * 1e-18) FROM exchange_rate er
-             WHERE er.currency_id = a.currency_id
-             ORDER BY er.updated_at DESC LIMIT 1),
-            1.0
-          ))
+          CASE WHEN a.currency_id = ?
+            THEN (a.balance_int + a.balance_frac * 1e-18)
+            ELSE (a.balance_int + a.balance_frac * 1e-18)
+                 / (COALESCE(
+                   (SELECT (er.rate_int + er.rate_frac * 1e-18) FROM exchange_rate er
+                    WHERE er.currency_id = a.currency_id
+                    ORDER BY er.updated_at DESC LIMIT 1),
+                   1.0
+                 ))
+                 * ?
+          END
         ), 0) as total
       FROM account a
       JOIN currency c ON a.currency_id = c.id
-    `)
+    `, [sysCurrencyId, sysRate])
 
     return result?.total ?? 0
   },

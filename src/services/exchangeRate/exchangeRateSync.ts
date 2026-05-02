@@ -38,23 +38,24 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
     return { success: false }
   }
 
-  // No rate needed if this IS the default currency
-  if (currency.id === defaultCurrency.id) {
+  // USD is the App base currency — no rate needed
+  if (currency.code === 'USD') {
     return { success: true }
   }
 
   try {
-    const response = await getLatestRates([currency.code, defaultCurrency.code], token)
+    const response = await getLatestRates([currency.code, 'USD'], token)
     const ratesMap = new Map(response.rates.map((r) => [r.code, r.value]))
 
     const apiRate = ratesMap.get(currency.code)
-    const defaultCurrencyApiRate = ratesMap.get(defaultCurrency.code)
+    const usdApiRate = ratesMap.get('USD') ?? 1
 
-    if (apiRate === undefined || defaultCurrencyApiRate === undefined) {
+    if (apiRate === undefined) {
       return { success: false }
     }
 
-    const relativeRate = apiRate / defaultCurrencyApiRate
+    // Rate is always stored relative to USD (App base currency)
+    const relativeRate = apiRate / usdApiRate
     const { int: rateInt, frac: rateFrac } = toIntFrac(relativeRate)
 
     await currencyRepository.setExchangeRate(currency.id, rateInt, rateFrac)
@@ -98,8 +99,11 @@ export async function syncRates(): Promise<SyncRatesResult> {
     return { success: false, syncedCount: 0, skippedReason: 'no_default' }
   }
 
-  // Get currency codes to fetch
+  // Get currency codes to fetch; always include USD as it is the App base currency
   const currencyCodes = currencies.map((c) => c.code)
+  if (!currencyCodes.includes('USD')) {
+    currencyCodes.push('USD')
+  }
 
   // Fetch rates from API
   const response = await getLatestRates(currencyCodes, token)
@@ -107,20 +111,14 @@ export async function syncRates(): Promise<SyncRatesResult> {
   // Convert rates array to map for easier lookup
   const ratesMap = new Map(response.rates.map((r) => [r.code, r.value]))
 
-  // Get the API rate for the default currency (to convert all rates relative to it)
-  const defaultCurrencyApiRate = ratesMap.get(defaultCurrency.code)
-  if (defaultCurrencyApiRate === undefined) {
-    console.warn(
-      `[ExchangeRateSync] Default currency ${defaultCurrency.code} not found in API response`
-    )
-    return { success: false, syncedCount: 0, skippedReason: 'default_not_in_api' }
-  }
+  // USD is the App base currency — all rates are stored relative to it
+  const usdApiRate = ratesMap.get('USD') ?? 1
 
   // Save rates for each currency
   let syncedCount = 0
   for (const currency of currencies) {
-    // Skip default currency (rate is always 1)
-    if (currency.is_system) {
+    // USD is the App base currency — skip it (implicit rate 1)
+    if (currency.code === 'USD') {
       continue
     }
 
@@ -132,10 +130,8 @@ export async function syncRates(): Promise<SyncRatesResult> {
       continue
     }
 
-    // Convert rate relative to default currency
-    // If API gives USD-based rates and default is EUR:
-    // EUR rate = apiRate / defaultCurrencyApiRate
-    const relativeRate = apiRate / defaultCurrencyApiRate
+    // Rate stored as: currency units per 1 USD
+    const relativeRate = apiRate / usdApiRate
 
     // Convert to IntFrac storage format
     const { int: rateInt, frac: rateFrac } = toIntFrac(relativeRate)

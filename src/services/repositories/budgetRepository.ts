@@ -1,4 +1,5 @@
 import { querySQL, queryOne, execSQL } from '../database'
+import { currencyRepository } from './currencyRepository'
 import type { Budget, BudgetInput, BudgetSummary } from '../../types'
 
 // Helper to convert Uint8Array to hex string for SQL queries
@@ -53,6 +54,8 @@ export const budgetRepository = {
         endOfMonth.setMonth(endOfMonth.getMonth() + 1)
         const endTimestamp = Math.floor(endOfMonth.getTime() / 1000)
 
+        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
         return querySQL<Budget>(
             `
       SELECT
@@ -61,11 +64,14 @@ export const budgetRepository = {
         (
           SELECT COALESCE(SUM(
             CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * (tb.amount_int + tb.amount_frac * 1e-18)
-            / (tb.rate_int + tb.rate_frac * 1e-18)
+            * CASE WHEN a.currency_id = ?
+                THEN (tb.amount_int + tb.amount_frac * 1e-18)
+                ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+              END
           ), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
+          JOIN account a ON a.id = tb.account_id
           WHERE tb.tag_id = b.tag_id
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
@@ -76,7 +82,7 @@ export const budgetRepository = {
       WHERE b.start >= ? AND b.start < ?
       ORDER BY t.name ASC
     `,
-            [startTimestamp, endTimestamp]
+            [sysCurrencyId, sysRate, startTimestamp, endTimestamp]
         )
     },
 
@@ -109,6 +115,8 @@ export const budgetRepository = {
      * Get budget with actual spending for current period
      */
     async findWithActual(id: Uint8Array): Promise<Budget | null> {
+        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
         return queryOne<Budget>(
             `
       SELECT
@@ -117,11 +125,14 @@ export const budgetRepository = {
         (
           SELECT COALESCE(SUM(
             CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * (tb.amount_int + tb.amount_frac * 1e-18)
-            / (tb.rate_int + tb.rate_frac * 1e-18)
+            * CASE WHEN a.currency_id = ?
+                THEN (tb.amount_int + tb.amount_frac * 1e-18)
+                ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+              END
           ), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
+          JOIN account a ON a.id = tb.account_id
           WHERE tb.tag_id = b.tag_id
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
@@ -131,7 +142,7 @@ export const budgetRepository = {
       JOIN tag t ON b.tag_id = t.id
       WHERE hex(b.id) = ?
     `,
-            [toHex(id)]
+            [sysCurrencyId, sysRate, toHex(id)]
         )
     },
 
@@ -247,6 +258,7 @@ export const budgetRepository = {
      */
     async findActive(): Promise<Budget[]> {
         const now = Math.floor(Date.now() / 1000)
+        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
 
         return querySQL<Budget>(
             `
@@ -256,11 +268,14 @@ export const budgetRepository = {
         (
           SELECT COALESCE(SUM(
             CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * (tb.amount_int + tb.amount_frac * 1e-18)
-            / (tb.rate_int + tb.rate_frac * 1e-18)
+            * CASE WHEN a.currency_id = ?
+                THEN (tb.amount_int + tb.amount_frac * 1e-18)
+                ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+              END
           ), 0)
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
+          JOIN account a ON a.id = tb.account_id
           WHERE tb.tag_id = b.tag_id
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
@@ -271,7 +286,7 @@ export const budgetRepository = {
       WHERE b.start <= ? AND b.end > ?
       ORDER BY t.name ASC
     `,
-            [now, now]
+            [sysCurrencyId, sysRate, now, now]
         )
     },
 }

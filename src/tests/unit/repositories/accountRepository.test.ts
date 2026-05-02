@@ -10,10 +10,10 @@ vi.mock('../../../services/database', () => ({
   getLastInsertId: vi.fn(),
 }))
 
-// Mock currencyRepository for convertAmount
 vi.mock('../../../services/repositories/currencyRepository', () => ({
   currencyRepository: {
     getExchangeRate: vi.fn(),
+    getSystemRateInfo: vi.fn().mockResolvedValue({ rate: 1, currencyId: 1 }),
   },
 }))
 
@@ -257,14 +257,14 @@ describe('accountRepository', () => {
   })
 
   describe('getTotalBalance', () => {
-    it('returns sum of all account balances with rate conversion', async () => {
+    it('returns sum of all account balances with rate conversion to system currency', async () => {
       mockQueryOne.mockResolvedValue({ total: 2500.00 })
 
       const result = await accountRepository.getTotalBalance()
 
-      // Should use balance_int + balance_frac formula (no bind params)
       expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('balance_int'),
+        expect.arrayContaining([expect.any(Number), expect.any(Number)])
       )
       expect(result).toBe(2500.00)
     })

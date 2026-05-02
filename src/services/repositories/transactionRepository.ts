@@ -183,38 +183,44 @@ export const transactionRepository = {
     return trx
   },
 
-  // Get month summary with rate conversion to default currency
+  // Get month summary with rate conversion to system currency via App base (USD)
   async getMonthSummary(yearMonth: string): Promise<{ income: number; expenses: number }> {
     const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
     const endDate = new Date(`${yearMonth}-01`)
     endDate.setMonth(endDate.getMonth() + 1)
     const endTs = Math.floor(endDate.getTime() / 1000)
 
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
     const result = await queryOne<{ income: number; expenses: number }>(`
       SELECT
-        COALESCE(SUM(CASE WHEN tb.sign = '+' AND NOT EXISTS(
+        COALESCE(SUM(CASE WHEN sign = '+' AND NOT EXISTS(
             SELECT 1 FROM tags_hierarchy th2
-            WHERE th2.child_id = tag.id AND th2.parent = 'add-on'
-          ) THEN (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
-          ELSE 0 END), 0) as income,
+            WHERE th2.child_id = tag_id AND th2.parent = 'add-on'
+          ) THEN conv_amount ELSE 0 END), 0) as income,
         COALESCE(SUM(CASE
-          WHEN tb.sign = '-'
-          THEN (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
-          WHEN tb.sign = '+' AND EXISTS(
+          WHEN sign = '-' THEN conv_amount
+          WHEN sign = '+' AND EXISTS(
             SELECT 1 FROM tags_hierarchy th2
-            WHERE th2.child_id = tag.id AND th2.parent = 'add-on'
-          ) THEN -(tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
+            WHERE th2.child_id = tag_id AND th2.parent = 'add-on'
+          ) THEN -conv_amount
           ELSE 0 END), 0) as expenses
-      FROM trx t
-      JOIN trx_base tb ON tb.trx_id = t.id
-      JOIN tag ON tb.tag_id = tag.id
-      WHERE t.timestamp >= ? AND t.timestamp < ?
-        AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        AND tb.tag_id NOT IN (?, ?, ?)
+      FROM (
+        SELECT tb.sign, tb.tag_id,
+          CASE WHEN a.currency_id = ?
+            THEN (tb.amount_int + tb.amount_frac * 1e-18)
+            ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+          END AS conv_amount
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN account a ON a.id = tb.account_id
+        JOIN tag ON tb.tag_id = tag.id
+        WHERE t.timestamp >= ? AND t.timestamp < ?
+          AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+          AND tb.tag_id NOT IN (?, ?, ?)
+      ) sub
     `, [
+      sysCurrencyId, sysRate,
       startTs, endTs,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE,
     ])
@@ -225,11 +231,13 @@ export const transactionRepository = {
     }
   },
 
-  // Get day summary with rate conversion to default currency
+  // Get day summary with rate conversion to system currency via App base (USD)
   // Returns net amount (income - expenses) for a specific date
   async getDaySummary(date: string, filter?: TransactionFilter): Promise<number> {
     const startTs = Math.floor(new Date(`${date}T00:00:00`).getTime() / 1000)
     const endTs = Math.floor(new Date(`${date}T23:59:59`).getTime() / 1000) + 1
+
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
 
     const conditions: string[] = [
       `t.timestamp >= ? AND t.timestamp < ?`,
@@ -239,6 +247,8 @@ export const transactionRepository = {
       SYSTEM_TAGS.EXCHANGE,
       SYSTEM_TAGS.TRANSFER,
       SYSTEM_TAGS.INITIAL,
+      sysCurrencyId,
+      sysRate,
       startTs, endTs,
     ]
 
@@ -266,11 +276,14 @@ export const transactionRepository = {
         COALESCE(SUM(CASE
           WHEN tb.tag_id NOT IN (?, ?, ?)
           THEN (CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END)
-               * (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
+               * CASE WHEN a.currency_id = ?
+                   THEN (tb.amount_int + tb.amount_frac * 1e-18)
+                   ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+                 END
           ELSE 0 END), 0) as net
       FROM trx t
       JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON a.id = tb.account_id
       LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
       LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
       WHERE ${conditions.join(' AND ')}
@@ -286,67 +299,76 @@ export const transactionRepository = {
     endDate.setMonth(endDate.getMonth() + 1)
     const endTs = Math.floor(endDate.getTime() / 1000)
 
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
     return querySQL<MonthlyTagSummary>(`
       SELECT
-        tb.tag_id,
-        tag.name as tag,
-        COALESCE(SUM(CASE WHEN tb.sign = '+'
-          THEN (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
-          ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN tb.sign = '-'
-          THEN (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
-          ELSE 0 END), 0) as expense,
-        COALESCE(SUM(CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END
-          * (tb.amount_int + tb.amount_frac * 1e-18)
-          / (tb.rate_int + tb.rate_frac * 1e-18)), 0) as net
-      FROM trx t
-      JOIN trx_base tb ON tb.trx_id = t.id
-      JOIN tag ON tb.tag_id = tag.id
-      WHERE t.timestamp >= ? AND t.timestamp < ?
-        AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        AND tb.tag_id NOT IN (?, ?, ?)
-      GROUP BY tb.tag_id, tag.name
+        tag_id,
+        tag,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN sign = '-' THEN conv_amount ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE -conv_amount END), 0) as net
+      FROM (
+        SELECT tb.tag_id, tag.name as tag, tb.sign,
+          CASE WHEN a.currency_id = ?
+            THEN (tb.amount_int + tb.amount_frac * 1e-18)
+            ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+          END AS conv_amount
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN account a ON a.id = tb.account_id
+        JOIN tag ON tb.tag_id = tag.id
+        WHERE t.timestamp >= ? AND t.timestamp < ?
+          AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+          AND tb.tag_id NOT IN (?, ?, ?)
+      ) sub
+      GROUP BY tag_id, tag
       ORDER BY ABS(net) DESC
     `, [
+      sysCurrencyId, sysRate,
       startTs, endTs,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
     ])
   },
 
-  // Get monthly counterparties summary with rate conversion to default currency
+  // Get monthly counterparties summary with rate conversion to system currency via App base (USD)
   async getMonthlyCounterpartiesSummary(yearMonth: string): Promise<MonthlyCounterpartySummary[]> {
     const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
     const endDate = new Date(`${yearMonth}-01`)
     endDate.setMonth(endDate.getMonth() + 1)
     const endTs = Math.floor(endDate.getTime() / 1000)
 
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
     return querySQL<MonthlyCounterpartySummary>(`
       SELECT
-        COALESCE(tc.counterparty_id, 0) as counterparty_id,
-        COALESCE(cp.name, 'No counterparty') as counterparty,
-        COALESCE(SUM(CASE WHEN tb.sign = '+'
-          THEN (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
-          ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN tb.sign = '-'
-          THEN (tb.amount_int + tb.amount_frac * 1e-18)
-               / (tb.rate_int + tb.rate_frac * 1e-18)
-          ELSE 0 END), 0) as expense,
-        COALESCE(SUM(CASE WHEN tb.sign = '+' THEN 1 ELSE -1 END
-          * (tb.amount_int + tb.amount_frac * 1e-18)
-          / (tb.rate_int + tb.rate_frac * 1e-18)), 0) as net
-      FROM trx t
-      JOIN trx_base tb ON tb.trx_id = t.id
-      LEFT JOIN trx_to_counterparty tc ON tc.trx_id = t.id
-      LEFT JOIN counterparty cp ON tc.counterparty_id = cp.id
-      WHERE t.timestamp >= ? AND t.timestamp < ?
-        AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        AND tb.tag_id NOT IN (?, ?, ?)
-      GROUP BY tc.counterparty_id, cp.name
+        counterparty_id,
+        counterparty,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN sign = '-' THEN conv_amount ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE -conv_amount END), 0) as net
+      FROM (
+        SELECT
+          COALESCE(tc.counterparty_id, 0) as counterparty_id,
+          COALESCE(cp.name, 'No counterparty') as counterparty,
+          tb.sign,
+          CASE WHEN a.currency_id = ?
+            THEN (tb.amount_int + tb.amount_frac * 1e-18)
+            ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+          END AS conv_amount
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN account a ON a.id = tb.account_id
+        LEFT JOIN trx_to_counterparty tc ON tc.trx_id = t.id
+        LEFT JOIN counterparty cp ON tc.counterparty_id = cp.id
+        WHERE t.timestamp >= ? AND t.timestamp < ?
+          AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+          AND tb.tag_id NOT IN (?, ?, ?)
+      ) sub
+      GROUP BY counterparty_id, counterparty
       ORDER BY ABS(net) DESC
     `, [
+      sysCurrencyId, sysRate,
       startTs, endTs,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
     ])
@@ -359,17 +381,22 @@ export const transactionRepository = {
     endDate.setMonth(endDate.getMonth() + 1)
     const endTs = Math.floor(endDate.getTime() / 1000)
 
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
     return querySQL<MonthlyCategoryBreakdown>(`
       SELECT
         tb.tag_id,
         tag.name as tag,
         COALESCE(SUM(
-          (tb.amount_int + tb.amount_frac * 1e-18)
-          / (tb.rate_int + tb.rate_frac * 1e-18)
+          CASE WHEN a.currency_id = ?
+            THEN (tb.amount_int + tb.amount_frac * 1e-18)
+            ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+          END
         ), 0) as amount,
         CASE WHEN tb.sign = '+' THEN 'income' ELSE 'expense' END as type
       FROM trx t
       JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN account a ON a.id = tb.account_id
       JOIN tag ON tb.tag_id = tag.id
       WHERE t.timestamp >= ? AND t.timestamp < ?
         AND (tb.rate_int > 0 OR tb.rate_frac > 0)
@@ -377,6 +404,7 @@ export const transactionRepository = {
       GROUP BY tb.tag_id, tag.name, tb.sign
       ORDER BY amount DESC
     `, [
+      sysCurrencyId, sysRate,
       startTs, endTs,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
     ])

@@ -229,8 +229,8 @@ describe('exchangeRateSync', () => {
       expect(result).toEqual({ success: true, syncedCount: 1 })
     })
 
-    it('handles non-USD base currency correctly', async () => {
-      // User has EUR as default
+    it('stores all non-USD currencies relative to USD (regardless of system currency)', async () => {
+      // User has EUR as system currency, but App base is always USD
       const currencies = [
         createCurrency({
           id: 1,
@@ -252,7 +252,6 @@ describe('exchangeRateSync', () => {
         }),
       ]
       mockFindUsedInAccounts.mockResolvedValue(currencies)
-      // API returns USD-based rates
       mockGetLatestRates.mockResolvedValue({
         rates: [
           createApiRate('EUR', 0.92),
@@ -263,15 +262,16 @@ describe('exchangeRateSync', () => {
 
       const result = await syncRates()
 
-      // USD rate relative to EUR = 1.0 / 0.92 = 1.087...
-      // GBP rate relative to EUR = 0.79 / 0.92 = 0.858...
+      // EUR rate relative to USD = 0.92 / 1.0 = 0.92
+      // GBP rate relative to USD = 0.79 / 1.0 = 0.79
+      // USD itself is skipped (App base currency)
       expect(mockSetExchangeRate).toHaveBeenCalledTimes(2)
-      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number), expect.any(Number)) // USD
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(1, expect.any(Number), expect.any(Number)) // EUR
       expect(mockSetExchangeRate).toHaveBeenCalledWith(3, expect.any(Number), expect.any(Number)) // GBP
       expect(result).toEqual({ success: true, syncedCount: 2 })
     })
 
-    it('returns default_not_in_api when default currency not in API response', async () => {
+    it('skips currencies not in API response but stores others', async () => {
       const currencies = [
         createCurrency({ id: 1, code: 'XYZ', is_system: true }), // Not in API
         createCurrency({ id: 2, code: 'EUR', is_system: false }),
@@ -283,12 +283,10 @@ describe('exchangeRateSync', () => {
 
       const result = await syncRates()
 
-      expect(result).toEqual({
-        success: false,
-        syncedCount: 0,
-        skippedReason: 'default_not_in_api',
-      })
-      expect(mockSetExchangeRate).not.toHaveBeenCalled()
+      // XYZ is not in API so it is skipped; EUR is stored relative to USD
+      expect(result).toEqual({ success: true, syncedCount: 1 })
+      expect(mockSetExchangeRate).toHaveBeenCalledTimes(1)
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number), expect.any(Number)) // EUR
     })
 
     it('returns no_auth_token result when no JWT available', async () => {
@@ -433,19 +431,20 @@ describe('exchangeRateSync', () => {
       expect(mockSetExchangeRate).not.toHaveBeenCalled()
     })
 
-    it('returns success: false when default currency not in API response', async () => {
+    it('succeeds when system currency is not in API (normalizes to USD fallback)', async () => {
       const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
       const xyz = createCurrency({ id: 1, code: 'XYZ', is_system: true })
       mockFindById.mockResolvedValue(eur)
       mockFindSystem.mockResolvedValue(xyz)
       mockGetLatestRates.mockResolvedValue({
-        rates: [createApiRate('EUR', 0.92)], // No XYZ
+        rates: [createApiRate('EUR', 0.92)], // No USD in response — falls back to usdRate=1
       })
 
       const result = await syncSingleRate(2)
 
-      expect(result).toEqual({ success: false })
-      expect(mockSetExchangeRate).not.toHaveBeenCalled()
+      // EUR rate stored relative to USD (fallback rate 1): 0.92 / 1 = 0.92
+      expect(result).toEqual({ success: true, rate: 0.92 })
+      expect(mockSetExchangeRate).toHaveBeenCalledWith(2, expect.any(Number), expect.any(Number))
     })
 
     it('returns success: false when API call throws', async () => {

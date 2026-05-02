@@ -357,8 +357,7 @@ describe('ExchangeRatesPage', () => {
     await waitFor(() => expect(screen.getByText('USD')).toBeInTheDocument())
   })
 
-  it('shows fallback text when no system currency (branch[11][0])', async () => {
-    // Rates without a system currency → defaultCurrency=undefined → defaultCurrency?.code||'default currency'
+  it('always shows USD as the base currency label', async () => {
     mockCurrencyRepository.findAll.mockResolvedValue([
       { id: 2, code: 'EUR', name: 'Euro', symbol: '€', decimal_places: 2, is_system: false, is_fiat: true },
     ])
@@ -367,7 +366,7 @@ describe('ExchangeRatesPage', () => {
     ])
     render(<ExchangeRatesPage />)
     await waitFor(() => {
-      expect(screen.getByText(/default currency/i)).toBeInTheDocument()
+      expect(screen.getByText(/relative to USD/i)).toBeInTheDocument()
     })
   })
 

@@ -535,9 +535,9 @@ describe('currencyRepository', () => {
   describe('getRateForCurrency', () => {
     it('returns latest exchange rate for currency as IntFrac', async () => {
       const rate: ExchangeRate = { currency_id: 2, rate_int: 1, rate_frac: 150000000000000000, updated_at: 1704067200 }
-      // First call: findById returns non-system currency
-      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, is_system: false })
-      // Second call: getExchangeRate returns rate
+      // findById returns a non-USD currency
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, code: 'EUR', is_system: false })
+      // getExchangeRate returns the rate
       mockQueryOne.mockResolvedValueOnce(rate)
 
       const result = await currencyRepository.getRateForCurrency(2)
@@ -545,12 +545,22 @@ describe('currencyRepository', () => {
       expect(result).toEqual({ int: 1, frac: 150000000000000000 })
     })
 
-    it('returns {int: 1, frac: 0} when currency is system', async () => {
-      mockQueryOne.mockResolvedValue({ ...sampleCurrency, is_system: true })
+    it('returns {int: 1, frac: 0} when currency is USD (App base currency)', async () => {
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, code: 'USD' })
 
       const result = await currencyRepository.getRateForCurrency(1)
 
       expect(result).toEqual({ int: 1, frac: 0 })
+    })
+
+    it('returns real rate when currency is system but not USD', async () => {
+      const rate: ExchangeRate = { currency_id: 3, rate_int: 1, rate_frac: 80000000000000000, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 3, code: 'EUR', is_system: true })
+      mockQueryOne.mockResolvedValueOnce(rate)
+
+      const result = await currencyRepository.getRateForCurrency(3)
+
+      expect(result).toEqual({ int: 1, frac: 80000000000000000 })
     })
 
     it('returns {int: 1, frac: 0} when no currency found', async () => {
@@ -562,13 +572,45 @@ describe('currencyRepository', () => {
     })
 
     it('returns {int: 1, frac: 0} when no rate for currency', async () => {
-      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, is_system: false })
+      mockQueryOne.mockResolvedValueOnce({ ...sampleCurrency, id: 2, code: 'EUR', is_system: false })
       mockQueryOne.mockResolvedValueOnce(null)
 
       const result = await currencyRepository.getRateForCurrency(2)
 
       expect(mockQueryOne).toHaveBeenCalledTimes(2)
       expect(result).toEqual({ int: 1, frac: 0 })
+    })
+  })
+
+  describe('getSystemRateInfo', () => {
+    it('returns {rate: 1, currencyId: -1} when no system currency', async () => {
+      mockQueryOne.mockResolvedValueOnce(null) // findSystem returns null
+
+      const result = await currencyRepository.getSystemRateInfo()
+
+      expect(result).toEqual({ rate: 1, currencyId: -1 })
+    })
+
+    it('returns actual rate when system currency has an exchange rate', async () => {
+      const eurCurrency = { ...sampleCurrency, id: 3, code: 'EUR', is_system: true }
+      const exchangeRate = { currency_id: 3, rate_int: 1, rate_frac: 80000000000000000, updated_at: 1704067200 }
+      mockQueryOne.mockResolvedValueOnce(eurCurrency) // findSystem
+      mockQueryOne.mockResolvedValueOnce(exchangeRate) // getExchangeRate
+
+      const result = await currencyRepository.getSystemRateInfo()
+
+      expect(result.currencyId).toBe(3)
+      expect(result.rate).toBeCloseTo(1.08, 2)
+    })
+
+    it('returns rate=1 when system currency has no exchange rate', async () => {
+      const eurCurrency = { ...sampleCurrency, id: 3, code: 'EUR', is_system: true }
+      mockQueryOne.mockResolvedValueOnce(eurCurrency) // findSystem
+      mockQueryOne.mockResolvedValueOnce(null) // getExchangeRate returns null
+
+      const result = await currencyRepository.getSystemRateInfo()
+
+      expect(result).toEqual({ rate: 1, currencyId: 3 })
     })
   })
 

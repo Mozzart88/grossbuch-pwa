@@ -28,10 +28,11 @@ vi.mock('../../../services/repositories/accountRepository', () => ({
   },
 }))
 
-// Mock the currencyRepository (used by addLine for rate lookup)
+// Mock the currencyRepository (used by addLine for rate lookup and summary queries)
 vi.mock('../../../services/repositories/currencyRepository', () => ({
   currencyRepository: {
     getRateForCurrency: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
+    getSystemRateInfo: vi.fn().mockResolvedValue({ rate: 1, currencyId: 1 }),
   },
 }))
 
@@ -480,9 +481,9 @@ describe('transactionRepository', () => {
       await transactionRepository.getMonthSummary('2025-01')
 
       const call = mockQueryOne.mock.calls[0]
-      // Params: 2 timestamps + 3 system tags = 5 total
-      // Start timestamp is at index 0
-      expect(call![1]![0]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
+      // Params: [sysCurrencyId, sysRate, startTs, endTs, INITIAL, TRANSFER, EXCHANGE]
+      // Start timestamp is at index 2
+      expect(call![1]![2]).toBe(Math.floor(new Date('2025-01-01T00:00:00').getTime() / 1000))
     })
 
     it('excludes common income-like tags (discount) from income and subtracts from expenses', async () => {
@@ -565,9 +566,9 @@ describe('transactionRepository', () => {
       await transactionRepository.getDaySummary('2025-01-09')
 
       const call = mockQueryOne.mock.calls[0]
-      // Params: 3 system tags + 2 timestamps = 5 base (indices 3 and 4)
-      const startTs = call![1]![3] as number
-      const endTs = call![1]![4] as number
+      // Params: [EXCHANGE, TRANSFER, INITIAL, sysCurrencyId, sysRate, startTs, endTs]
+      const startTs = call![1]![5] as number
+      const endTs = call![1]![6] as number
 
       // Start should be beginning of day
       expect(startTs).toBe(Math.floor(new Date('2025-01-09T00:00:00').getTime() / 1000))
