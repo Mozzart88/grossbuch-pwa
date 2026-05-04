@@ -27,18 +27,18 @@ async function getToken(): Promise<string | null> {
 async function fetchAndStoreRate(
   currencyId: number,
   currencyCode: string,
-  defaultCurrencyCode: string,
   date: string,
   token: string
 ): Promise<IntFrac | null> {
   try {
-    const response = await getHistoricalRates(date, [currencyCode, defaultCurrencyCode], token)
+    // Always fetch alongside USD — rates are stored relative to the App base currency (USD)
+    const response = await getHistoricalRates(date, [currencyCode, 'USD'], token)
     const ratesMap = new Map(response.rates.map((r) => [r.code, r.value]))
     const apiRate = ratesMap.get(currencyCode)
-    const defaultApiRate = ratesMap.get(defaultCurrencyCode)
-    if (apiRate === undefined || defaultApiRate === undefined) return null
+    const usdApiRate = ratesMap.get('USD') ?? 1
+    if (apiRate === undefined) return null
 
-    const relativeRate = apiRate / defaultApiRate
+    const relativeRate = apiRate / usdApiRate
     const { int: rateInt, frac: rateFrac } = toIntFrac(relativeRate)
     await currencyRepository.setExchangeRate(currencyId, rateInt, rateFrac, date)
     return { int: rateInt, frac: rateFrac }
@@ -50,7 +50,6 @@ async function fetchAndStoreRate(
 async function searchNearbyDates(
   currencyId: number,
   currencyCode: string,
-  defaultCurrencyCode: string,
   targetDate: string,
   token: string,
   threshold: number
@@ -68,7 +67,7 @@ async function searchNearbyDates(
       }
 
       // Try API for this candidate date
-      const found = await fetchAndStoreRate(currencyId, currencyCode, defaultCurrencyCode, candidate, token)
+      const found = await fetchAndStoreRate(currencyId, currencyCode, candidate, token)
       if (found) {
         // Also store for the originally requested date
         await currencyRepository.setExchangeRate(currencyId, found.int, found.frac, targetDate)
@@ -78,7 +77,7 @@ async function searchNearbyDates(
   }
 
   // Expand threshold by 1 and recurse
-  return searchNearbyDates(currencyId, currencyCode, defaultCurrencyCode, targetDate, token, threshold + 1)
+  return searchNearbyDates(currencyId, currencyCode, targetDate, token, threshold + 1)
 }
 
 /**
@@ -106,22 +105,20 @@ export async function getRateForDate(currencyId: number, date: string): Promise<
   const token = await getToken()
   if (!token) return currencyRepository.getRateForCurrency(currencyId)
 
-  // 4. Resolve currency codes
+  // 4. Resolve currency code
   const currency = await currencyRepository.findById(currencyId)
   if (!currency) return currencyRepository.getRateForCurrency(currencyId)
-  const defaultCurrency = await currencyRepository.findSystem()
-  if (!defaultCurrency) return currencyRepository.getRateForCurrency(currencyId)
 
-  // System currency always has rate 1
-  if (currency.is_system) return { int: 1, frac: 0 }
+  // USD is the App base currency — its rate is always 1
+  if (currency.code === 'USD') return { int: 1, frac: 0 }
 
   // 5. Try API for exact date
-  const exact = await fetchAndStoreRate(currencyId, currency.code, defaultCurrency.code, date, token)
+  const exact = await fetchAndStoreRate(currencyId, currency.code, date, token)
   if (exact) return exact
 
   // 6. Search nearby dates with expanding threshold
   const nearby = await searchNearbyDates(
-    currencyId, currency.code, defaultCurrency.code, date, token, 3
+    currencyId, currency.code, date, token, 3
   )
   if (nearby) return nearby
 

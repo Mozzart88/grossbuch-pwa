@@ -9,6 +9,13 @@ vi.mock('../../../services/database', () => ({
     queryOne: vi.fn(),
 }))
 
+// Mock currencyRepository (used by findByMonth, findWithActual, findActive for system rate)
+vi.mock('../../../services/repositories/currencyRepository', () => ({
+    currencyRepository: {
+        getSystemRateInfo: vi.fn().mockResolvedValue({ rate: 1, currencyId: 1 }),
+    },
+}))
+
 import { budgetRepository } from '../../../services/repositories/budgetRepository'
 import { execSQL, querySQL, queryOne } from '../../../services/database'
 
@@ -345,7 +352,7 @@ describe('budgetRepository', () => {
 
             expect(mockQueryOne).toHaveBeenCalledWith(
                 expect.stringContaining('FROM trx_base tb'),
-                [mockHexId]
+                expect.arrayContaining([mockHexId])
             )
         })
 

@@ -93,6 +93,7 @@ async function importIcons(icons: SyncIcon[]): Promise<number> {
 
 async function importTags(tags: SyncTag[]): Promise<number> {
   let count = 0
+  await resolveTagNameConflicts(tags)
   for (const tag of tags) {
     const local = await queryOne<{ name: string, updated_at: number }>(
       `SELECT name, updated_at FROM tag WHERE id = ?`,
@@ -109,6 +110,59 @@ async function importTags(tags: SyncTag[]): Promise<number> {
     count++
   }
   return count
+}
+
+// Pre-flight: resolve tag name conflicts caused by migration-assigned IDs diverging from
+// the parent device's canonical IDs for the same tag names (e.g. v16 seeded Tips=24 on
+// child but parent had Tips=44 as a user-created tag before v16 ran).
+// Must run inside the import transaction with foreign_keys = OFF.
+async function resolveTagNameConflicts(tags: SyncTag[]): Promise<void> {
+  const incomingById = new Map(tags.map(t => [t.id, t]))
+
+  for (const tag of tags) {
+    const localById = await queryOne<{ id: number }>(
+      `SELECT id FROM tag WHERE id = ?`, [tag.id]
+    )
+    if (localById) continue // ID already exists locally, no INSERT conflict possible
+
+    const nameConflict = await queryOne<{ id: number }>(
+      `SELECT id FROM tag WHERE name = ?`, [tag.name]
+    )
+    if (!nameConflict) continue // No conflict, INSERT will succeed
+
+    const conflictingLocalId = nameConflict.id
+    const incomingForConflictId = incomingById.get(conflictingLocalId)
+
+    if (incomingForConflictId) {
+      // The conflicting local ID is claimed by a different incoming tag (different name).
+      // Force-assign the incoming name to that local ID to free this name slot.
+      // This overrides LWW because the parent's ID space is the source of truth.
+      await execSQL(
+        'UPDATE tag SET name = ?, updated_at = ? WHERE id = ?',
+        [incomingForConflictId.name, incomingForConflictId.updated_at, conflictingLocalId]
+      )
+    } else {
+      // The conflicting local ID does not appear in the package (orphaned migration tag).
+      // Remap all its FK references to the incoming ID and delete it.
+      await resolveTagIdConflict(conflictingLocalId, tag.id)
+    }
+  }
+}
+
+// Remap every FK reference from oldId to newId (FK constraints are OFF during import),
+// then delete the old tag row so the incoming tag can be inserted under newId.
+async function resolveTagIdConflict(oldId: number, newId: number): Promise<void> {
+  await execSQL(`UPDATE tag_to_tag SET child_id = ? WHERE child_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE tag_to_tag SET parent_id = ? WHERE parent_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE tag_icon SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE tag_sort_order SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE wallet_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE account_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE counterparty_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE currency_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE trx_base SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE budget SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`DELETE FROM tag WHERE id = ?`, [oldId])
 }
 
 async function syncTagRelations(tagId: number, parents: number[], children: number[]): Promise<void> {

@@ -5,7 +5,7 @@ import { tagRepository, counterpartyRepository, currencyRepository, walletReposi
 import { Button, Select, LiveSearch, DateTimeUI, Modal, Badge, AmountInput } from '../ui'
 import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
-import { fromIntFrac } from '../../utils/amount'
+import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
 import type { AccountOption } from './transactionFormShared'
 import { getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
@@ -446,6 +446,15 @@ export function ExpenseTransactionForm({
           : expenseComputedTotal.toFixed(paymentCurrencyDecimalPlaces)
         const targetTotalAmountIF = toAmountIntFrac(totalPaymentStr)
 
+        // Effective rate: actual payment-currency/source-currency ratio for this transaction.
+        // Using this instead of market rate ensures summaries reflect what was actually spent.
+        const sourceAmountVal = parseFloat(paymentAmount) || 0
+        const targetTotalAmountVal = parseFloat(totalPaymentStr) || 0
+        const effectiveRateVal = sourceAmountVal > 0
+          ? targetTotalAmountVal / sourceAmountVal
+          : targetRateData.int + targetRateData.frac * 1e-18
+        const { int: effectiveRateInt, frac: effectiveRateFrac } = toIntFrac(effectiveRateVal)
+
         lines.push({
           account_id: parseInt(accountId),
           tag_id: SYSTEM_TAGS.EXCHANGE,
@@ -474,8 +483,8 @@ export function ExpenseTransactionForm({
             sign: '-',
             amount_int: subAmountIF.int,
             amount_frac: subAmountIF.frac,
-            rate_int: targetRateData.int,
-            rate_frac: targetRateData.frac,
+            rate_int: effectiveRateInt,
+            rate_frac: effectiveRateFrac,
           })
         }
         const pctBase = isExpenseMainEditable
@@ -492,8 +501,8 @@ export function ExpenseTransactionForm({
             sign: common.isIncome ? '+' : '-',
             amount_int: commonIF.int,
             amount_frac: commonIF.frac,
-            rate_int: targetRateData.int,
-            rate_frac: targetRateData.frac,
+            rate_int: effectiveRateInt,
+            rate_frac: effectiveRateFrac,
           })
         }
       } else {

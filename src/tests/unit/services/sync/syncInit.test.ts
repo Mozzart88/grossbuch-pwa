@@ -298,6 +298,32 @@ describe('syncInit', () => {
       expect(mockDeleteInit).not.toHaveBeenCalled()
     })
 
+    it('does not push or cross-introduce for intro packages', async () => {
+      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' })
+      mockGetPrivateKey.mockResolvedValue('my-private-key')
+
+      const payloadJson = JSON.stringify({ uuid: 'device-c', intro: true })
+      const publicKey = 'device-c-pub-key'
+      const decryptedBuffer = new TextEncoder().encode(payloadJson).buffer
+      const payload = JSON.stringify({ msg: 'enc-payload', publicKey })
+
+      mockGetInit.mockResolvedValue([
+        { id: 5, uuid: 'device-c', payload, created_at: '2026-01-01' },
+      ])
+      mockBase64UrlToArrayBuffer.mockReturnValue(new ArrayBuffer(32))
+      mockRsaDecrypt.mockResolvedValue(decryptedBuffer)
+      mockGetLinkedInstallations.mockResolvedValue([])
+      mockGetPublicKey.mockResolvedValue('my-public-key')
+
+      const result = await pollAndProcessInit()
+
+      expect(mockSaveLinkedInstallation).toHaveBeenCalledWith('device-c', 'device-c-pub-key')
+      expect(mockPushSync).not.toHaveBeenCalled()
+      expect(mockPostInit).not.toHaveBeenCalled()
+      expect(mockDeleteInit).toHaveBeenCalledWith({ ids: [5], uuid: 'my-uuid' }, 'my-jwt')
+      expect(result).toMatchObject({ newDevices: ['device-c'] })
+    })
+
     it('introduces new device to existing linked devices', async () => {
       mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' })
       mockGetPrivateKey.mockResolvedValue('my-private-key')

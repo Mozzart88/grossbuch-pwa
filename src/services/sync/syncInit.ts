@@ -72,8 +72,9 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
         base64UrlToArrayBuffer(msg),
         privateKey
       )
-      const { uuid } = JSON.parse(new TextDecoder().decode(decrypted)) as {
+      const { uuid, intro } = JSON.parse(new TextDecoder().decode(decrypted)) as {
         uuid: string
+        intro?: boolean
       }
 
       // Skip if already linked — just ack the package
@@ -82,60 +83,62 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
         continue
       }
 
-      // Save as linked installation
+      // Save as linked installation (always — needed for future incremental pushes)
       await saveLinkedInstallation(uuid, publicKey)
       alreadyLinked.add(uuid)
       newDevices.push(uuid)
 
-      // Push full history to the new device (with retry)
-      let pushSuccess = false
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const ok = await pushSync({ targetUuid: uuid })
-          if (ok) {
-            pushSuccess = true
-            break
+      if (!intro) {
+        // Push full history to the new device (with retry)
+        let pushSuccess = false
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const ok = await pushSync({ targetUuid: uuid })
+            if (ok) {
+              pushSuccess = true
+              break
+            }
+            console.warn(`[pollAndProcessInit] Full push attempt ${attempt}/3: pushSync returned false`)
+          } catch (err) {
+            console.warn(`[pollAndProcessInit] Full push attempt ${attempt}/3 failed:`, err)
           }
-          console.warn(`[pollAndProcessInit] Full push attempt ${attempt}/3: pushSync returned false`)
-        } catch (err) {
-          console.warn(`[pollAndProcessInit] Full push attempt ${attempt}/3 failed:`, err)
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000))
         }
-        if (attempt < 3) await new Promise(r => setTimeout(r, 2000))
-      }
-      if (!pushSuccess) {
-        console.error('[pollAndProcessInit] Full push to new device failed after 3 attempts')
-      }
+        if (!pushSuccess) {
+          console.error('[pollAndProcessInit] Full push to new device failed after 3 attempts')
+        }
 
-      // Introduce new device to all existing linked devices (and vice versa)
-      const existingDevices = await getLinkedInstallations()
-      const ownPublicKey = await getPublicKey()
+        // Introduce new device to all existing linked devices (and vice versa)
+        const existingDevices = await getLinkedInstallations()
+        const ownPublicKey = await getPublicKey()
 
-      for (const device of existingDevices) {
-        if (device.installation_id === uuid || device.installation_id === installData.id) continue
-        if (!device.public_key || !ownPublicKey) continue
+        for (const device of existingDevices) {
+          if (device.installation_id === uuid || device.installation_id === installData.id) continue
+          if (!device.public_key || !ownPublicKey) continue
 
-        try {
-          // Tell existing device about the new device
-          const encForExisting = await rsaEncrypt(
-            new TextEncoder().encode(JSON.stringify({ uuid })).buffer as ArrayBuffer,
-            device.public_key
-          )
-          await syncApi.postInit(
-            { uuid: device.installation_id, payload: JSON.stringify({ msg: arrayBufferToBase64Url(encForExisting), publicKey }) },
-            installData.jwt
-          )
+          try {
+            // Tell existing device about the new device
+            const encForExisting = await rsaEncrypt(
+              new TextEncoder().encode(JSON.stringify({ uuid, intro: true })).buffer as ArrayBuffer,
+              device.public_key
+            )
+            await syncApi.postInit(
+              { uuid: device.installation_id, payload: JSON.stringify({ msg: arrayBufferToBase64Url(encForExisting), publicKey }) },
+              installData.jwt
+            )
 
-          // Tell new device about the existing device
-          const encForNew = await rsaEncrypt(
-            new TextEncoder().encode(JSON.stringify({ uuid: device.installation_id })).buffer as ArrayBuffer,
-            publicKey
-          )
-          await syncApi.postInit(
-            { uuid: uuid, payload: JSON.stringify({ msg: arrayBufferToBase64Url(encForNew), publicKey: device.public_key }) },
-            installData.jwt
-          )
-        } catch (err) {
-          console.warn('[pollAndProcessInit] Introduction failed for device:', device.installation_id, err)
+            // Tell new device about the existing device
+            const encForNew = await rsaEncrypt(
+              new TextEncoder().encode(JSON.stringify({ uuid: device.installation_id, intro: true })).buffer as ArrayBuffer,
+              publicKey
+            )
+            await syncApi.postInit(
+              { uuid: uuid, payload: JSON.stringify({ msg: arrayBufferToBase64Url(encForNew), publicKey: device.public_key }) },
+              installData.jwt
+            )
+          } catch (err) {
+            console.warn('[pollAndProcessInit] Introduction failed for device:', device.installation_id, err)
+          }
         }
       }
 

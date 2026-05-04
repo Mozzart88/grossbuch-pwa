@@ -9,9 +9,13 @@ vi.mock('../../../hooks/useSyncPush', () => ({
   useSyncPush: () => ({ schedulePush: mockSchedulePush, flushPush: mockFlushPush }),
 }))
 
-// Mock onDbWrite
+// Mock onDbWrite — capture all registered callbacks so tests can trigger DB writes
+const capturedDbWriteListeners: Array<() => void> = []
 vi.mock('../../../services/database/connection', () => ({
-  onDbWrite: vi.fn(() => () => {}),
+  onDbWrite: vi.fn((cb: () => void) => {
+    capturedDbWriteListeners.push(cb)
+    return () => {}
+  }),
 }))
 
 // Mock settingsRepository
@@ -20,6 +24,20 @@ vi.mock('../../../services/repositories/settingsRepository', () => ({
   settingsRepository: {
     get: (...args: unknown[]) => mockSettingsGet(...args),
   },
+}))
+
+// Mock getLinkedInstallations
+const mockGetLinkedInstallations = vi.fn()
+vi.mock('../../../services/sync', () => ({
+  getLinkedInstallations: (...args: unknown[]) => mockGetLinkedInstallations(...args),
+}))
+
+// Mock syncEvents
+const mockStartSyncEvents = vi.fn()
+const mockStopSyncEvents = vi.fn()
+vi.mock('../../../services/sync/syncEvents', () => ({
+  startSyncEvents: (...args: unknown[]) => mockStartSyncEvents(...args),
+  stopSyncEvents: (...args: unknown[]) => mockStopSyncEvents(...args),
 }))
 
 const { SyncProvider, useSyncContext } = await import('../../../contexts/SyncContext')
@@ -31,7 +49,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe('SyncContext', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    capturedDbWriteListeners.length = 0
     mockSettingsGet.mockResolvedValue(null)
+    mockGetLinkedInstallations.mockResolvedValue([])
   })
 
   it('isInitialSyncing is false by default (no DB flag)', async () => {
@@ -92,5 +112,86 @@ describe('SyncContext', () => {
     expect(() => {
       renderHook(() => useSyncContext())
     }).toThrow('useSyncContext must be used within a SyncProvider')
+  })
+
+  it('does not call startSyncEvents when no linked devices exist', async () => {
+    mockGetLinkedInstallations.mockResolvedValue([])
+
+    renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockGetLinkedInstallations).toHaveBeenCalled()
+    })
+
+    expect(mockStartSyncEvents).not.toHaveBeenCalled()
+  })
+
+  it('calls startSyncEvents on mount when linked devices exist', async () => {
+    mockGetLinkedInstallations.mockResolvedValue([{ installation_id: 'dev-b', public_key: 'pk' }])
+
+    renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockStartSyncEvents).toHaveBeenCalled()
+    })
+  })
+
+  it('calls startSyncEvents when linked devices appear after a DB write', async () => {
+    // First check on mount: no linked devices
+    mockGetLinkedInstallations.mockResolvedValueOnce([])
+    // After DB write: linked device appeared
+    mockGetLinkedInstallations.mockResolvedValue([{ installation_id: 'dev-b', public_key: 'pk' }])
+
+    renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockGetLinkedInstallations).toHaveBeenCalledTimes(1)
+    })
+    expect(mockStartSyncEvents).not.toHaveBeenCalled()
+
+    // Simulate a DB write (e.g., linked_installations updated)
+    await act(async () => {
+      for (const cb of capturedDbWriteListeners) cb()
+    })
+    await waitFor(() => {
+      expect(mockStartSyncEvents).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('calls startSyncEvents only once even with multiple DB writes', async () => {
+    mockGetLinkedInstallations.mockResolvedValue([{ installation_id: 'dev-b', public_key: 'pk' }])
+
+    renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockStartSyncEvents).toHaveBeenCalledTimes(1)
+    })
+
+    // Multiple DB writes after SSE is already started — must not increment ref count again
+    await act(async () => {
+      for (const cb of capturedDbWriteListeners) cb()
+      for (const cb of capturedDbWriteListeners) cb()
+    })
+    await waitFor(() => {})
+
+    expect(mockStartSyncEvents).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls stopSyncEvents on unmount when linked devices existed', async () => {
+    mockGetLinkedInstallations.mockResolvedValue([{ installation_id: 'dev-b', public_key: 'pk' }])
+
+    const { unmount } = renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockStartSyncEvents).toHaveBeenCalled()
+    })
+    unmount()
+    expect(mockStopSyncEvents).toHaveBeenCalled()
+  })
+
+  it('does not call stopSyncEvents on unmount when no linked devices existed', async () => {
+    mockGetLinkedInstallations.mockResolvedValue([])
+
+    const { unmount } = renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockGetLinkedInstallations).toHaveBeenCalled()
+    })
+    unmount()
+    expect(mockStopSyncEvents).not.toHaveBeenCalled()
   })
 })

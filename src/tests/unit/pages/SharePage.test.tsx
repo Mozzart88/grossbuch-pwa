@@ -3,6 +3,19 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { SharePage } from '../../../pages/SharePage'
 
+// Mock syncEvents — useSharePageInitPolling calls startSyncEvents/stopSyncEvents on mount/unmount
+vi.mock('../../../services/sync/syncEvents', () => ({
+  startSyncEvents: vi.fn(),
+  stopSyncEvents: vi.fn(),
+  onSyncEvent: vi.fn(() => () => {}),
+  onSyncConnection: vi.fn((cb: (connected: boolean) => void) => { cb(false); return () => {} }),
+}))
+
+// Mock pollAndProcessInit — called by useSharePageInitPolling
+vi.mock('../../../services/sync/syncInit', () => ({
+  pollAndProcessInit: vi.fn().mockResolvedValue({ newDevices: [], done: false }),
+}))
+
 // Mock settingsRepository
 vi.mock('../../../services/repositories', () => ({
   settingsRepository: {
