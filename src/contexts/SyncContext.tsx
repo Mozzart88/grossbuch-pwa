@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { useSyncPush } from '../hooks/useSyncPush'
 import { onDbWrite } from '../services/database/connection'
 import { settingsRepository } from '../services/repositories/settingsRepository'
+import { startSyncEvents, stopSyncEvents } from '../services/sync/syncEvents'
+import { getLinkedInstallations } from '../services/sync'
 
 interface SyncContextValue {
   schedulePush: () => void
@@ -27,6 +29,27 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     return onDbWrite(schedulePush)
   }, [schedulePush])
+
+  useEffect(() => {
+    let started = false
+
+    const checkAndStart = async () => {
+      if (started) return
+      const linked = await getLinkedInstallations()
+      if (linked.length > 0) {
+        started = true
+        startSyncEvents()
+      }
+    }
+
+    void checkAndStart()
+    const unsub = onDbWrite(() => { void checkAndStart() })
+
+    return () => {
+      unsub()
+      if (started) stopSyncEvents()
+    }
+  }, [])
 
   const onInitialSyncComplete = () => {
     setIsInitialSyncing(false)
