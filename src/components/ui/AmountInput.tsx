@@ -18,6 +18,10 @@ export interface AmountInputProps
   decimalPlaces?: number
 }
 
+function roundResult(value: number, decimalPlaces: number): string {
+  return parseFloat(value.toFixed(decimalPlaces)).toString()
+}
+
 function formatDisplayValue(value: string, decimalPlaces: number): string {
   const trimmed = value.trim()
   if (!trimmed || isExpression(trimmed)) return value
@@ -103,9 +107,11 @@ export function AmountInput({
   // Keep stable refs so the form submit listener closure doesn't go stale
   const onChangeRef = useRef(onChange)
   const valueRef = useRef(value)
+  const decimalPlacesRef = useRef(decimalPlaces)
   useLayoutEffect(() => {
     onChangeRef.current = onChange
     valueRef.current = value
+    decimalPlacesRef.current = decimalPlaces
   })
 
   useEffect(() => {
@@ -130,7 +136,7 @@ export function AmountInput({
         }
       } else {
         flushSync(() => {
-          onChangeRef.current?.(result.toString())
+          onChangeRef.current?.(roundResult(result, decimalPlacesRef.current))
         })
         if (inputRef.current) {
           inputRef.current.setCustomValidity('')
@@ -152,7 +158,7 @@ export function AmountInput({
   const handleResultClick = useCallback(() => {
     if (expressionResult === null) return
     flushSync(() => {
-      onChangeRef.current?.(expressionResult.toString())
+      onChangeRef.current?.(roundResult(expressionResult, decimalPlaces))
     })
     if (inputRef.current) {
       inputRef.current.setCustomValidity('')

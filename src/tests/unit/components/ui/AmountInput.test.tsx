@@ -196,6 +196,17 @@ describe('AmountInput', () => {
       fireEvent.click(screen.getByTestId('amount-expression-result'))
       expect(onChange).toHaveBeenCalledWith('12')
     })
+
+    it('rounds the result to decimalPlaces, not the raw float (10.10-9.99 → 0.11)', async () => {
+      const onChange = vi.fn()
+      const { container } = render(<AmountInput value="10.10-9.99" onChange={onChange} decimalPlaces={2} />)
+      fireEvent.focus(getInput(container))
+      await waitFor(() => {
+        expect(screen.getByTestId('amount-expression-result')).toBeInTheDocument()
+      })
+      fireEvent.click(screen.getByTestId('amount-expression-result'))
+      expect(onChange).toHaveBeenCalledWith('0.11')
+    })
   })
 
   describe('isPositive', () => {
@@ -383,6 +394,20 @@ describe('AmountInput', () => {
       })
       expect(onChange).not.toHaveBeenCalled()
       expect(getInput(container).validity.customError).toBe(true)
+    })
+
+    it('rounds float result to decimalPlaces on form submit (10.10-9.99 → 0.11)', async () => {
+      const onChange = vi.fn()
+      render(
+        <form onSubmit={(e) => e.preventDefault()}>
+          <AmountInput value="10.10-9.99" onChange={onChange} decimalPlaces={2} />
+          <button type="submit">Submit</button>
+        </form>,
+      )
+      act(() => {
+        fireEvent.submit(screen.getByRole('button', { name: 'Submit' }).closest('form')!)
+      })
+      expect(onChange).toHaveBeenCalledWith('0.11')
     })
 
     it('does not interfere with plain number values on form submit', async () => {
