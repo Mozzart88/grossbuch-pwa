@@ -23,6 +23,18 @@ async function fetchWithTimeout(
   }
 }
 
+export async function deleteInstallation(jwt: string): Promise<void> {
+  const response = await fetchWithTimeout(`${API_URL}/installation`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+    },
+  })
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`)
+  }
+}
+
 export async function registerInstallation(
   id: string,
   sharedUuid?: string

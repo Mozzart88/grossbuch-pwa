@@ -1,5 +1,6 @@
 import { execSQL, queryOne } from '../database/connection'
 import { hexToBlob } from '../../utils/blobUtils'
+import { settingsRepository } from '../repositories/settingsRepository'
 import type {
   SyncPackage,
   SyncIcon,
@@ -11,6 +12,9 @@ import type {
   SyncTransaction,
   SyncBudget,
   SyncDeletion,
+  SyncUnlinkCommand,
+  SyncUnlinkConfirmCommand,
+  SyncCommand,
   ImportResult,
 } from './syncTypes'
 
@@ -67,7 +71,83 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
 
   console.log(`[importSyncPackage] Done:`, result.imported, result.errors.length > 0 ? `errors: ${result.errors}` : 'no errors')
 
+  if (result.errors.length === 0 && pkg.commands && pkg.commands.length > 0) {
+    await processCommands(pkg.commands)
+  }
+
   return result
+}
+
+// ======= Commands =======
+
+async function processCommands(commands: SyncCommand[]): Promise<void> {
+  for (const cmd of commands) {
+    try {
+      if (cmd.type === 'unlink_device') {
+        await processUnlinkDevice(cmd)
+      } else if (cmd.type === 'unlink_confirm') {
+        await processUnlinkConfirm(cmd)
+      }
+    } catch (err) {
+      console.error('[processCommands] Failed to process command:', cmd.type, err)
+    }
+  }
+}
+
+async function processUnlinkDevice(cmd: SyncUnlinkCommand): Promise<void> {
+  const rawInstall = await settingsRepository.get('installation_id')
+  if (!rawInstall) return
+
+  let ownId: string
+  try {
+    const parsed = typeof rawInstall === 'object'
+      ? (rawInstall as { id: string })
+      : JSON.parse(String(rawInstall)) as { id: string }
+    ownId = parsed.id
+  } catch {
+    return
+  }
+
+  const rawLinked = await settingsRepository.get('linked_installations')
+  const linked: Record<string, string> = rawLinked ? JSON.parse(String(rawLinked)) : {}
+
+  if (cmd.target_installation_id === ownId) {
+    const initiatorPubKey = linked[cmd.initiator_id] ?? ''
+    await settingsRepository.set('pending_self_unlink', JSON.stringify({
+      initiator_id: cmd.initiator_id,
+      keep_data: cmd.keep_data,
+      initiator_pub_key: initiatorPubKey,
+    }))
+    console.log('[processUnlinkDevice] Marked self for unlink by', cmd.initiator_id)
+  } else if (cmd.target_installation_id in linked) {
+    delete linked[cmd.target_installation_id]
+    await settingsRepository.set('linked_installations', JSON.stringify(linked))
+    console.log('[processUnlinkDevice] Removed peer', cmd.target_installation_id)
+  }
+}
+
+async function processUnlinkConfirm(cmd: SyncUnlinkConfirmCommand): Promise<void> {
+  const rawLinked = await settingsRepository.get('linked_installations')
+  if (rawLinked) {
+    const linked: Record<string, string> = JSON.parse(String(rawLinked))
+    if (cmd.target_installation_id in linked) {
+      delete linked[cmd.target_installation_id]
+      await settingsRepository.set('linked_installations', JSON.stringify(linked))
+    }
+  }
+
+  const rawPending = await settingsRepository.get('pending_unlink_requests')
+  if (rawPending) {
+    const pending = JSON.parse(String(rawPending)) as Array<{ target_id: string }>
+    const filtered = pending.filter(p => p.target_id !== cmd.target_installation_id)
+    if (filtered.length === 0) {
+      await settingsRepository.delete('pending_unlink_requests')
+    } else {
+      await settingsRepository.set('pending_unlink_requests', JSON.stringify(filtered))
+    }
+  }
+
+  console.log('[processUnlinkConfirm] Completed unlink for', cmd.target_installation_id)
 }
 
 // ======= Icons =======

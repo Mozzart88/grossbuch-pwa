@@ -302,6 +302,8 @@ export interface Settings {
   installation_id: string
   linked_installations: string
   pending_initial_sync?: string
+  pending_unlink_requests?: string
+  pending_self_unlink?: string
 }
 
 // System tag IDs (for reference)

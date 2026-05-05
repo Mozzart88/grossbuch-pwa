@@ -100,7 +100,24 @@ export interface SyncPackage {
   transactions: SyncTransaction[]
   budgets: SyncBudget[]
   deletions: SyncDeletion[]
+  commands?: SyncCommand[]
 }
+
+// ======= Commands =======
+
+export interface SyncUnlinkCommand {
+  type: 'unlink_device'
+  target_installation_id: string
+  keep_data: boolean
+  initiator_id: string
+}
+
+export interface SyncUnlinkConfirmCommand {
+  type: 'unlink_confirm'
+  target_installation_id: string
+}
+
+export type SyncCommand = SyncUnlinkCommand | SyncUnlinkConfirmCommand
 
 // ======= Encrypted Package =======
 
