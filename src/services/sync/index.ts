@@ -12,7 +12,7 @@ import {
 } from './syncRepository'
 import * as syncApi from './syncApi'
 import { syncSingleRate } from '../exchangeRate/exchangeRateSync'
-import type { ImportResult } from './syncTypes'
+import type { ImportResult, SyncPackage } from './syncTypes'
 
 interface InstallationData {
   id: string
@@ -200,6 +200,77 @@ export async function hasUnpushedChanges(): Promise<boolean> {
   const installData = await getInstallationData()
   if (!installData?.id) return false
   return checkUnpushed(installData.id)
+}
+
+/**
+ * Send an unlink command to all linked devices for the given target.
+ * All recipients (including the target) receive the encrypted command.
+ */
+export async function sendUnlinkCommand(targetId: string, keepData: boolean): Promise<void> {
+  const installData = await getInstallationData()
+  if (!installData?.jwt || !installData.id) return
+
+  const allRecipients = await getLinkedInstallations()
+  if (allRecipients.length === 0) return
+
+  const pkg: SyncPackage = {
+    version: 2,
+    sender_id: installData.id,
+    created_at: Math.floor(Date.now() / 1000),
+    since: 0,
+    icons: [],
+    tags: [],
+    wallets: [],
+    accounts: [],
+    counterparties: [],
+    currencies: [],
+    transactions: [],
+    budgets: [],
+    deletions: [],
+    commands: [{
+      type: 'unlink_device',
+      target_installation_id: targetId,
+      keep_data: keepData,
+      initiator_id: installData.id,
+    }],
+  }
+
+  const encrypted = await encryptSyncPackage(pkg, allRecipients)
+  await syncApi.push({ package: encrypted }, installData.jwt)
+}
+
+/**
+ * Send unlink confirmation back to the initiator.
+ * All parameters are passed explicitly so this works after DB wipe.
+ */
+export async function sendUnlinkConfirmation(
+  ownInstallationId: string,
+  jwt: string,
+  initiatorId: string,
+  initiatorPublicKey: string
+): Promise<void> {
+  const pkg: SyncPackage = {
+    version: 2,
+    sender_id: ownInstallationId,
+    created_at: Math.floor(Date.now() / 1000),
+    since: 0,
+    icons: [],
+    tags: [],
+    wallets: [],
+    accounts: [],
+    counterparties: [],
+    currencies: [],
+    transactions: [],
+    budgets: [],
+    deletions: [],
+    commands: [{
+      type: 'unlink_confirm',
+      target_installation_id: ownInstallationId,
+    }],
+  }
+
+  const encrypted = await encryptSyncPackage(pkg, [{ installation_id: initiatorId, public_key: initiatorPublicKey }])
+  await syncApi.push({ package: encrypted }, jwt)
 }
 
 export type { ImportResult } from './syncTypes'

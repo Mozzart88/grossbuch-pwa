@@ -194,4 +194,25 @@ describe('SyncContext', () => {
     unmount()
     expect(mockStopSyncEvents).not.toHaveBeenCalled()
   })
+
+  it('stops SSE when linked devices become empty after a DB write', async () => {
+    // Start with linked devices — SSE starts
+    mockGetLinkedInstallations.mockResolvedValueOnce([{ installation_id: 'dev-b', public_key: 'pk' }])
+    // After DB write (unlink): no more linked devices
+    mockGetLinkedInstallations.mockResolvedValue([])
+
+    renderHook(() => useSyncContext(), { wrapper })
+    await waitFor(() => {
+      expect(mockStartSyncEvents).toHaveBeenCalledTimes(1)
+    })
+    expect(mockStopSyncEvents).not.toHaveBeenCalled()
+
+    // Simulate DB write (linked_installations cleared by unlink)
+    await act(async () => {
+      for (const cb of capturedDbWriteListeners) cb()
+    })
+    await waitFor(() => {
+      expect(mockStopSyncEvents).toHaveBeenCalledTimes(1)
+    })
+  })
 })

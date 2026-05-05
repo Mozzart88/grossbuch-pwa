@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { useSyncPush } from '../hooks/useSyncPush'
+import { useSelfUnlinkHandler } from '../hooks/useSelfUnlinkHandler'
 import { onDbWrite } from '../services/database/connection'
 import { settingsRepository } from '../services/repositories/settingsRepository'
 import { startSyncEvents, stopSyncEvents } from '../services/sync/syncEvents'
@@ -18,6 +19,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { schedulePush, flushPush } = useSyncPush()
   const [isInitialSyncing, setIsInitialSyncing] = useState(false)
 
+  useSelfUnlinkHandler()
+
   useEffect(() => {
     settingsRepository.get('pending_initial_sync').then((val) => {
       if (val === '1') {
@@ -33,17 +36,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let started = false
 
-    const checkAndStart = async () => {
-      if (started) return
+    const checkAndUpdate = async () => {
       const linked = await getLinkedInstallations()
-      if (linked.length > 0) {
+      if (linked.length > 0 && !started) {
         started = true
         startSyncEvents()
+      } else if (linked.length === 0 && started) {
+        started = false
+        stopSyncEvents()
       }
     }
 
-    void checkAndStart()
-    const unsub = onDbWrite(() => { void checkAndStart() })
+    void checkAndUpdate()
+    const unsub = onDbWrite(() => { void checkAndUpdate() })
 
     return () => {
       unsub()

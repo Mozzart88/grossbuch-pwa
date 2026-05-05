@@ -70,7 +70,7 @@ vi.mock('../../../../services/exchangeRate/exchangeRateSync', () => ({
   syncSingleRate: (...args: unknown[]) => mockSyncSingleRate(...args),
 }))
 
-const { pushSync, pullSync, hasUnpushedChanges } = await import('../../../../services/sync/index')
+const { pushSync, pullSync, hasUnpushedChanges, sendUnlinkCommand, sendUnlinkConfirmation } = await import('../../../../services/sync/index')
 
 describe('sync index', () => {
   beforeEach(() => {
@@ -715,6 +715,92 @@ describe('sync index', () => {
       // Should only call syncSingleRate once for currency 5, not twice
       expect(mockSyncSingleRate).toHaveBeenCalledTimes(1)
       expect(mockSyncSingleRate).toHaveBeenCalledWith(5)
+    })
+  })
+
+  describe('sendUnlinkCommand', () => {
+    it('returns early when no installation data', async () => {
+      mockSettingsGet.mockResolvedValue(null)
+      await sendUnlinkCommand('target-id', true)
+      expect(mockApiPush).not.toHaveBeenCalled()
+    })
+
+    it('returns early when no linked installations', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return null
+        return null
+      })
+      await sendUnlinkCommand('target-id', true)
+      expect(mockApiPush).not.toHaveBeenCalled()
+    })
+
+    it('encrypts command for all recipients and pushes', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'device-a': 'pub-key-a', 'device-b': 'pub-key-b' })
+        return null
+      })
+      const mockEncrypted = { sender_id: 'inst-1', iv: 'iv', ciphertext: 'ct', recipient_keys: [] }
+      mockEncryptSyncPackage.mockResolvedValue(mockEncrypted)
+      mockApiPush.mockResolvedValue({ success: true })
+
+      await sendUnlinkCommand('device-a', false)
+
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          commands: [{ type: 'unlink_device', target_installation_id: 'device-a', keep_data: false, initiator_id: 'inst-1' }],
+        }),
+        [
+          { installation_id: 'device-a', public_key: 'pub-key-a' },
+          { installation_id: 'device-b', public_key: 'pub-key-b' },
+        ]
+      )
+      expect(mockApiPush).toHaveBeenCalledWith({ package: mockEncrypted }, 'token')
+    })
+
+    it('sends command package with empty data arrays', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'linked_installations') return JSON.stringify({ 'device-a': 'pub-key-a' })
+        return null
+      })
+      mockEncryptSyncPackage.mockResolvedValue({ sender_id: 'inst-1', iv: 'iv', ciphertext: 'ct', recipient_keys: [] })
+      mockApiPush.mockResolvedValue({ success: true })
+
+      await sendUnlinkCommand('device-a', true)
+
+      const [pkg] = mockEncryptSyncPackage.mock.calls[0] as [{ icons: unknown[]; transactions: unknown[] }]
+      expect(pkg.icons).toHaveLength(0)
+      expect(pkg.transactions).toHaveLength(0)
+    })
+  })
+
+  describe('sendUnlinkConfirmation', () => {
+    it('sends unlink_confirm command encrypted only for initiator', async () => {
+      const mockEncrypted = { sender_id: 'own-id', iv: 'iv', ciphertext: 'ct', recipient_keys: [] }
+      mockEncryptSyncPackage.mockResolvedValue(mockEncrypted)
+      mockApiPush.mockResolvedValue({ success: true })
+
+      await sendUnlinkConfirmation('own-id', 'own-jwt', 'initiator-id', 'initiator-pub-key')
+
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          commands: [{ type: 'unlink_confirm', target_installation_id: 'own-id' }],
+        }),
+        [{ installation_id: 'initiator-id', public_key: 'initiator-pub-key' }]
+      )
+      expect(mockApiPush).toHaveBeenCalledWith({ package: mockEncrypted }, 'own-jwt')
+    })
+
+    it('uses the provided jwt directly (works without DB)', async () => {
+      mockEncryptSyncPackage.mockResolvedValue({ sender_id: 'own-id', iv: 'iv', ciphertext: 'ct', recipient_keys: [] })
+      mockApiPush.mockResolvedValue({ success: true })
+
+      await sendUnlinkConfirmation('own-id', 'custom-jwt', 'initiator-id', 'pub-key')
+
+      expect(mockApiPush).toHaveBeenCalledWith(expect.anything(), 'custom-jwt')
+      expect(mockSettingsGet).not.toHaveBeenCalled()
     })
   })
 

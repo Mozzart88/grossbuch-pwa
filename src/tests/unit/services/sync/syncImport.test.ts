@@ -12,6 +12,18 @@ vi.mock('../../../../utils/blobUtils', () => ({
   hexToBlob: (hex: string) => `blob:${hex}`,
 }))
 
+const mockSettingsGet = vi.fn()
+const mockSettingsSet = vi.fn()
+const mockSettingsDelete = vi.fn()
+
+vi.mock('../../../../services/repositories/settingsRepository', () => ({
+  settingsRepository: {
+    get: (...args: unknown[]) => mockSettingsGet(...args),
+    set: (...args: unknown[]) => mockSettingsSet(...args),
+    delete: (...args: unknown[]) => mockSettingsDelete(...args),
+  },
+}))
+
 const { importSyncPackage } = await import('../../../../services/sync/syncImport')
 
 function emptyPackage() {
@@ -549,6 +561,244 @@ describe('syncImport', () => {
         [44, 'Tips', 600]
       )
       expect(result.errors).toHaveLength(0)
+    })
+  })
+
+  describe('command processing', () => {
+    const OWN_ID = 'own-device-id'
+    const OTHER_ID = 'other-device-id'
+    const INITIATOR_ID = 'initiator-device-id'
+    const INITIATOR_PUB_KEY = 'initiator-public-key-base64'
+
+    beforeEach(() => {
+      mockSettingsGet.mockResolvedValue(null)
+      mockSettingsSet.mockResolvedValue(undefined)
+      mockSettingsDelete.mockResolvedValue(undefined)
+    })
+
+    it('does nothing when commands array is absent', async () => {
+      const pkg = emptyPackage()
+      await importSyncPackage(pkg)
+      expect(mockSettingsSet).not.toHaveBeenCalled()
+    })
+
+    it('does nothing when commands array is empty', async () => {
+      const pkg = { ...emptyPackage(), commands: [] }
+      await importSyncPackage(pkg)
+      expect(mockSettingsSet).not.toHaveBeenCalled()
+    })
+
+    it('skips commands when data import has errors', async () => {
+      mockExecSQL.mockRejectedValueOnce(new Error('db error'))
+      const pkg = {
+        ...emptyPackage(),
+        commands: [{ type: 'unlink_device' as const, target_installation_id: OTHER_ID, keep_data: true, initiator_id: INITIATOR_ID }],
+      }
+      await importSyncPackage(pkg)
+      expect(mockSettingsSet).not.toHaveBeenCalled()
+    })
+
+    describe('unlink_device command', () => {
+      it('sets pending_self_unlink when this device is the target', async () => {
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID, jwt: 'token' }))
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify({ [INITIATOR_ID]: INITIATOR_PUB_KEY }))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_device' as const, target_installation_id: OWN_ID, keep_data: false, initiator_id: INITIATOR_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).toHaveBeenCalledWith(
+          'pending_self_unlink',
+          JSON.stringify({ initiator_id: INITIATOR_ID, keep_data: false, initiator_pub_key: INITIATOR_PUB_KEY })
+        )
+      })
+
+      it('sets keep_data=true correctly in pending_self_unlink', async () => {
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID }))
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify({ [INITIATOR_ID]: INITIATOR_PUB_KEY }))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_device' as const, target_installation_id: OWN_ID, keep_data: true, initiator_id: INITIATOR_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        const setCall = mockSettingsSet.mock.calls.find((c: unknown[]) => c[0] === 'pending_self_unlink')
+        const parsed = JSON.parse(setCall![1] as string)
+        expect(parsed.keep_data).toBe(true)
+      })
+
+      it('removes target from linked_installations when target is another device', async () => {
+        const linked = { [OTHER_ID]: 'other-pub-key', 'third-device': 'third-pub-key' }
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID }))
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify(linked))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_device' as const, target_installation_id: OTHER_ID, keep_data: true, initiator_id: OWN_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).toHaveBeenCalledWith(
+          'linked_installations',
+          JSON.stringify({ 'third-device': 'third-pub-key' })
+        )
+      })
+
+      it('does nothing to linked_installations when target is not present', async () => {
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID }))
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify({ 'third-device': 'third-pub-key' }))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_device' as const, target_installation_id: OTHER_ID, keep_data: true, initiator_id: OWN_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).not.toHaveBeenCalled()
+      })
+
+      it('returns early when own installation_id is not found', async () => {
+        mockSettingsGet.mockResolvedValue(null)
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_device' as const, target_installation_id: OWN_ID, keep_data: true, initiator_id: INITIATOR_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).not.toHaveBeenCalled()
+      })
+
+      it('uses empty string for initiator_pub_key when initiator not in linked_installations', async () => {
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID }))
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify({}))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_device' as const, target_installation_id: OWN_ID, keep_data: false, initiator_id: INITIATOR_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        const setCall = mockSettingsSet.mock.calls.find((c: unknown[]) => c[0] === 'pending_self_unlink')
+        const parsed = JSON.parse(setCall![1] as string)
+        expect(parsed.initiator_pub_key).toBe('')
+      })
+    })
+
+    describe('unlink_confirm command', () => {
+      it('removes target from linked_installations', async () => {
+        const linked = { [OTHER_ID]: 'other-pub-key', 'third-device': 'third-pub-key' }
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify(linked))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_confirm' as const, target_installation_id: OTHER_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).toHaveBeenCalledWith(
+          'linked_installations',
+          JSON.stringify({ 'third-device': 'third-pub-key' })
+        )
+      })
+
+      it('deletes pending_unlink_requests when only one request remains', async () => {
+        const pending = [{ target_id: OTHER_ID, started_at: 0, keep_data: true }]
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify({ [OTHER_ID]: 'pub-key' }))
+          if (key === 'pending_unlink_requests') return Promise.resolve(JSON.stringify(pending))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_confirm' as const, target_installation_id: OTHER_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsDelete).toHaveBeenCalledWith('pending_unlink_requests')
+      })
+
+      it('filters pending_unlink_requests when multiple requests exist', async () => {
+        const pending = [
+          { target_id: OTHER_ID, started_at: 0, keep_data: true },
+          { target_id: 'another-device', started_at: 1, keep_data: false },
+        ]
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'linked_installations') return Promise.resolve(JSON.stringify({ [OTHER_ID]: 'pub-key' }))
+          if (key === 'pending_unlink_requests') return Promise.resolve(JSON.stringify(pending))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_confirm' as const, target_installation_id: OTHER_ID }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).toHaveBeenCalledWith(
+          'pending_unlink_requests',
+          JSON.stringify([{ target_id: 'another-device', started_at: 1, keep_data: false }])
+        )
+        expect(mockSettingsDelete).not.toHaveBeenCalled()
+      })
+
+      it('does not throw when linked_installations is null', async () => {
+        mockSettingsGet.mockResolvedValue(null)
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'unlink_confirm' as const, target_installation_id: OTHER_ID }],
+        }
+        await expect(importSyncPackage(pkg)).resolves.not.toThrow()
+      })
+    })
+
+    it('continues processing other commands after one fails', async () => {
+      // First command fails due to JSON parse error in installation_id
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return Promise.resolve('not-json')
+        if (key === 'linked_installations') return Promise.resolve(JSON.stringify({ [OTHER_ID]: 'pub-key' }))
+        return Promise.resolve(null)
+      })
+
+      const pkg = {
+        ...emptyPackage(),
+        commands: [
+          { type: 'unlink_device' as const, target_installation_id: OWN_ID, keep_data: true, initiator_id: INITIATOR_ID },
+          { type: 'unlink_confirm' as const, target_installation_id: OTHER_ID },
+        ],
+      }
+      const result = await importSyncPackage(pkg)
+
+      // No errors thrown overall (command errors are caught internally)
+      expect(result.errors).toHaveLength(0)
+      // unlink_confirm for OTHER_ID still ran
+      expect(mockSettingsSet).toHaveBeenCalledWith(
+        'linked_installations',
+        JSON.stringify({})
+      )
     })
   })
 })
