@@ -107,7 +107,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
+      <div className="min-h-[100dvh] bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
         <Spinner size="lg" />
       </div>
     )
@@ -124,7 +124,7 @@ export function OnboardingPage({ onComplete }: OnboardingPageProps) {
   ]
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4">
+    <div className="min-h-[100dvh] bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">

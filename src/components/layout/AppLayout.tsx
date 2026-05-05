@@ -17,7 +17,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const logo = isDark ? logoDark : logoLight
 
   return (
-    <div className="min-h-full flex flex-col">
+    <div className="h-[var(--vh)] flex flex-col overflow-hidden">
       {/* Global top bar */}
       <header className="flex items-center justify-between px-4 h-14 pt-safe bg-white dark:bg-gray-900
                          border-b border-gray-200 dark:border-gray-800 shrink-0">
@@ -36,7 +36,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         </button>
       </header>
 
-      <main className="flex-1 pb-20 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto">
         {children}
       </main>
 

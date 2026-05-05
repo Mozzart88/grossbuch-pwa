@@ -47,7 +47,7 @@ function SyncGate({ children }: { children: React.ReactNode }) {
 
   if (isInitialSyncing) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
+      <div className="min-h-[100dvh] bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
         <Spinner size="lg" />
         <p className="text-gray-500 dark:text-gray-400">Syncing...</p>
       </div>
@@ -73,7 +73,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // Checking auth status
   if (status === 'checking') {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
+      <div className="min-h-[100dvh] bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center gap-4">
         <Spinner size="lg" />
         <p className="text-gray-500 dark:text-gray-400">Loading...</p>
       </div>

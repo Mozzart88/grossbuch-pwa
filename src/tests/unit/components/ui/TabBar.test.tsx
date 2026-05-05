@@ -152,13 +152,12 @@ describe('TabBar', () => {
     })
   })
 
-  describe('Fixed positioning', () => {
-    it('has fixed positioning at bottom', () => {
+  describe('Positioning', () => {
+    it('uses shrink-0 to stay anchored in the flex column', () => {
       const { container } = renderWithRouter()
 
       const nav = container.querySelector('nav')
-      expect(nav?.className).toContain('fixed')
-      expect(nav?.className).toContain('bottom-0')
+      expect(nav?.className).toContain('shrink-0')
     })
 
     it('has z-40 z-index', () => {
