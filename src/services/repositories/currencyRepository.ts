@@ -192,6 +192,7 @@ export const currencyRepository = {
         FROM exchange_rate er2
         WHERE er2.currency_id = er.currency_id
       )
+      GROUP BY er.currency_id
     `)
   },
 
