@@ -138,6 +138,7 @@ export function CounterpartiesPage() {
     const names = tagIds
       .map((id) => tags.find((t) => t.id === id)?.name)
       .filter(Boolean)
+      .toSorted((a, b) => a!.localeCompare(b!))
     return names.length > 2 ? `${names.slice(0, 2).join(', ')} +${names.length - 2}` : names.join(', ')
   }
 
