@@ -5,7 +5,7 @@ import '@testing-library/jest-dom'
 import { AccountTransactionList } from '../../../../components/transactions/AccountTransactionList'
 import type { Account, TransactionLog } from '../../../../types'
 import { formatCurrencyValue } from '../../../../utils/formatters'
-import { formatDate } from '../../../../utils/dateUtils'
+import { formatDate, toLocalISOString } from '../../../../utils/dateUtils'
 
 // Mock the navigation
 const mockNavigate = vi.fn()
@@ -78,7 +78,7 @@ describe('AccountTransactionList', () => {
   describe('Loading state', () => {
     it('shows spinner while loading', async () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockImplementation(
-        () => new Promise(() => {}) // Never resolves
+        () => new Promise(() => { }) // Never resolves
       )
 
       const { container } = renderComponent()
@@ -259,7 +259,7 @@ describe('AccountTransactionList', () => {
   describe('Date expansion', () => {
     it('expands today by default', async () => {
       // Create a transaction for today
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
       vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
@@ -273,7 +273,7 @@ describe('AccountTransactionList', () => {
     })
 
     it('collapses expanded date on click', async () => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
       vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
@@ -325,7 +325,7 @@ describe('AccountTransactionList', () => {
 
   describe('Transaction click', () => {
     it('navigates to transaction detail on click', async () => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
       vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
@@ -398,7 +398,7 @@ describe('AccountTransactionList', () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockRejectedValue(new Error('Load failed'))
 
       // Console error should be logged
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
 
       renderComponent()
 
@@ -412,7 +412,7 @@ describe('AccountTransactionList', () => {
 
   describe('Running balance calculation', () => {
     it('shows running balance for day', async () => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
       vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
@@ -427,7 +427,7 @@ describe('AccountTransactionList', () => {
     })
 
     it('handles zero day summaries', async () => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
       const transactions = [createMockTransaction({ date_time: `${today} 10:30:00` })]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
       vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(0)

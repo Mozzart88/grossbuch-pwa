@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { TransactionList } from '../../../../components/transactions/TransactionList'
 import type { TransactionLog } from '../../../../types'
 import { formatCurrencyValue } from '../../../../utils/formatters'
-import { formatDate } from '../../../../utils/dateUtils'
+import { formatDate, toLocalISOString } from '../../../../utils/dateUtils'
 
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
@@ -33,7 +33,7 @@ vi.mock('../../../../utils/dateUtils', async () => {
   const actual = await vi.importActual('../../../../utils/dateUtils')
   return {
     ...actual,
-    getCurrentMonth: () => new Date().toISOString().slice(0, 7),
+    getCurrentMonth: () => toLocalISOString().slice(0, 7),
   }
 })
 
@@ -52,7 +52,7 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 
 // Use today's date for sample transaction so it's expanded by default
-const today = new Date().toISOString().slice(0, 10)
+const today = toLocalISOString().slice(0, 10)
 const sampleTransaction: TransactionLog = {
   id: new Uint8Array(8),
   date_time: `${today} 14:30:00`,

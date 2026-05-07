@@ -85,3 +85,7 @@ export function groupByDate<T extends { date_time: string }>(items: T[]): Map<st
 
   return groups
 }
+
+export function toLocalISOString(date: Date = new Date()) {
+  return new Date(date.getTime() - new Date().getTimezoneOffset() * 60000).toISOString()
+}

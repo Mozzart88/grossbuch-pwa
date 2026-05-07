@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { TransactionLog, MonthSummary as MonthSummaryType, TransactionFilter } from '../../types'
 import { transactionRepository, accountRepository, currencyRepository, tagRepository, counterpartyRepository } from '../../services/repositories'
-import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
+import { getCurrentMonth, formatDate, toLocalISOString } from '../../utils/dateUtils'
 import { MonthNavigator } from './MonthNavigator'
 import { MonthSummary } from './MonthSummary'
 import { TransactionItem } from './TransactionItem'
@@ -55,7 +55,7 @@ export function TransactionList() {
   const [filterName, setFilterName] = useState<string | null>(null)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
     // Initialize with today's date expanded
-    const today = new Date().toISOString().slice(0, 10)
+    const today = toLocalISOString().slice(0, 10)
     return new Set([today])
   })
 

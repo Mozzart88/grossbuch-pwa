@@ -68,6 +68,7 @@ vi.mock('../../../utils/dateUtils', () => ({
   toDateTimeLocal: vi.fn(() => '2025-01-10T12:00'),
   fromDateTimeLocal: vi.fn((val: string) => val.replace('T', ' ') + ':00'),
   getCurrentDateTime: vi.fn(() => '2025-01-10 12:00:00'),
+  toLocalISOString: vi.fn(() => '2025-01-10T12:00:00.000Z'),
 }))
 
 import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository, settingsRepository } from '../../../services/repositories'

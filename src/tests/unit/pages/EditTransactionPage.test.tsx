@@ -80,6 +80,7 @@ vi.mock('../../../utils/dateUtils', () => ({
   getLastDayOfMonth: vi.fn(() => '2025-01-31'),
   formatDate: vi.fn(() => 'Jan 10, 2025'),
   formatTime: vi.fn(() => '12:00'),
+  toLocalISOString: vi.fn(() => '2025-01-10T12:00:00.000Z'),
 }))
 
 // Mock confirm

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+import { toLocalISOString } from '../../../../utils/dateUtils'
+
 vi.mock('../../../../services/repositories/currencyRepository', () => ({
   currencyRepository: {
     getRateForCurrency: vi.fn(),
@@ -66,7 +68,7 @@ describe('historicalRateService', () => {
 
   describe('when date is today or future', () => {
     it('returns latest rate without DB/API lookup', async () => {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
       mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 2, frac: 0 })
 
       const result = await getRateForDate(CURRENCY_ID, today)
@@ -185,11 +187,13 @@ describe('historicalRateService', () => {
         historicalCallCount++
         const candidateMinus1 = new Date(PAST_DATE)
         candidateMinus1.setUTCDate(candidateMinus1.getUTCDate() - 1)
-        if (date === candidateMinus1.toISOString().slice(0, 10)) {
-          return { rates: [
-            { code: 'EUR', value: 0.9, timestamp: '', date },
-            { code: 'USD', value: 1.0, timestamp: '', date },
-          ]}
+        if (date === toLocalISOString(candidateMinus1).slice(0, 10)) {
+          return {
+            rates: [
+              { code: 'EUR', value: 0.9, timestamp: '', date },
+              { code: 'USD', value: 1.0, timestamp: '', date },
+            ]
+          }
         }
         return { rates: [] }
       })
