@@ -510,29 +510,55 @@ describe('ExpenseTransactionForm', () => {
       expect(screen.getByRole('button', { name: 'Both' })).toBeInTheDocument()
     })
 
-    it('creates tag with expense parent on submit after modal OK', async () => {
+    it('creates tag with expense parent_ids when modal type is expense', async () => {
       render(<ExpenseTransactionForm {...defaultProps} />)
       await openTagModal('NewExpTag')
-      // Click Income type then OK (type is stored in sub-entry but ExpenseForm always uses EXPENSE parent)
+      fireEvent.click(screen.getByRole('button', { name: 'Expense' }))
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }))
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '10' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTagRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: 'NewExpTag',
+            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE],
+          })
+        )
+      })
+    })
+
+    it('creates tag with income parent_ids when modal type is income', async () => {
+      render(<ExpenseTransactionForm {...defaultProps} />)
+      await openTagModal('NewIncTag')
       fireEvent.click(screen.getByRole('button', { name: 'Income' }))
       fireEvent.click(screen.getByRole('button', { name: 'OK' }))
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '10' } })
       fireEvent.click(screen.getByRole('button', { name: 'Add' }))
       await waitFor(() => {
         expect(mockTagRepository.create).toHaveBeenCalledWith(
-          expect.objectContaining({ name: 'NewExpTag' })
+          expect.objectContaining({
+            name: 'NewIncTag',
+            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.INCOME],
+          })
         )
       })
     })
 
-    it('allows switching type to both', async () => {
+    it('creates tag with both income and expense parent_ids when modal type is both', async () => {
       render(<ExpenseTransactionForm {...defaultProps} />)
       await openTagModal('BothTag')
       fireEvent.click(screen.getByRole('button', { name: 'Both' }))
-      // Both button should now appear selected (primary style)
-      expect(screen.getByRole('button', { name: 'Both' })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'OK' }))
-      await waitFor(() => expect(screen.queryByText('New Category')).not.toBeInTheDocument())
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '10' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTagRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: 'BothTag',
+            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME],
+          })
+        )
+      })
     })
 
     it('cancels tag modal and clears new tag name', async () => {
