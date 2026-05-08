@@ -161,6 +161,32 @@ export const accountRepository = {
     return result?.total ?? 0
   },
 
+  async getWalletBalancesInSystemCurrency(): Promise<Record<number, number>> {
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
+    const rows = await querySQL<{ wallet_id: number; total: number }>(`
+      SELECT
+        a.wallet_id,
+        COALESCE(SUM(
+          CASE WHEN a.currency_id = ?
+            THEN (a.balance_int + a.balance_frac * 1e-18)
+            ELSE (a.balance_int + a.balance_frac * 1e-18)
+                 / (COALESCE(
+                   (SELECT (er.rate_int + er.rate_frac * 1e-18) FROM exchange_rate er
+                    WHERE er.currency_id = a.currency_id
+                    ORDER BY er.updated_at DESC LIMIT 1),
+                   1.0
+                 ))
+                 * ?
+          END
+        ), 0) as total
+      FROM account a
+      GROUP BY a.wallet_id
+    `, [sysCurrencyId, sysRate])
+
+    return Object.fromEntries(rows.map(r => [r.wallet_id, r.total]))
+  },
+
   // Get total balance for a specific wallet
   async getWalletBalance(walletId: number): Promise<number> {
     const result = await queryOne<{ total: number }>(`

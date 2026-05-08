@@ -6,6 +6,7 @@ import { walletRepository, currencyRepository, accountRepository, transactionRep
 import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
 import type { Wallet, WalletInput, Currency, Account } from '../types'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
+import { formatCurrencyValue } from '../utils/formatters'
 import { Badge } from '../components/ui/Badge'
 import { useLayoutContextSafe } from '../store/LayoutContext'
 import { useDataRefresh } from '../hooks/useDataRefresh'
@@ -17,6 +18,9 @@ export function AccountsPage() {
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [systemCurrency, setSystemCurrency] = useState<Currency | null>(null)
+  const [walletBalances, setWalletBalances] = useState<Record<number, number>>({})
+  const [expandedWallets, setExpandedWallets] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
 
   // Wallet modal state
@@ -52,12 +56,16 @@ export function AccountsPage() {
 
   const loadData = async () => {
     try {
-      const [ws, curs] = await Promise.all([
+      const [ws, curs, balances, sysCurrency] = await Promise.all([
         walletRepository.findAll(),
         currencyRepository.findAll(),
+        accountRepository.getWalletBalancesInSystemCurrency(),
+        currencyRepository.findSystem(),
       ])
       setWallets(ws.filter(w => !w.is_virtual))
       setCurrencies(curs)
+      setWalletBalances(balances)
+      setSystemCurrency(sysCurrency)
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
@@ -317,6 +325,14 @@ export function AccountsPage() {
 
   const getCurrency = (currencyId: number) => currencies.find(c => c.id === currencyId)
 
+  const toggleWallet = (walletId: number) => {
+    setExpandedWallets(prev => {
+      const next = new Set(prev)
+      if (next.has(walletId)) next.delete(walletId); else next.add(walletId)
+      return next
+    })
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -340,7 +356,8 @@ export function AccountsPage() {
             >
               {/* Wallet header */}
               <div
-                className={`p-4  flex items-center justify-between`}
+                className="p-4 flex items-center justify-between cursor-pointer"
+                onClick={() => toggleWallet(wallet.id)}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">💰</span>
@@ -358,18 +375,35 @@ export function AccountsPage() {
                     </p>
                   </div>
                 </div>
-                <DropdownMenu
-                  items={[
-                    { label: '+ Currency', onClick: () => openCurrencyModal(wallet) },
-                    ...(!wallet.is_default ? [{ label: 'Set Default', onClick: () => handleSetDefault(wallet) }] : []),
-                    { label: 'Edit', onClick: () => openWalletModal(wallet) },
-                    { label: 'Delete', onClick: () => handleDeleteWallet(wallet), variant: 'danger' as const },
-                  ] as DropdownMenuItem[]}
-                />
+                <div className={`flex items-center gap-2`}>
+                  {systemCurrency && (() => {
+                    const balance = walletBalances[wallet.id] ?? 0
+                    const colorClass = balance > 0
+                      ? 'text-green-600 dark:text-green-400'
+                      : balance < 0
+                        ? 'text-red-600 dark:text-red-400'
+                        : 'text-gray-400 dark:text-gray-500'
+                    return (
+                      <span className={`text-sm font-semibold ${colorClass}`}>
+                        {formatCurrencyValue(balance, systemCurrency.symbol, systemCurrency.decimal_places)}
+                      </span>
+                    )
+                  })()}
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu
+                      items={[
+                        { label: '+ Currency', onClick: () => openCurrencyModal(wallet) },
+                        ...(!wallet.is_default ? [{ label: 'Set Default', onClick: () => handleSetDefault(wallet) }] : []),
+                        { label: 'Edit', onClick: () => openWalletModal(wallet) },
+                        { label: 'Delete', onClick: () => handleDeleteWallet(wallet), variant: 'danger' as const },
+                      ] as DropdownMenuItem[]}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Accounts list */}
-              {wallet.accounts && wallet.accounts.length > 0 && (
+              {expandedWallets.has(wallet.id) && wallet.accounts && wallet.accounts.length > 0 && (
                 <div className="rounded-b-xl border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
                   {wallet.accounts.map((account) => {
                     const currency = getCurrency(account.currency_id)
@@ -383,6 +417,7 @@ export function AccountsPage() {
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
                             {account.is_default ? <Badge>Default</Badge> : ''}
+                            {getCurrency(account.currency_id)?.is_crypto ? <Badge variant="secondary">crypto</Badge> : ''}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
