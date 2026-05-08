@@ -394,10 +394,10 @@ export function ExpenseTransactionForm({
         if (entry.newTagName && !entry.tagId) {
           const parentIds =
             entry.newTagType === 'both'
-              ? [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME]
+              ? [SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME]
               : entry.newTagType === 'income'
-                ? [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.INCOME]
-                : [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE]
+                ? [SYSTEM_TAGS.INCOME]
+                : [SYSTEM_TAGS.EXPENSE]
           const newTag = await tagRepository.create({
             name: entry.newTagName.trim(),
             parent_ids: parentIds,

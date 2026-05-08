@@ -1122,9 +1122,9 @@ describe('csvImport', () => {
   })
 
   describe('tag parent relationships for newly created tags', () => {
-    // SYSTEM_TAGS: DEFAULT=2, INCOME=9, EXPENSE=10
+    // SYSTEM_TAGS: INCOME=9, EXPENSE=10
 
-    it('assigns EXPENSE + DEFAULT parents for expense tag (negative amount)', async () => {
+    it('assigns EXPENSE parent for expense tag (negative amount)', async () => {
       setupDefaultMocks()
       mockTagFindById.mockResolvedValue(null as any)
       mockTagFindByName.mockResolvedValue(null as any)
@@ -1133,12 +1133,6 @@ describe('csvImport', () => {
 
       await importTransactionsFromCSV(csv)
 
-      // Should insert DEFAULT parent
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
-        [30, 2] // DEFAULT
-      )
-      // Should insert EXPENSE parent
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
         [30, 10] // EXPENSE
@@ -1151,7 +1145,7 @@ describe('csvImport', () => {
       expect(incomeCall).toBeUndefined()
     })
 
-    it('assigns INCOME + DEFAULT parents for income tag (positive amount)', async () => {
+    it('assigns INCOME parent for income tag (positive amount)', async () => {
       setupDefaultMocks()
       mockTagFindById.mockResolvedValue(null as any)
       mockTagFindByName.mockResolvedValue(null as any)
@@ -1160,10 +1154,6 @@ describe('csvImport', () => {
 
       await importTransactionsFromCSV(csv)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
-        [31, 2] // DEFAULT
-      )
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
         [31, 9] // INCOME
@@ -1176,7 +1166,7 @@ describe('csvImport', () => {
       expect(expenseCall).toBeUndefined()
     })
 
-    it('assigns EXPENSE + INCOME + DEFAULT parents when tag used in both signs', async () => {
+    it('assigns EXPENSE + INCOME parents when tag used in both signs', async () => {
       setupDefaultMocks()
       mockTagFindById.mockResolvedValue(null as any)
       mockTagFindByName.mockResolvedValue(null as any)
@@ -1187,10 +1177,6 @@ describe('csvImport', () => {
 
       await importTransactionsFromCSV(csv)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
-        [32, 2] // DEFAULT
-      )
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
         [32, 10] // EXPENSE

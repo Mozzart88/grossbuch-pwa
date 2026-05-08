@@ -364,7 +364,7 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
 
   // Assign parent relationships for newly created tags based on sign usage
   for (const [tagId, signs] of newTagSigns) {
-    const parentIds: number[] = [SYSTEM_TAGS.DEFAULT]
+    const parentIds: number[] = []
     if (signs.has('-')) parentIds.push(SYSTEM_TAGS.EXPENSE)
     if (signs.has('+')) parentIds.push(SYSTEM_TAGS.INCOME)
     for (const parentId of parentIds) {

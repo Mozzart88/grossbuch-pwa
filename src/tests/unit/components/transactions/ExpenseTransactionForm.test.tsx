@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ExpenseTransactionForm } from '../../../../components/transactions/ExpenseTransactionForm'
 import type { Tag, Counterparty, Currency, Transaction } from '../../../../types'
 import { SYSTEM_TAGS } from '../../../../types'
@@ -28,6 +28,8 @@ const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
+
+const TIP_TAG_ID = 99
 
 const mockAccounts = [
   {
@@ -149,7 +151,7 @@ describe('ExpenseTransactionForm', () => {
   })
 
   it('shows common add-on tags when provided', () => {
-    const commonTags: Tag[] = [{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]
+    const commonTags: Tag[] = [{ id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }]
     render(<ExpenseTransactionForm {...defaultProps} commonTags={commonTags} />)
     expect(screen.getByText('Add-ons:')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '+ Tip' })).toBeInTheDocument()
@@ -324,7 +326,7 @@ describe('ExpenseTransactionForm', () => {
   })
 
   describe('common add-on tags', () => {
-    const tipTag: Tag = { id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }
+    const tipTag: Tag = { id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }
 
     it('toggles common tag on and off', async () => {
       render(<ExpenseTransactionForm {...defaultProps} commonTags={[tipTag]} />)
@@ -383,7 +385,7 @@ describe('ExpenseTransactionForm', () => {
           expect.objectContaining({
             lines: expect.arrayContaining([
               expect.objectContaining({ tag_id: 10, sign: '-' }),
-              expect.objectContaining({ tag_id: SYSTEM_TAGS.TIP }),
+              expect.objectContaining({ tag_id: TIP_TAG_ID }),
             ]),
           })
         )
@@ -469,7 +471,7 @@ describe('ExpenseTransactionForm', () => {
           },
           {
             id: new Uint8Array(8), trx_id: new Uint8Array(8),
-            account_id: 2, tag_id: SYSTEM_TAGS.TIP, sign: '-',
+            account_id: 2, tag_id: TIP_TAG_ID, sign: '-',
             amount_int: 10, amount_frac: 0, rate_int: 1, rate_frac: 0, currency: 'EUR',
             is_common: 1, tag: 'Tip',
           },
@@ -481,7 +483,7 @@ describe('ExpenseTransactionForm', () => {
           {...defaultProps}
           currencies={mockCurrencies}
           initialData={multiCurrencyWithCommon}
-          commonTags={[{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]}
+          commonTags={[{ id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }]}
         />
       )
 
@@ -521,7 +523,7 @@ describe('ExpenseTransactionForm', () => {
         expect(mockTagRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             name: 'NewExpTag',
-            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE],
+            parent_ids: [SYSTEM_TAGS.EXPENSE],
           })
         )
       })
@@ -538,7 +540,7 @@ describe('ExpenseTransactionForm', () => {
         expect(mockTagRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             name: 'NewIncTag',
-            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.INCOME],
+            parent_ids: [SYSTEM_TAGS.INCOME],
           })
         )
       })
@@ -555,7 +557,7 @@ describe('ExpenseTransactionForm', () => {
         expect(mockTagRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             name: 'BothTag',
-            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME],
+            parent_ids: [SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME],
           })
         )
       })
@@ -647,7 +649,7 @@ describe('ExpenseTransactionForm', () => {
           },
           {
             id: new Uint8Array(8), trx_id: new Uint8Array(8),
-            account_id: 1, tag_id: SYSTEM_TAGS.TIP, sign: '-',
+            account_id: 1, tag_id: TIP_TAG_ID, sign: '-',
             amount_int: 10, amount_frac: 0, rate_int: 1, rate_frac: 0, currency: 'USD',
             is_common: 1, tag: 'Tip',
           },
@@ -657,7 +659,7 @@ describe('ExpenseTransactionForm', () => {
         <ExpenseTransactionForm
           {...defaultProps}
           initialData={plainWithCommon}
-          commonTags={[{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]}
+          commonTags={[{ id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }]}
         />
       )
       await waitFor(() => {
@@ -678,13 +680,13 @@ describe('ExpenseTransactionForm', () => {
           },
           {
             id: new Uint8Array(8), trx_id: new Uint8Array(8),
-            account_id: 1, tag_id: SYSTEM_TAGS.TIP, sign: '-',
+            account_id: 1, tag_id: TIP_TAG_ID, sign: '-',
             amount_int: 10, amount_frac: 0, rate_int: 1, rate_frac: 0, currency: 'USD',
             is_common: 1, tag: 'Tip',
           },
         ] as any,
       }
-      const tipTag: Tag = { id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }
+      const tipTag: Tag = { id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }
       render(
         <ExpenseTransactionForm
           {...defaultProps}
@@ -759,7 +761,7 @@ describe('ExpenseTransactionForm', () => {
         <ExpenseTransactionForm
           {...defaultProps}
           defaultPaymentCurrencyId={2}
-          commonTags={[{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]}
+          commonTags={[{ id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }]}
         />
       )
       // Amount in EUR (expense currency)
@@ -782,7 +784,7 @@ describe('ExpenseTransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ tag_id: SYSTEM_TAGS.TIP }),
+              expect.objectContaining({ tag_id: TIP_TAG_ID }),
             ]),
           })
         )
@@ -796,7 +798,7 @@ describe('ExpenseTransactionForm', () => {
         <ExpenseTransactionForm
           {...defaultProps}
           defaultPaymentCurrencyId={2}
-          commonTags={[{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]}
+          commonTags={[{ id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }]}
         />
       )
       fireEvent.change(screen.getAllByLabelText(/^Amount/i)[0], { target: { value: '100' } })
@@ -816,7 +818,7 @@ describe('ExpenseTransactionForm', () => {
       render(
         <ExpenseTransactionForm
           {...defaultProps}
-          commonTags={[{ id: SYSTEM_TAGS.TIP, name: 'Tip', sort_order: 1 }]}
+          commonTags={[{ id: TIP_TAG_ID, name: 'Tip', sort_order: 1 }]}
         />
       )
       fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
@@ -834,7 +836,7 @@ describe('ExpenseTransactionForm', () => {
         expect(mockTransactionRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             lines: expect.arrayContaining([
-              expect.objectContaining({ tag_id: SYSTEM_TAGS.TIP }),
+              expect.objectContaining({ tag_id: TIP_TAG_ID }),
             ]),
           })
         )
