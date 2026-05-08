@@ -161,9 +161,13 @@ describe('Toast', () => {
 
       expect(screen.getByText('Info message')).toBeInTheDocument()
 
-      // Fast-forward timer and flush all pending timers
+      // First act: fires the 3000ms dismiss timer, React re-renders with dismissing:true
       await act(async () => {
-        vi.advanceTimersByTime(3500)
+        vi.advanceTimersByTime(3000)
+      })
+      // Second act: fires the 350ms removal timer scheduled after re-render
+      await act(async () => {
+        vi.advanceTimersByTime(400)
       })
 
       expect(screen.queryByText('Info message')).not.toBeInTheDocument()
@@ -246,7 +250,7 @@ describe('Toast', () => {
       })
 
       const toast = screen.getByText('Info message')
-      expect(toast.className).toContain('animate-slide-up')
+      expect(toast.className).toContain('animate-slide-in-right')
     })
 
     it('applies rounded corners', () => {
