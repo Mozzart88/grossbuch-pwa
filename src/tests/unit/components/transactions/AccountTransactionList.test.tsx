@@ -231,13 +231,13 @@ describe('AccountTransactionList', () => {
     it('shows day summary with net change and currency symbol', async () => {
       const transactions = [createMockTransaction()]
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
-      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50000)
 
       renderComponent()
 
       await waitFor(() => {
         // Day summary shows the net change with currency symbol
-        expect(screen.getByText(formatCurrencyValue(-50, '$'))).toBeInTheDocument()
+        expect(screen.getByText(/\$50[., ]000[.,]00/)).toBeInTheDocument()
       })
     })
 

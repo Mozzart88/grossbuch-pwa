@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui'
-import type { DropdownMenuItem } from '../components/ui'
-import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
-import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
-import type { Wallet, WalletInput, Currency, Account } from '../types'
-import { fromIntFrac, toIntFrac } from '../utils/amount'
-import { formatCurrencyValue } from '../utils/formatters'
-import { Badge } from '../components/ui/Badge'
-import { useLayoutContextSafe } from '../store/LayoutContext'
-import { useDataRefresh } from '../hooks/useDataRefresh'
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui';
+import type { DropdownMenuItem } from '../components/ui';
+import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories';
+import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync';
+import type { Wallet, WalletInput, Currency, Account } from '../types';
+import { fromIntFrac, toIntFrac } from '../utils/amount';
+import { formatAmountValue, formatCurrency } from '../utils/formatters';
+import { Badge } from '../components/ui/Badge';
+import { useLayoutContextSafe } from '../store/LayoutContext';
+import { useDataRefresh } from '../hooks/useDataRefresh';
 
 export function AccountsPage() {
   const navigate = useNavigate()
@@ -319,8 +319,9 @@ export function AccountsPage() {
     const value = fromIntFrac(balanceInt, balanceFrac)
     if (!currency) return value.toString()
     const decimals = currency.decimal_places
-    const sign = value < 0 ? '-' : ''
-    return `${sign}${currency.symbol}${Math.abs(value).toFixed(decimals)}`
+    // const sign = value < 0 ? '-' : ''
+    return `${currency.symbol}${Math.abs(value).toFixed(decimals)}`
+    // return `${sign}${currency.symbol}${Math.abs(value).toFixed(decimals)}`
   }
 
   const getCurrency = (currencyId: number) => currencies.find(c => c.id === currencyId)
@@ -385,7 +386,7 @@ export function AccountsPage() {
                         : 'text-gray-400 dark:text-gray-500'
                     return (
                       <span className={`text-sm font-semibold ${colorClass}`}>
-                        {formatCurrencyValue(balance, systemCurrency.symbol, systemCurrency.decimal_places)}
+                        {`${systemCurrency.symbol}${formatAmountValue(Math.abs(balance), systemCurrency.decimal_places)}`}
                       </span>
                     )
                   })()}
@@ -421,8 +422,8 @@ export function AccountsPage() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className={`text-sm font-semibold ${fromIntFrac(account.balance_int, account.balance_frac) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {formatBalance(account.balance_int, account.balance_frac, currency)}
+                          <p className={`text-sm ${fromIntFrac(account.balance_int, account.balance_frac) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {formatCurrency(account.balance_int, account.balance_frac, currency?.symbol || '$', currency?.decimal_places)}
                           </p>
                           <div onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu

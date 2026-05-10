@@ -12,8 +12,9 @@ export function formatCurrencyValue(value: number, symbol: string, decimalPlaces
     minimumFractionDigits: decimalPlaces,
     maximumFractionDigits: decimalPlaces,
   })
-  const sign = value < 0 ? '-' : ''
-  return `${sign}${symbol}${formatted}`
+  // const sign = value < 0 ? '-' : ''
+  return `${symbol}${formatted}`
+  // return `${sign}${symbol}${formatted}`
 }
 
 /** Format amount from (int, frac) pair */

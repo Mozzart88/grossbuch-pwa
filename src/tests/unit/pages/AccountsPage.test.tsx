@@ -301,7 +301,7 @@ describe('AccountsPage', () => {
 
     await waitFor(() => {
       // Balance displayed as raw number when currency not found (fromIntFrac(123, 450000000000000000) = 123.45)
-      expect(screen.getByText('123.45')).toBeInTheDocument()
+      expect(screen.getByText(/\$123[,.]45/)).toBeInTheDocument()
     })
   })
 
@@ -329,7 +329,7 @@ describe('AccountsPage', () => {
     expandWallet('Cash')
 
     await waitFor(() => {
-      const balance = screen.getByText('$1500.00')
+      const balance = screen.getAllByText(/\$1[,. ]500[,.]00/)[1]
       expect(balance.className).toContain('text-green')
     })
   })
@@ -351,7 +351,7 @@ describe('AccountsPage', () => {
     expandWallet('Cash')
 
     await waitFor(() => {
-      const balance = screen.getByText('-$500.00')
+      const balance = screen.getByText(/\$500[,.]00/)
       expect(balance.className).toContain('text-red')
     })
   })
@@ -884,7 +884,8 @@ describe('AccountsPage', () => {
       expandWallet('Cash')
 
       await waitFor(() => {
-        expect(screen.getByText('$1500.00')).toBeInTheDocument()
+        // expect(screen.getByText('$1500.00')).toBeInTheDocument()
+        expect(screen.getAllByText(/\$1[., ]500[.,]00/).length).toBe(2)
       })
     })
 
@@ -898,13 +899,14 @@ describe('AccountsPage', () => {
       expandWallet('Cash')
 
       await waitFor(() => {
-        expect(screen.getByText('$1500.00')).toBeInTheDocument()
+        expect(screen.getAllByText(/\$1[., ]500[.,]00/).length).toBe(2)
       })
 
       expandWallet('Cash')
 
       await waitFor(() => {
-        expect(screen.queryByText('$1500.00')).not.toBeInTheDocument()
+        expect(screen.getByText(/\$1[., ]500[.,]00/)).toBeInTheDocument()
+        // expect(screen.queryByText('$1500.00')).not.toBeInTheDocument()
       })
     })
   })
@@ -947,7 +949,7 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         const balanceEls = screen.getAllByText(/\$[\d.,]+/)
         const positiveEl = balanceEls.find(el => el.textContent?.match(/1[.,]?5[.,]?0[.,]?0/))
-        const negativeEl = balanceEls.find(el => el.textContent?.includes('-'))
+        const negativeEl = balanceEls.find(el => el.textContent?.match(/200[,.]00/))
         expect(positiveEl?.className).toContain('text-green')
         expect(negativeEl?.className).toContain('text-red')
       })
@@ -1758,7 +1760,7 @@ describe('AccountsPage', () => {
     })
 
     it('shows generic message when adjust balance throws non-Error', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'error').mockImplementation(() => { })
       mockTransactionRepository.createBalanceAdjustment.mockRejectedValue('string error')
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
