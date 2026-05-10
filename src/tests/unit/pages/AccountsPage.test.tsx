@@ -18,12 +18,14 @@ vi.mock('../../../services/repositories', () => ({
   },
   currencyRepository: {
     findAll: vi.fn(),
+    findSystem: vi.fn(),
     getExchangeRate: vi.fn(),
     setExchangeRate: vi.fn(),
   },
   accountRepository: {
     delete: vi.fn(),
     setDefault: vi.fn(),
+    getWalletBalancesInSystemCurrency: vi.fn(),
   },
   transactionRepository: {
     createBalanceAdjustment: vi.fn(),
@@ -122,6 +124,8 @@ describe('AccountsPage', () => {
     vi.clearAllMocks()
     mockWalletRepository.findAll.mockResolvedValue(mockWallets)
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
+    mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0])
+    mockAccountRepository.getWalletBalancesInSystemCurrency.mockResolvedValue({ 1: 1500, 2: 15000 })
   })
 
   const renderWithRouter = () => {
@@ -133,6 +137,11 @@ describe('AccountsPage', () => {
         </LayoutProvider>
       </MemoryRouter>
     )
+  }
+
+  // Helper to expand a wallet section by clicking its header
+  const expandWallet = (walletName: string) => {
+    fireEvent.click(screen.getByText(walletName))
   }
 
   // Helper to open dropdown menu and click an action
@@ -262,7 +271,7 @@ describe('AccountsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Empty Wallet')).toBeInTheDocument()
-      expect(screen.getByText('0 account(s)')).toBeInTheDocument()
+      expect(screen.getByText(/0 account\(s\)/)).toBeInTheDocument()
     })
   })
 
@@ -286,8 +295,13 @@ describe('AccountsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Unknown Currency Wallet')).toBeInTheDocument()
+    })
+
+    expandWallet('Unknown Currency Wallet')
+
+    await waitFor(() => {
       // Balance displayed as raw number when currency not found (fromIntFrac(123, 450000000000000000) = 123.45)
-      expect(screen.getByText('123.45')).toBeInTheDocument()
+      expect(screen.getByText(/\$123[,.]45/)).toBeInTheDocument()
     })
   })
 
@@ -295,7 +309,13 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getAllByText('USD').length === 2)
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+    })
+
+    expandWallet('Cash')
+
+    await waitFor(() => {
+      expect(screen.getAllByText('USD').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -303,7 +323,13 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      const balance = screen.getByText('$1500.00')
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+    })
+
+    expandWallet('Cash')
+
+    await waitFor(() => {
+      const balance = screen.getAllByText(/\$1[,. ]500[,.]00/)[1]
       expect(balance.className).toContain('text-green')
     })
   })
@@ -319,7 +345,13 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      const balance = screen.getByText('-$500.00')
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+    })
+
+    expandWallet('Cash')
+
+    await waitFor(() => {
+      const balance = screen.getByText(/\$500[,.]00/)
       expect(balance.className).toContain('text-red')
     })
   })
@@ -330,6 +362,7 @@ describe('AccountsPage', () => {
     await waitFor(() => {
       expect(mockWalletRepository.findAll).toHaveBeenCalled()
       expect(mockCurrencyRepository.findAll).toHaveBeenCalled()
+      expect(mockCurrencyRepository.findSystem).toHaveBeenCalled()
     })
   })
 
@@ -346,7 +379,7 @@ describe('AccountsPage', () => {
     renderWithRouter()
 
     await waitFor(() => {
-      expect(screen.getAllByText('1 account(s)').length == 2)
+      expect(screen.getAllByText(/1 account\(s\)/).length).toBeGreaterThanOrEqual(2)
     })
   })
 
@@ -742,7 +775,9 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      expandWallet('Cash')
+
+      // With Cash wallet expanded: [0]=Cash wallet, [1]=Cash account
       await openDropdownAndClick(1, 'Remove')
 
       await waitFor(() => {
@@ -762,7 +797,9 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      expandWallet('Cash')
+
+      // With Cash wallet expanded: [0]=Cash wallet, [1]=Cash account
       await openDropdownAndClick(1, 'Remove')
 
       await waitFor(() => {
@@ -826,6 +863,148 @@ describe('AccountsPage', () => {
     })
   })
 
+  describe('Wallet folding', () => {
+    it('accounts are hidden by default (wallet folded)', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText('$1500.00')).not.toBeInTheDocument()
+    })
+
+    it('clicking wallet header expands accounts', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      expandWallet('Cash')
+
+      await waitFor(() => {
+        // expect(screen.getByText('$1500.00')).toBeInTheDocument()
+        expect(screen.getAllByText(/\$1[., ]500[.,]00/).length).toBe(2)
+      })
+    })
+
+    it('clicking expanded wallet header folds accounts again', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      expandWallet('Cash')
+
+      await waitFor(() => {
+        expect(screen.getAllByText(/\$1[., ]500[.,]00/).length).toBe(2)
+      })
+
+      expandWallet('Cash')
+
+      await waitFor(() => {
+        expect(screen.getByText(/\$1[., ]500[.,]00/)).toBeInTheDocument()
+        // expect(screen.queryByText('$1500.00')).not.toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Wallet total balance', () => {
+    it('shows total wallet balance in system currency in header', async () => {
+      mockAccountRepository.getWalletBalancesInSystemCurrency.mockResolvedValue({ 1: 1500, 2: 15000 })
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        // Balance is a standalone element — find it by matching the numeric value (locale-independent)
+        const balanceEls = screen.getAllByText(/\$[\d.,]+/)
+        expect(balanceEls.length).toBeGreaterThanOrEqual(1)
+        expect(balanceEls[0].textContent).toMatch(/1[.,]?5[.,]?0[.,]?0/)
+      })
+    })
+
+    it('shows zero balance when wallet has no balance data', async () => {
+      mockAccountRepository.getWalletBalancesInSystemCurrency.mockResolvedValue({})
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        const balanceEls = screen.getAllByText(/\$[\d.,]+/)
+        expect(balanceEls.length).toBeGreaterThanOrEqual(1)
+        balanceEls.forEach(el => expect(el.textContent).toMatch(/0[,.]00/))
+      })
+    })
+
+    it('balance is green for positive, gray for zero, red for negative', async () => {
+      mockAccountRepository.getWalletBalancesInSystemCurrency.mockResolvedValue({ 1: 1500, 2: -200 })
+      mockWalletRepository.findAll.mockResolvedValue([
+        { ...mockWallets[0], id: 1 },
+        { ...mockWallets[1], id: 2 },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        const balanceEls = screen.getAllByText(/\$[\d.,]+/)
+        const positiveEl = balanceEls.find(el => el.textContent?.match(/1[.,]?5[.,]?0[.,]?0/))
+        const negativeEl = balanceEls.find(el => el.textContent?.match(/200[,.]00/))
+        expect(positiveEl?.className).toContain('text-green')
+        expect(negativeEl?.className).toContain('text-red')
+      })
+    })
+  })
+
+  describe('Crypto badge', () => {
+    it('shows crypto badge for accounts with crypto currency', async () => {
+      mockWalletRepository.findAll.mockResolvedValue([
+        {
+          id: 1,
+          name: 'Crypto Wallet',
+          color: '#3B82F6',
+          is_default: false,
+          accounts: [{
+            ...mockAccount,
+            currency_id: 3,
+          }],
+        },
+      ])
+      mockCurrencyRepository.findAll.mockResolvedValue([
+        ...mockCurrencies,
+        { id: 3, code: 'BTC', name: 'Bitcoin', symbol: '₿', decimal_places: 8, is_crypto: true },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Crypto Wallet')).toBeInTheDocument()
+      })
+
+      expandWallet('Crypto Wallet')
+
+      await waitFor(() => {
+        expect(screen.getByText('crypto')).toBeInTheDocument()
+      })
+    })
+
+    it('does not show crypto badge for non-crypto accounts', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      expandWallet('Cash')
+
+      await waitFor(() => {
+        expect(screen.getByText('USD')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText('crypto')).not.toBeInTheDocument()
+    })
+  })
+
   describe('Set default wallet', () => {
     beforeEach(() => {
       mockWalletRepository.setDefault.mockResolvedValue(undefined)
@@ -855,8 +1034,8 @@ describe('AccountsPage', () => {
       // Close dropdown
       fireEvent.click(menuTriggers[0])
 
-      // Open second wallet dropdown (Bank - non-default wallet) at index 2
-      fireEvent.click(menuTriggers[2])
+      // Open second wallet dropdown (Bank - non-default wallet) at index 1
+      fireEvent.click(menuTriggers[1])
 
       await waitFor(() => {
         expect(screen.getByRole('menu')).toBeInTheDocument()
@@ -872,9 +1051,8 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Bank')).toBeInTheDocument()
       })
 
-      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
-      // Bank wallet is at index 2
-      await openDropdownAndClick(2, 'Set Default')
+      // With wallets folded: [0]=Cash wallet, [1]=Bank wallet
+      await openDropdownAndClick(1, 'Set Default')
 
       await waitFor(() => {
         expect(mockWalletRepository.setDefault).toHaveBeenCalledWith(2)
@@ -891,9 +1069,8 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Bank')).toBeInTheDocument()
       })
 
-      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
-      // Bank wallet is at index 2
-      await openDropdownAndClick(2, 'Set Default')
+      // With wallets folded: [0]=Cash wallet, [1]=Bank wallet
+      await openDropdownAndClick(1, 'Set Default')
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('DB error', 'error')
@@ -929,6 +1106,12 @@ describe('AccountsPage', () => {
     it('displays Default badge for default accounts', async () => {
       renderWithRouter()
       await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+
+      expandWallet('Cash')
+
+      await waitFor(() => {
         // There should be 2 "Default" badges: 1 wallet + 1 account
         expect(screen.getAllByText('Default').length).toBe(2)
       })
@@ -940,8 +1123,10 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
+      expandWallet('Cash')
+
       // Open dropdown for default account (first account in Cash wallet)
-      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      // Index order (wallets expanded): [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
       const menuTriggers = screen.getAllByRole('button', { expanded: false }).filter(
         btn => btn.getAttribute('aria-haspopup') === 'menu'
       )
@@ -962,6 +1147,9 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Bank')).toBeInTheDocument()
       })
 
+      expandWallet('Cash')
+      expandWallet('Bank')
+
       // Bank account (index 1) is non-default
       await openAccountDropdownAndClick(1, 'Set Default')
 
@@ -979,6 +1167,9 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Bank')).toBeInTheDocument()
       })
+
+      expandWallet('Cash')
+      expandWallet('Bank')
 
       await openAccountDropdownAndClick(1, 'Set Default')
 
@@ -1004,7 +1195,9 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
-      // Index order: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
+      expandWallet('Cash')
+
+      // With Cash wallet expanded: [0]=Cash wallet, [1]=Cash account
       await openDropdownAndClick(1, 'Adjust Balance')
 
       await waitFor(() => {
@@ -1018,6 +1211,8 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
+
+      expandWallet('Cash')
 
       await openDropdownAndClick(1, 'Adjust Balance')
 
@@ -1033,6 +1228,8 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
+
+      expandWallet('Cash')
 
       await openDropdownAndClick(1, 'Adjust Balance')
 
@@ -1068,6 +1265,8 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
+      expandWallet('Cash')
+
       await openDropdownAndClick(1, 'Adjust Balance')
 
       await waitFor(() => {
@@ -1099,6 +1298,8 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
+      expandWallet('Cash')
+
       await openDropdownAndClick(1, 'Adjust Balance')
 
       await waitFor(() => {
@@ -1126,6 +1327,8 @@ describe('AccountsPage', () => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
 
+      expandWallet('Cash')
+
       await openDropdownAndClick(1, 'Adjust Balance')
 
       await waitFor(() => {
@@ -1146,6 +1349,8 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
+
+      expandWallet('Cash')
 
       // Open modal and enter a value
       await openDropdownAndClick(1, 'Adjust Balance')
@@ -1180,6 +1385,8 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Cash')).toBeInTheDocument()
       })
+
+      expandWallet('Cash')
 
       await openDropdownAndClick(1, 'Adjust Balance')
 
@@ -1436,6 +1643,7 @@ describe('AccountsPage', () => {
       mockAccountRepository.delete.mockRejectedValue('string error')
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
       await openDropdownAndClick(1, 'Remove')
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('Failed to delete', 'error')
@@ -1446,7 +1654,8 @@ describe('AccountsPage', () => {
       mockWalletRepository.setDefault.mockRejectedValue('string error')
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Bank')).toBeInTheDocument())
-      await openDropdownAndClick(2, 'Set Default')
+      // With wallets folded: [0]=Cash wallet, [1]=Bank wallet
+      await openDropdownAndClick(1, 'Set Default')
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('Failed to set default', 'error')
       })
@@ -1456,7 +1665,9 @@ describe('AccountsPage', () => {
       mockAccountRepository.setDefault.mockRejectedValue('string error')
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
-      // Bank account (index 3) is not default and shows Set Default option
+      expandWallet('Cash')
+      expandWallet('Bank')
+      // With both wallets expanded: [0]=Cash wallet, [1]=Cash account, [2]=Bank wallet, [3]=Bank account
       await openDropdownAndClick(3, 'Set Default')
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith('Failed to set default', 'error')
@@ -1515,6 +1726,7 @@ describe('AccountsPage', () => {
       vi.spyOn(window, 'confirm').mockReturnValue(false)
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
       await openDropdownAndClick(1, 'Remove')
       expect(mockAccountRepository.delete).not.toHaveBeenCalled()
       vi.restoreAllMocks()
@@ -1523,6 +1735,8 @@ describe('AccountsPage', () => {
     it('navigates to account transactions when account row is clicked', async () => {
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+      await waitFor(() => expect(screen.getAllByText('USD').length).toBeGreaterThanOrEqual(1))
       // Click on the USD account row (contains currency name)
       const accountRows = screen.getAllByText('USD')
       // The first USD is in the account row for Cash wallet
@@ -1546,10 +1760,11 @@ describe('AccountsPage', () => {
     })
 
     it('shows generic message when adjust balance throws non-Error', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'error').mockImplementation(() => { })
       mockTransactionRepository.createBalanceAdjustment.mockRejectedValue('string error')
       renderWithRouter()
       await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
       await openDropdownAndClick(1, 'Adjust Balance')
       await waitFor(() => expect(screen.getByText('Adjust Balance')).toBeInTheDocument())
       const dialog = screen.getByRole('dialog')

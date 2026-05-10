@@ -4,6 +4,7 @@ interface Toast {
   id: number
   message: string
   type: 'success' | 'error' | 'info'
+  dismissing: boolean
 }
 
 interface ToastContextValue {
@@ -11,7 +12,7 @@ interface ToastContextValue {
 }
 
 const ToastContext = createContext<ToastContextValue>({
-  showToast: () => {},
+  showToast: () => { },
 })
 
 let toastId = 0
@@ -21,7 +22,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const showToast = useCallback((message: string, type: Toast['type'] = 'info') => {
     const id = ++toastId
-    setToasts((prev) => [...prev, { id, message, type }])
+    setToasts((prev) => [{ id, message, type, dismissing: false }, ...prev])
+  }, [])
+
+  const startDismiss = useCallback((id: number) => {
+    setToasts((prev) => {
+      if (prev.length > 1) return prev.filter((t) => t.id !== id)
+      return prev.map((t) => t.id === id ? { ...t, dismissing: true } : t)
+    })
   }, [])
 
   const removeToast = useCallback((id: number) => {
@@ -31,22 +39,34 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed bottom-20 left-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-200 flex flex-col gap-2 pointer-events-none">
         {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={removeToast} />
+          <ToastItem key={toast.id} toast={toast} onStartDismiss={startDismiss} onRemove={removeToast} />
         ))}
       </div>
     </ToastContext.Provider>
   )
 }
 
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
+function ToastItem({
+  toast,
+  onStartDismiss,
+  onRemove,
+}: {
+  toast: Toast
+  onStartDismiss: (id: number) => void
+  onRemove: (id: number) => void
+}) {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      onDismiss(toast.id)
-    }, 3000)
+    const timer = setTimeout(() => onStartDismiss(toast.id), 3000)
     return () => clearTimeout(timer)
-  }, [toast.id, onDismiss])
+  }, [toast.id, onStartDismiss])
+
+  useEffect(() => {
+    if (!toast.dismissing) return
+    const timer = setTimeout(() => onRemove(toast.id), 350)
+    return () => clearTimeout(timer)
+  }, [toast.dismissing, toast.id, onRemove])
 
   const colors = {
     success: 'bg-green-600',
@@ -54,9 +74,11 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     info: 'bg-gray-800',
   }
 
+  const animClass = toast.dismissing ? 'animate-slide-out-right' : 'animate-slide-in-right'
+
   return (
     <div
-      className={`${colors[toast.type]} text-white px-4 py-3 rounded-lg shadow-lg pointer-events-auto animate-slide-up`}
+      className={`w-72 ${colors[toast.type]} text-white px-4 py-3 rounded-lg shadow-lg pointer-events-auto ${animClass}`}
     >
       {toast.message}
     </div>

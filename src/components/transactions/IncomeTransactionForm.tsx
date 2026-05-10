@@ -133,7 +133,7 @@ export function IncomeTransactionForm({
     try {
       let finalTagId = tagId
       if (newTagName && !tagId) {
-        const parent_ids: number[] = [SYSTEM_TAGS.DEFAULT]
+        const parent_ids: number[] = []
         if (newTagType === 'expense' || newTagType === 'both') parent_ids.push(SYSTEM_TAGS.EXPENSE)
         if (newTagType === 'income' || newTagType === 'both') parent_ids.push(SYSTEM_TAGS.INCOME)
         const newTag = await tagRepository.create({ name: newTagName.trim(), parent_ids })

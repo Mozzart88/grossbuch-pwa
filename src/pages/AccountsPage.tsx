@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui'
-import type { DropdownMenuItem } from '../components/ui'
-import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories'
-import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync'
-import type { Wallet, WalletInput, Currency, Account } from '../types'
-import { fromIntFrac, toIntFrac } from '../utils/amount'
-import { Badge } from '../components/ui/Badge'
-import { useLayoutContextSafe } from '../store/LayoutContext'
-import { useDataRefresh } from '../hooks/useDataRefresh'
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui';
+import type { DropdownMenuItem } from '../components/ui';
+import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories';
+import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync';
+import type { Wallet, WalletInput, Currency, Account } from '../types';
+import { fromIntFrac, toIntFrac } from '../utils/amount';
+import { formatAmountValue, formatCurrency } from '../utils/formatters';
+import { Badge } from '../components/ui/Badge';
+import { useLayoutContextSafe } from '../store/LayoutContext';
+import { useDataRefresh } from '../hooks/useDataRefresh';
 
 export function AccountsPage() {
   const navigate = useNavigate()
@@ -17,6 +18,9 @@ export function AccountsPage() {
   const { showToast } = useToast()
   const [wallets, setWallets] = useState<Wallet[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
+  const [systemCurrency, setSystemCurrency] = useState<Currency | null>(null)
+  const [walletBalances, setWalletBalances] = useState<Record<number, number>>({})
+  const [expandedWallets, setExpandedWallets] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
 
   // Wallet modal state
@@ -52,12 +56,16 @@ export function AccountsPage() {
 
   const loadData = async () => {
     try {
-      const [ws, curs] = await Promise.all([
+      const [ws, curs, balances, sysCurrency] = await Promise.all([
         walletRepository.findAll(),
         currencyRepository.findAll(),
+        accountRepository.getWalletBalancesInSystemCurrency(),
+        currencyRepository.findSystem(),
       ])
       setWallets(ws.filter(w => !w.is_virtual))
       setCurrencies(curs)
+      setWalletBalances(balances)
+      setSystemCurrency(sysCurrency)
     } catch (error) {
       console.error('Failed to load data:', error)
     } finally {
@@ -311,11 +319,20 @@ export function AccountsPage() {
     const value = fromIntFrac(balanceInt, balanceFrac)
     if (!currency) return value.toString()
     const decimals = currency.decimal_places
-    const sign = value < 0 ? '-' : ''
-    return `${sign}${currency.symbol}${Math.abs(value).toFixed(decimals)}`
+    // const sign = value < 0 ? '-' : ''
+    return `${currency.symbol}${Math.abs(value).toFixed(decimals)}`
+    // return `${sign}${currency.symbol}${Math.abs(value).toFixed(decimals)}`
   }
 
   const getCurrency = (currencyId: number) => currencies.find(c => c.id === currencyId)
+
+  const toggleWallet = (walletId: number) => {
+    setExpandedWallets(prev => {
+      const next = new Set(prev)
+      if (next.has(walletId)) next.delete(walletId); else next.add(walletId)
+      return next
+    })
+  }
 
   if (loading) {
     return (
@@ -340,7 +357,8 @@ export function AccountsPage() {
             >
               {/* Wallet header */}
               <div
-                className={`p-4  flex items-center justify-between`}
+                className="p-4 flex items-center justify-between cursor-pointer"
+                onClick={() => toggleWallet(wallet.id)}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">💰</span>
@@ -358,18 +376,35 @@ export function AccountsPage() {
                     </p>
                   </div>
                 </div>
-                <DropdownMenu
-                  items={[
-                    { label: '+ Currency', onClick: () => openCurrencyModal(wallet) },
-                    ...(!wallet.is_default ? [{ label: 'Set Default', onClick: () => handleSetDefault(wallet) }] : []),
-                    { label: 'Edit', onClick: () => openWalletModal(wallet) },
-                    { label: 'Delete', onClick: () => handleDeleteWallet(wallet), variant: 'danger' as const },
-                  ] as DropdownMenuItem[]}
-                />
+                <div className={`flex items-center gap-2`}>
+                  {systemCurrency && (() => {
+                    const balance = walletBalances[wallet.id] ?? 0
+                    const colorClass = balance > 0
+                      ? 'text-green-600 dark:text-green-400'
+                      : balance < 0
+                        ? 'text-red-600 dark:text-red-400'
+                        : 'text-gray-400 dark:text-gray-500'
+                    return (
+                      <span className={`text-sm font-semibold ${colorClass}`}>
+                        {`${systemCurrency.symbol}${formatAmountValue(Math.abs(balance), systemCurrency.decimal_places)}`}
+                      </span>
+                    )
+                  })()}
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu
+                      items={[
+                        { label: '+ Currency', onClick: () => openCurrencyModal(wallet) },
+                        ...(!wallet.is_default ? [{ label: 'Set Default', onClick: () => handleSetDefault(wallet) }] : []),
+                        { label: 'Edit', onClick: () => openWalletModal(wallet) },
+                        { label: 'Delete', onClick: () => handleDeleteWallet(wallet), variant: 'danger' as const },
+                      ] as DropdownMenuItem[]}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Accounts list */}
-              {wallet.accounts && wallet.accounts.length > 0 && (
+              {expandedWallets.has(wallet.id) && wallet.accounts && wallet.accounts.length > 0 && (
                 <div className="rounded-b-xl border-t border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-800">
                   {wallet.accounts.map((account) => {
                     const currency = getCurrency(account.currency_id)
@@ -383,11 +418,12 @@ export function AccountsPage() {
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
                             {account.is_default ? <Badge>Default</Badge> : ''}
+                            {getCurrency(account.currency_id)?.is_crypto ? <Badge variant="secondary">crypto</Badge> : ''}
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <p className={`text-sm font-semibold ${fromIntFrac(account.balance_int, account.balance_frac) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                            {formatBalance(account.balance_int, account.balance_frac, currency)}
+                          <p className={`text-sm ${fromIntFrac(account.balance_int, account.balance_frac) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                            {formatCurrency(account.balance_int, account.balance_frac, currency?.symbol || '$', currency?.decimal_places)}
                           </p>
                           <div onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { TransactionLog, Account } from '../../types'
 import { transactionRepository } from '../../services/repositories'
-import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
+import { getCurrentMonth, formatDate, toLocalISOString } from '../../utils/dateUtils'
 import { formatCurrencyValue } from '../../utils/formatters'
 import { fromIntFrac } from '../../utils/amount'
 import { MonthNavigator } from './MonthNavigator'
@@ -47,7 +47,7 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
   const [startOfMonthBalance, setStartOfMonthBalance] = useState(0)
   const [endOfMonthBalance, setEndOfMonthBalance] = useState(0)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = toLocalISOString().slice(0, 10)
     return new Set([today])
   })
 

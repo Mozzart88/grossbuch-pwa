@@ -7,6 +7,7 @@ import {
   getTestDatabase,
   getCurrencyIdByCode,
 } from './setup'
+import { toLocalISOString } from '../../utils/dateUtils'
 
 // Mock the external API and settings — these have no real implementation in tests
 vi.mock('../../services/exchangeRate/exchangeRateApi', () => ({
@@ -196,7 +197,7 @@ describe('Historical Exchange Rates Integration', () => {
       insertLatestRate(eurId, 1, 100_000_000_000_000_000)
 
       const { getRateForDate } = await import('../../services/exchangeRate/historicalRateService')
-      const today = new Date().toISOString().slice(0, 10)
+      const today = toLocalISOString().slice(0, 10)
 
       const result = await getRateForDate(eurId, today)
 

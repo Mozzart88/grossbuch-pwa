@@ -6,6 +6,7 @@ import type { ExportFilters } from '../services/export/csvExport'
 import { walletRepository, tagRepository, counterpartyRepository } from '../services/repositories'
 import { verifyPin } from '../services/auth'
 import type { Wallet, Tag, Counterparty, Account } from '../types'
+import { toLocalISOString } from '../utils/dateUtils'
 
 export function ExportPage() {
   const { showToast } = useToast()
@@ -87,7 +88,7 @@ export function ExportPage() {
     try {
       const filters = buildFilters()
       const csv = await exportTransactionsToCSV(filters)
-      const filename = `transactions_${startDate || 'all'}_${endDate || 'all'}_${new Date().toISOString().slice(0, 10)}.csv`
+      const filename = `transactions_${startDate || 'all'}_${endDate || 'all'}_${toLocalISOString().slice(0, 10)}.csv`
       downloadCSV(csv, filename)
       showToast('Export successful', 'success')
     } catch (error) {

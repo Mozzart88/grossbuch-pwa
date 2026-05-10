@@ -3,11 +3,12 @@ import { settingsRepository } from '../repositories/settingsRepository'
 import { getHistoricalRates } from './exchangeRateApi'
 import { toIntFrac } from '../../utils/amount'
 import type { IntFrac } from '../../utils/amount'
+import { toLocalISOString } from '../../utils/dateUtils'
 
 const MAX_THRESHOLD = 30
 
 function todayString(): string {
-  return new Date().toISOString().slice(0, 10)
+  return toLocalISOString().slice(0, 10)
 }
 
 function offsetDate(date: string, days: number): string {

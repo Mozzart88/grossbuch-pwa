@@ -1,5 +1,6 @@
 import type { Account } from '../../types'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
+import { toLocalISOString } from '../../utils/dateUtils'
 
 export type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
 
@@ -27,7 +28,7 @@ export const toAmountIntFrac = (displayAmount: string): { int: number; frac: num
 }
 
 export const toDateString = (datetimeMs: number): string =>
-  new Date(datetimeMs).toISOString().slice(0, 10)
+  toLocalISOString(new Date(datetimeMs)).slice(0, 10)
 
 export const isDateInPast = (datetimeMs: number): boolean =>
-  toDateString(datetimeMs) < new Date().toISOString().slice(0, 10)
+  toDateString(datetimeMs) < toLocalISOString(new Date()).slice(0, 10)

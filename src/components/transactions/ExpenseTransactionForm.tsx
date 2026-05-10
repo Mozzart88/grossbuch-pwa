@@ -392,9 +392,15 @@ export function ExpenseTransactionForm({
       const resolvedSubTagIds: Record<string, number> = {}
       for (const entry of subEntries) {
         if (entry.newTagName && !entry.tagId) {
+          const parentIds =
+            entry.newTagType === 'both'
+              ? [SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME]
+              : entry.newTagType === 'income'
+                ? [SYSTEM_TAGS.INCOME]
+                : [SYSTEM_TAGS.EXPENSE]
           const newTag = await tagRepository.create({
             name: entry.newTagName.trim(),
-            parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE],
+            parent_ids: parentIds,
           })
           resolvedSubTagIds[entry.id] = newTag.id
         } else if (entry.tagId) {

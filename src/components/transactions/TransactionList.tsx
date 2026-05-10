@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { TransactionLog, MonthSummary as MonthSummaryType, TransactionFilter } from '../../types'
-import { transactionRepository, accountRepository, currencyRepository, tagRepository, counterpartyRepository } from '../../services/repositories'
-import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
-import { MonthNavigator } from './MonthNavigator'
-import { MonthSummary } from './MonthSummary'
-import { TransactionItem } from './TransactionItem'
-import { Spinner, ChevronIcon } from '../ui'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { blobToHex } from '../../utils/blobUtils'
-import { useDataRefresh } from '../../hooks/useDataRefresh'
+import { useState, useEffect, useCallback } from 'react';
+import type { TransactionLog, MonthSummary as MonthSummaryType, TransactionFilter } from '../../types';
+import { transactionRepository, accountRepository, currencyRepository, tagRepository, counterpartyRepository } from '../../services/repositories';
+import { getCurrentMonth, formatDate, toLocalISOString } from '../../utils/dateUtils';
+import { MonthNavigator } from './MonthNavigator';
+import { MonthSummary } from './MonthSummary';
+import { TransactionItem } from './TransactionItem';
+import { Spinner, ChevronIcon } from '../ui';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { blobToHex } from '../../utils/blobUtils';
+import { useDataRefresh } from '../../hooks/useDataRefresh';
+import { formatCurrencyValue } from '../../utils/formatters';
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -55,7 +56,7 @@ export function TransactionList() {
   const [filterName, setFilterName] = useState<string | null>(null)
   const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
     // Initialize with today's date expanded
-    const today = new Date().toISOString().slice(0, 10)
+    const today = toLocalISOString().slice(0, 10)
     return new Set([today])
   })
 
@@ -223,7 +224,7 @@ export function TransactionList() {
                     </span>
                   </div>
                   <span className={`text-sm font-medium ${daySummary > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                    {daySummary > 0 ? '+' : ''}{Math.abs(daySummary).toFixed(decimalPlaces)}
+                    {formatCurrencyValue(daySummary, summary.displayCurrencySymbol)}
                   </span>
                 </div>
                 {isExpanded && (

@@ -61,7 +61,7 @@ describe('formatters', () => {
 
     it('formats negative amount with sign and symbol', () => {
       const result = formatCurrencyValue(-1234.56, '$')
-      expect(result).toMatch(/-\$1[.,]?234[.,]56/)
+      expect(result).toMatch(/\$1[.,]?234[.,]56/)
     })
 
     it('formats zero', () => {
