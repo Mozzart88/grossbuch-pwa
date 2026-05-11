@@ -108,12 +108,12 @@ describe('syncTriggers', () => {
       expect(currInsert).toContain('WHEN NEW.tag_id = 2')
     })
 
-    it('account_update trigger fires on balance column update', async () => {
+    it('account_update trigger fires on balance_int and balance_frac updates', async () => {
       await restoreUpdatedAtTriggers()
 
       const calls = mockExecSQL.mock.calls.map((c: unknown[]) => c[0] as string)
       const accUpdate = calls.find((sql: string) => sql.includes('trg_account_update'))
-      expect(accUpdate).toContain('AFTER UPDATE OF balance ON account')
+      expect(accUpdate).toContain('AFTER UPDATE OF balance_int, balance_frac ON account')
     })
   })
 })

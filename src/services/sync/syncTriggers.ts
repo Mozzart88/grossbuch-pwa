@@ -175,7 +175,7 @@ END`)
 
   // Account
   await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_update
-AFTER UPDATE OF balance ON account
+AFTER UPDATE OF balance_int, balance_frac ON account
 FOR EACH ROW
 BEGIN
   UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
