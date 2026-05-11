@@ -102,12 +102,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 function AppContent() {
   const { isReady, error } = useDatabase()
   const { isFirstSetup, clearFirstSetup, biometricsAvailable, biometricsEnabled, enableBiometrics } = useAuth()
-  const [pendingBiometricSetup, setPendingBiometricSetup] = useState(false)
 
   // Snapshot at mount time — useInstallationRegistration removes SHARED_UUID from
   // localStorage 2s later, so reading it on every render would produce false negatives.
   const [isShareLinkInstall] = useState(
     () => isFirstSetup && !!localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)
+  )
+  const [pendingBiometricSetup, setPendingBiometricSetup] = useState(
+    () => isShareLinkInstall && biometricsAvailable && !biometricsEnabled
   )
 
   // For share-link installs: skip full onboarding, clear the flag, offer biometrics only.
@@ -116,11 +118,8 @@ function AppContent() {
     if (isFirstSetup && isShareLinkInstall && !shareLinkSetupHandled.current) {
       shareLinkSetupHandled.current = true
       clearFirstSetup()
-      if (biometricsAvailable && !biometricsEnabled) {
-        setPendingBiometricSetup(true)
-      }
     }
-  }, [isFirstSetup, isShareLinkInstall, clearFirstSetup, biometricsAvailable, biometricsEnabled])
+  }, [isFirstSetup, isShareLinkInstall, clearFirstSetup])
 
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
