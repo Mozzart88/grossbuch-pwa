@@ -51,6 +51,22 @@ describe('syncImport', () => {
     mockQueryOne.mockResolvedValue(null)
   })
 
+  it('reports unknown import error for non-Error thrown values', async () => {
+    mockExecSQL.mockImplementation((sql: string) => {
+      if (sql.includes('INSERT INTO icon')) return Promise.reject('boom')
+      return Promise.resolve(undefined)
+    })
+
+    const pkg = emptyPackage()
+    pkg.icons = [{ id: 1, value: 'star', updated_at: 5000 }]
+
+    const result = await importSyncPackage(pkg)
+
+    expect(result.errors).toEqual(['Unknown import error'])
+    expect(mockExecSQL).toHaveBeenCalledWith('ROLLBACK')
+    expect(mockExecSQL).toHaveBeenCalledWith('PRAGMA foreign_keys = ON')
+  })
+
   describe('updated_at preservation in INSERT', () => {
     it('passes updated_at when inserting icons', async () => {
       const pkg = emptyPackage()

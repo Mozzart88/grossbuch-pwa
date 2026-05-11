@@ -12,11 +12,11 @@ import {
   insertTransaction,
   insertBudget,
   insertIcon,
-  insertTagIcon,
   insertCurrency,
   getCurrencyIdByCode,
   getTestDatabase,
 } from './setup'
+import { migrations } from '../../services/database/migrations'
 import { generateRSAKeyPair } from '../../services/auth/crypto'
 
 let dbMock: ReturnType<typeof createDatabaseMock>
@@ -620,6 +620,196 @@ describe('Sync Integration', () => {
       })
 
       expect(result.imported.deletions).toBe(1)
+
+      const db = getTestDatabase()
+      const trx = db.exec(`SELECT COUNT(*) FROM trx WHERE hex(id) = '${hexId}'`)
+      const lines = db.exec(`SELECT COUNT(*) FROM trx_base WHERE hex(trx_id) = '${hexId}'`)
+      const balance = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${accountId}`)
+
+      expect(trx[0]?.values[0]?.[0]).toBe(0)
+      expect(lines[0]?.values[0]?.[0]).toBe(0)
+      expect(balance[0]?.values[0]).toEqual(['0', '0'])
+    })
+
+    it('deletes transaction children during sync import with foreign keys disabled', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'OrphanFixWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const cpId = insertCounterparty({ name: 'OrphanFixCP' })
+      const trxId = insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.EXPENSE,
+        sign: '-',
+        amount_int: 10,
+        amount_frac: 330000000000000000,
+        counterparty_id: cpId,
+        note: 'delete me',
+      })
+      const hexId = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+
+      const before = getTestDatabase().exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${accountId}`)
+      expect(before[0]?.values[0]).toEqual(['-11', '670000000000000000'])
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [{ entity: 'trx', entity_id: hexId, deleted_at: futureTs }],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.deletions).toBe(1)
+
+      const db = getTestDatabase()
+      const rows = db.exec(`
+        SELECT
+          (SELECT COUNT(*) FROM trx WHERE hex(id) = '${hexId}'),
+          (SELECT COUNT(*) FROM trx_base WHERE hex(trx_id) = '${hexId}'),
+          (SELECT COUNT(*) FROM trx_to_counterparty WHERE hex(trx_id) = '${hexId}'),
+          (SELECT COUNT(*) FROM trx_note WHERE hex(trx_id) = '${hexId}')
+      `)
+      const balance = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${accountId}`)
+
+      expect(rows[0]?.values[0]).toEqual([0, 0, 0, 0])
+      expect(balance[0]?.values[0]).toEqual(['0', '0'])
+    })
+
+    it('applies trigger deltas for mixed transaction imports and deletions', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'MixedImportWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const deletedAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const importedAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const trxId = insertTransaction({
+        account_id: deletedAccountId,
+        tag_id: SYSTEM_TAGS.EXPENSE,
+        sign: '-',
+        amount_int: 7,
+        amount_frac: 250000000000000000,
+      })
+      const hexId = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [{
+          id: 'ABCDABCDABCDABCD',
+          timestamp: futureTs,
+          updated_at: futureTs,
+          counterparty: null,
+          note: null,
+          lines: [{
+            id: 'DCBADCBA12345678',
+            account: importedAccountId,
+            tag: SYSTEM_TAGS.INCOME,
+            sign: '+',
+            amount_int: 3,
+            amount_frac: 500000000000000000,
+            rate_int: 1,
+            rate_frac: 0,
+          }],
+        }],
+        budgets: [],
+        deletions: [{ entity: 'trx', entity_id: hexId, deleted_at: futureTs }],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.transactions).toBe(1)
+      expect(result.imported.deletions).toBe(1)
+
+      const db = getTestDatabase()
+      const deletedBalance = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${deletedAccountId}`)
+      const importedBalance = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${importedAccountId}`)
+
+      expect(deletedBalance[0]?.values[0]).toEqual(['0', '0'])
+      expect(importedBalance[0]?.values[0]).toEqual(['3', '500000000000000000'])
+    })
+
+    it('applies trigger deltas when transaction replacement moves account', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'MoveReplacementWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const oldAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const newAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const trxId = insertTransaction({
+        account_id: oldAccountId,
+        tag_id: SYSTEM_TAGS.EXPENSE,
+        sign: '-',
+        amount_int: 4,
+        amount_frac: 750000000000000000,
+      })
+      const hexId = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+
+      const beforeOld = getTestDatabase().exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${oldAccountId}`)
+      const beforeNew = getTestDatabase().exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${newAccountId}`)
+      expect(beforeOld[0]?.values[0]).toEqual(['-5', '250000000000000000'])
+      expect(beforeNew[0]?.values[0]).toEqual(['0', '0'])
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [{
+          id: hexId,
+          timestamp: futureTs,
+          updated_at: futureTs,
+          counterparty: null,
+          note: null,
+          lines: [{
+            id: 'E1E1E1E1E1E1E1E1',
+            account: newAccountId,
+            tag: SYSTEM_TAGS.INCOME,
+            sign: '+',
+            amount_int: 2,
+            amount_frac: 125000000000000000,
+            rate_int: 1,
+            rate_frac: 0,
+          }],
+        }],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.transactions).toBe(1)
+
+      const db = getTestDatabase()
+      const oldBalance = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${oldAccountId}`)
+      const newBalance = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${newAccountId}`)
+
+      expect(oldBalance[0]?.values[0]).toEqual(['0', '0'])
+      expect(newBalance[0]?.values[0]).toEqual(['2', '125000000000000000'])
     })
 
     it('handles deletion of accounts by id', async () => {
@@ -1087,6 +1277,71 @@ describe('Sync Integration', () => {
       })
 
       expect(result.errors.length).toBeGreaterThan(0)
+    })
+
+    it('migration v17 removes orphan transaction children and recalculates balances', () => {
+      const db = getTestDatabase()
+      const walletId = insertWallet({ name: 'V17Wallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const recalculatedAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const manyFractionAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const cpId = insertCounterparty({ name: 'V17CP' })
+      const orphanTrxId = new Uint8Array([0xcd, 0x67, 0x72, 0x14, 0xc6, 0x9f, 0xa7, 0x43])
+      const orphanLineId = new Uint8Array([0x43, 0xa7, 0x9f, 0xc6, 0x14, 0x72, 0x67, 0xcd])
+      insertTransaction({
+        account_id: recalculatedAccountId,
+        tag_id: SYSTEM_TAGS.INCOME,
+        sign: '+',
+        amount_int: 2,
+        amount_frac: 250000000000000000,
+      })
+      for (let i = 0; i < 20; i++) {
+        insertTransaction({
+          account_id: manyFractionAccountId,
+          tag_id: SYSTEM_TAGS.INCOME,
+          sign: '+',
+          amount_int: 0,
+          amount_frac: 900000000000000000,
+        })
+      }
+
+      db.run('PRAGMA foreign_keys = OFF')
+      db.run(
+        'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [orphanLineId, orphanTrxId, accountId, SYSTEM_TAGS.EXPENSE, '-', 10, 330000000000000000, 1, 0]
+      )
+      db.run('INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)', [orphanTrxId, cpId])
+      db.run('INSERT INTO trx_note (trx_id, note) VALUES (?, ?)', [orphanTrxId, 'orphan'])
+      db.run('UPDATE account SET balance_int = 99, balance_frac = 990000000000000000 WHERE id = ?', [recalculatedAccountId])
+      db.run('UPDATE account SET balance_int = 123, balance_frac = 456 WHERE id = ?', [manyFractionAccountId])
+      db.run('PRAGMA foreign_keys = ON')
+
+      const before = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${accountId}`)
+      const corrupted = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${recalculatedAccountId}`)
+      const manyFractionCorrupted = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${manyFractionAccountId}`)
+      expect(before[0]?.values[0]).toEqual(['-11', '670000000000000000'])
+      expect(corrupted[0]?.values[0]).toEqual(['99', '990000000000000000'])
+      expect(manyFractionCorrupted[0]?.values[0]).toEqual(['123', '456'])
+
+      for (const sql of migrations[17]) {
+        db.run(sql)
+      }
+
+      const rows = db.exec(`
+        SELECT
+          (SELECT COUNT(*) FROM trx_base WHERE hex(trx_id) = 'CD677214C69FA743'),
+          (SELECT COUNT(*) FROM trx_to_counterparty WHERE hex(trx_id) = 'CD677214C69FA743'),
+          (SELECT COUNT(*) FROM trx_note WHERE hex(trx_id) = 'CD677214C69FA743')
+      `)
+      const after = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${accountId}`)
+      const recalculated = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${recalculatedAccountId}`)
+      const manyFractionRecalculated = db.exec(`SELECT CAST(balance_int AS TEXT), CAST(balance_frac AS TEXT) FROM account WHERE id = ${manyFractionAccountId}`)
+
+      expect(rows[0]?.values[0]).toEqual([0, 0, 0])
+      expect(after[0]?.values[0]).toEqual(['0', '0'])
+      expect(recalculated[0]?.values[0]).toEqual(['2', '250000000000000000'])
+      expect(manyFractionRecalculated[0]?.values[0]).toEqual(['18', '0'])
     })
   })
 

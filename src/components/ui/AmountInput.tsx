@@ -164,7 +164,7 @@ export function AmountInput({
       inputRef.current.setCustomValidity('')
       inputRef.current.focus()
     }
-  }, [expressionResult])
+  }, [expressionResult, decimalPlaces])
 
   const displayError = error || internalError
 
