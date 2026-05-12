@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import '@testing-library/jest-dom'
 import { AccountTransactionList } from '../../../../components/transactions/AccountTransactionList'
+import { TransactionListUiProvider } from '../../../../contexts/TransactionListUiContext'
 import type { Account, TransactionLog } from '../../../../types'
 import { formatCurrencyValue } from '../../../../utils/formatters'
 import { formatDate, toLocalISOString } from '../../../../utils/dateUtils'
@@ -61,9 +62,11 @@ const createMockTransaction = (overrides: Partial<TransactionLog> = {}): Transac
 
 function renderComponent(account: Account = mockAccount) {
   return render(
-    <MemoryRouter>
-      <AccountTransactionList account={account} />
-    </MemoryRouter>
+    <TransactionListUiProvider>
+      <MemoryRouter>
+        <AccountTransactionList account={account} />
+      </MemoryRouter>
+    </TransactionListUiProvider>
   )
 }
 
@@ -116,9 +119,11 @@ describe('AccountTransactionList', () => {
 
       // Render with a previous month by using initialMonth prop
       render(
-        <MemoryRouter>
-          <AccountTransactionList account={mockAccount} initialMonth="2025-01" />
-        </MemoryRouter>
+        <TransactionListUiProvider>
+          <MemoryRouter>
+            <AccountTransactionList account={mockAccount} initialMonth="2025-01" />
+          </MemoryRouter>
+        </TransactionListUiProvider>
       )
 
       await waitFor(() => {
@@ -321,6 +326,80 @@ describe('AccountTransactionList', () => {
         expect(screen.getByText('Test Counterparty')).toBeInTheDocument()
       })
     })
+
+    it('keeps an expanded date when the list remounts for the same account', async () => {
+      const transactions = [createMockTransaction({ date_time: '2026-01-15 10:30:00' })]
+      vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
+
+      function Harness({ showList }: { showList: boolean }) {
+        return (
+          <TransactionListUiProvider>
+            <MemoryRouter>
+              {showList && <AccountTransactionList account={mockAccount} />}
+            </MemoryRouter>
+          </TransactionListUiProvider>
+        )
+      }
+
+      const { container, rerender } = render(<Harness showList />)
+
+      await waitFor(() => {
+        expect(screen.getByText(formatDate('2026-01-15 00:00:00'))).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText('Test Counterparty')).not.toBeInTheDocument()
+
+      const dateHeader = container.querySelector('.sticky.cursor-pointer')
+      fireEvent.click(dateHeader!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Counterparty')).toBeInTheDocument()
+      })
+
+      rerender(<Harness showList={false} />)
+      rerender(<Harness showList />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Counterparty')).toBeInTheDocument()
+      })
+    })
+
+    it('does not share expanded dates between accounts', async () => {
+      const transactions = [createMockTransaction({ date_time: '2026-01-15 10:30:00' })]
+      vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
+
+      function Harness({ account }: { account: Account }) {
+        return (
+          <TransactionListUiProvider>
+            <MemoryRouter>
+              <AccountTransactionList account={account} />
+            </MemoryRouter>
+          </TransactionListUiProvider>
+        )
+      }
+
+      const { container, rerender } = render(<Harness account={mockAccount} />)
+
+      await waitFor(() => {
+        expect(screen.getByText(formatDate('2026-01-15 00:00:00'))).toBeInTheDocument()
+      })
+
+      fireEvent.click(container.querySelector('.sticky.cursor-pointer')!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Test Counterparty')).toBeInTheDocument()
+      })
+
+      rerender(<Harness account={{ ...mockAccount, id: 2 }} />)
+
+      await waitFor(() => {
+        expect(transactionRepository.findByAccountAndMonth).toHaveBeenCalledWith(2, expect.any(String))
+      })
+
+      expect(screen.queryByText('Test Counterparty')).not.toBeInTheDocument()
+    })
   })
 
   describe('Transaction click', () => {
@@ -348,9 +427,11 @@ describe('AccountTransactionList', () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue([])
 
       const { rerender } = render(
-        <MemoryRouter>
-          <AccountTransactionList account={mockAccount} initialMonth="2026-01" />
-        </MemoryRouter>
+        <TransactionListUiProvider>
+          <MemoryRouter>
+            <AccountTransactionList account={mockAccount} initialMonth="2026-01" />
+          </MemoryRouter>
+        </TransactionListUiProvider>
       )
 
       await waitFor(() => {
@@ -361,9 +442,11 @@ describe('AccountTransactionList', () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockClear()
 
       rerender(
-        <MemoryRouter>
-          <AccountTransactionList account={mockAccount} initialMonth="2025-12" />
-        </MemoryRouter>
+        <TransactionListUiProvider>
+          <MemoryRouter>
+            <AccountTransactionList account={mockAccount} initialMonth="2025-12" />
+          </MemoryRouter>
+        </TransactionListUiProvider>
       )
 
       await waitFor(() => {
@@ -384,9 +467,11 @@ describe('AccountTransactionList', () => {
 
       // Rerender with different account
       rerender(
-        <MemoryRouter>
-          <AccountTransactionList account={{ ...mockAccount, id: 2 }} />
-        </MemoryRouter>
+        <TransactionListUiProvider>
+          <MemoryRouter>
+            <AccountTransactionList account={{ ...mockAccount, id: 2 }} />
+          </MemoryRouter>
+        </TransactionListUiProvider>
       )
 
       await waitFor(() => {
@@ -453,9 +538,11 @@ describe('AccountTransactionList', () => {
       vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue([])
 
       render(
-        <MemoryRouter>
-          <AccountTransactionList account={euroAccount} />
-        </MemoryRouter>
+        <TransactionListUiProvider>
+          <MemoryRouter>
+            <AccountTransactionList account={euroAccount} />
+          </MemoryRouter>
+        </TransactionListUiProvider>
       )
 
       await waitFor(() => {
