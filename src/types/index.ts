@@ -192,6 +192,7 @@ export interface Budget {
   start: number // Unix timestamp
   end: number // Unix timestamp
   tag_id: number
+  type: 'income' | 'expense'
   amount_int: number
   amount_frac: number
   // Joined fields
@@ -203,6 +204,7 @@ export interface BudgetInput {
   start?: number
   end?: number
   tag_id: number
+  type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number
 }
@@ -265,6 +267,8 @@ export interface TransactionLog {
 // From 'summary' view
 export interface BudgetSummary {
   tag: string
+  type: 'income' | 'expense'
+  amount?: number
   amount_int: number
   amount_frac: number
   actual: number

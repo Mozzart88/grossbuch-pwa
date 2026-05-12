@@ -122,8 +122,13 @@ describe('SummariesPage', () => {
     })
     mockBudgetRepository.delete.mockResolvedValue(undefined)
     mockBudgetRepository.findByTagId.mockResolvedValue([])
+    mockTagRepository.findIncomeTags.mockResolvedValue([
+      { id: 24, name: 'Consulting', sort_order: 10 },
+      { id: 25, name: 'Mixed', sort_order: 10 },
+    ])
     mockTagRepository.findExpenseTags.mockResolvedValue([
       { id: 12, name: 'Food', sort_order: 10 },
+      { id: 25, name: 'Mixed', sort_order: 10 },
       { id: 13, name: 'Transport', sort_order: 10 },
     ])
   })
@@ -161,7 +166,7 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('By Tags')).toBeInTheDocument()
         expect(screen.getByText('By Counterparties')).toBeInTheDocument()
-        expect(screen.getByText('Income/Expense')).toBeInTheDocument()
+        expect(screen.getByText('Budgets')).toBeInTheDocument()
       })
     })
   })
@@ -455,8 +460,8 @@ describe('SummariesPage', () => {
       })
 
       // Card should have cursor-pointer class
-      const foodCard = screen.getByText(`Expenses (${formatCurrencyValue(500, '$')})`)
-      expect(foodCard).toBeInTheDocument
+      const foodCard = screen.getByText(`Expenses ${formatCurrencyValue(300, '$')}/${formatCurrencyValue(0, '$')}`)
+      expect(foodCard).toBeInTheDocument()
     })
 
     it('category section is navigate to correct route', async () => {
@@ -468,9 +473,9 @@ describe('SummariesPage', () => {
       })
 
       // Card should have cursor-pointer class
-      const foodCard = screen.getByText(/Expenses \(/)
+      const foodCard = screen.getByText('Food')
       fireEvent.click(foodCard)
-      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=expense')
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=expense&tag=1')
     })
 
     it('cards have hover styles when clickable', async () => {
@@ -513,6 +518,61 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
       })
+    })
+
+    it('opens "Set budget" option in dropdown for income budget categories', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 1000, type: 'income' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Consulting')).toBeInTheDocument()
+      })
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => {
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+      })
+    })
+
+    it('creates separate income and expense budgets for a dual-purpose tag', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 25, tag: 'Mixed', amount: 1000, type: 'income' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Mixed')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { expanded: false }))
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '1200.00' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ tag_id: 25, type: 'income', amount_int: 1200 })
+        )
+      })
+    })
+
+    it('folds and unfolds budget sections', async () => {
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByText(`Expenses ${formatCurrencyValue(300, '$')}/${formatCurrencyValue(0, '$')}`))
+      expect(screen.queryByText('Food')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByText(`Expenses ${formatCurrencyValue(300, '$')}/${formatCurrencyValue(0, '$')}`))
+      expect(screen.getByText('Food')).toBeInTheDocument()
     })
 
     it('opens budget modal when "Set budget" is clicked', async () => {
@@ -737,6 +797,84 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         const progressBar = container.querySelector('.bg-red-500')
         expect(progressBar).toBeInTheDocument()
+      })
+    })
+
+    it('shows red progress bar when income is below 80% of budget', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 300, type: 'income' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 24,
+          type: 'income',
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Consulting',
+          actual: 300,
+        },
+      ])
+
+      const { container } = renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText(`${formatCurrencyValue(300, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(container.querySelector('.bg-red-500')).toBeInTheDocument()
+      })
+    })
+
+    it('shows yellow progress bar when income is between 80-100% of budget', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 450, type: 'income' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 24,
+          type: 'income',
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Consulting',
+          actual: 450,
+        },
+      ])
+
+      const { container } = renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText(`${formatCurrencyValue(450, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(container.querySelector('.bg-yellow-500')).toBeInTheDocument()
+      })
+    })
+
+    it('shows green progress bar when income reaches budget', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 600, type: 'income' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 24,
+          type: 'income',
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Consulting',
+          actual: 600,
+        },
+      ])
+
+      const { container } = renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText(`${formatCurrencyValue(600, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(container.querySelector('.bg-green-500')).toBeInTheDocument()
       })
     })
 
@@ -966,7 +1104,7 @@ describe('SummariesPage', () => {
         // 0/50000 = 0%
         expect(screen.getByText('0%')).toBeInTheDocument()
         expect(screen.getByText(`${formatCurrencyValue(0, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
-        expect(screen.getByText(`Expenses (${formatCurrencyValue(500, '$')}/${formatCurrencyValue(500, '$')})`)).toBeInTheDocument()
+        expect(screen.getByText(`Expenses ${formatCurrencyValue(0, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
       })
     })
 
@@ -1130,7 +1268,7 @@ describe('SummariesPage', () => {
       await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
       fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
 
-      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1))
+      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1, 'expense'))
 
       // Submit and verify start timestamp is January 2025
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())

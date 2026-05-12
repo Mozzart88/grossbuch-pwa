@@ -136,15 +136,16 @@ describe('Sync Integration', () => {
       expect(trx.lines[0].amount_frac).toBe(0)
     })
 
-    it('exports budgets with tag id', async () => {
+    it('exports budgets with tag id and type', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
-      insertBudget({ tag_id: SYSTEM_TAGS.FOOD, amount_int: 500 })
+      insertBudget({ tag_id: SYSTEM_TAGS.FOOD, type: 'income', amount_int: 500 })
 
       const pkg = await exportSyncPackage(0, 'sender-1')
 
       expect(pkg.budgets.length).toBeGreaterThan(0)
       expect(pkg.budgets[0].tag).toBe(SYSTEM_TAGS.FOOD)
+      expect(pkg.budgets[0].type).toBe('income')
       expect(pkg.budgets[0].amount_int).toBe(500)
       expect(pkg.budgets[0].amount_frac).toBe(0)
     })
@@ -528,9 +529,10 @@ describe('Sync Integration', () => {
       expect(result.imported.budgets).toBe(1)
 
       const db = getTestDatabase()
-      const budget = db.exec(`SELECT amount_int, amount_frac FROM budget WHERE hex(id) = '${budgetId}'`)
-      expect(budget[0]?.values[0]?.[0]).toBe(1000)
-      expect(budget[0]?.values[0]?.[1]).toBe(0)
+      const budget = db.exec(`SELECT type, amount_int, amount_frac FROM budget WHERE hex(id) = '${budgetId}'`)
+      expect(budget[0]?.values[0]?.[0]).toBe('expense')
+      expect(budget[0]?.values[0]?.[1]).toBe(1000)
+      expect(budget[0]?.values[0]?.[2]).toBe(0)
     })
 
     it('applies deletions with delete-vs-modify conflict', async () => {

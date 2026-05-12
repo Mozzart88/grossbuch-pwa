@@ -326,6 +326,7 @@ async function exportBudgets(since: number): Promise<SyncBudget[]> {
       b.start,
       b.end,
       b.tag_id AS tag,
+      b.type,
       b.amount_int,
       b.amount_frac,
       b.updated_at

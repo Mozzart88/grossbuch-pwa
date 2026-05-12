@@ -63,8 +63,7 @@ export const budgetRepository = {
         t.name as tag,
         (
           SELECT COALESCE(SUM(
-            CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * CASE WHEN a.currency_id = ?
+            CASE WHEN a.currency_id = ?
                 THEN (tb.amount_int + tb.amount_frac * 1e-18)
                 ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
               END
@@ -73,6 +72,7 @@ export const budgetRepository = {
           JOIN trx ON trx.id = tb.trx_id
           JOIN account a ON a.id = tb.account_id
           WHERE tb.tag_id = b.tag_id
+            AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
             AND (tb.rate_int > 0 OR tb.rate_frac > 0)
@@ -89,7 +89,9 @@ export const budgetRepository = {
     /**
      * Find all budgets for a specific tag
      */
-    async findByTagId(tagId: number): Promise<Budget[]> {
+    async findByTagId(tagId: number, type?: 'income' | 'expense'): Promise<Budget[]> {
+        const params: unknown[] = [tagId]
+        if (type) params.push(type)
         return querySQL<Budget>(
             `
       SELECT
@@ -97,10 +99,10 @@ export const budgetRepository = {
         t.name as tag
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
-      WHERE b.tag_id = ?
+      WHERE b.tag_id = ?${type ? ' AND b.type = ?' : ''}
       ORDER BY b.start DESC
     `,
-            [tagId]
+            params
         )
     },
 
@@ -124,8 +126,7 @@ export const budgetRepository = {
         t.name as tag,
         (
           SELECT COALESCE(SUM(
-            CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * CASE WHEN a.currency_id = ?
+            CASE WHEN a.currency_id = ?
                 THEN (tb.amount_int + tb.amount_frac * 1e-18)
                 ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
               END
@@ -134,6 +135,7 @@ export const budgetRepository = {
           JOIN trx ON trx.id = tb.trx_id
           JOIN account a ON a.id = tb.account_id
           WHERE tb.tag_id = b.tag_id
+            AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
             AND (tb.rate_int > 0 OR tb.rate_frac > 0)
@@ -157,6 +159,7 @@ export const budgetRepository = {
 
         const start = input.start ?? Math.floor(defaultStart.getTime() / 1000)
         const end = input.end ?? Math.floor(defaultEnd.getTime() / 1000)
+        const type = input.type ?? 'expense'
 
         // Check if budget already exists for this tag and period
         const existing = await queryOne<Budget>(
@@ -164,9 +167,9 @@ export const budgetRepository = {
       SELECT b.*, t.name as tag
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
-      WHERE b.tag_id = ? AND b.start = ? AND b.end = ?
+      WHERE b.tag_id = ? AND b.start = ? AND b.end = ? AND b.type = ?
     `,
-            [input.tag_id, start, end]
+            [input.tag_id, start, end, type]
         )
 
         if (existing) {
@@ -174,8 +177,8 @@ export const budgetRepository = {
         }
 
         await execSQL(
-            `INSERT INTO budget (tag_id, amount_int, amount_frac, start, end) VALUES (?, ?, ?, ?, ?)`,
-            [input.tag_id, input.amount_int, input.amount_frac, start, end]
+            `INSERT INTO budget (tag_id, type, amount_int, amount_frac, start, end) VALUES (?, ?, ?, ?, ?, ?)`,
+            [input.tag_id, type, input.amount_int, input.amount_frac, start, end]
         )
 
         // Get the newly created budget by finding it with tag_id, start, end
@@ -186,11 +189,11 @@ export const budgetRepository = {
         t.name as tag
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
-      WHERE b.tag_id = ? AND b.start = ? AND b.end = ?
+      WHERE b.tag_id = ? AND b.start = ? AND b.end = ? AND b.type = ?
       ORDER BY b.rowid DESC
       LIMIT 1
     `,
-            [input.tag_id, start, end]
+            [input.tag_id, start, end, type]
         )
 
         if (!budget) throw new Error('Failed to create budget')
@@ -207,6 +210,10 @@ export const budgetRepository = {
         if (input.tag_id !== undefined) {
             fields.push('tag_id = ?')
             values.push(input.tag_id)
+        }
+        if (input.type !== undefined) {
+            fields.push('type = ?')
+            values.push(input.type)
         }
         if (input.amount_int !== undefined) {
             fields.push('amount_int = ?')
@@ -267,8 +274,7 @@ export const budgetRepository = {
         t.name as tag,
         (
           SELECT COALESCE(SUM(
-            CASE WHEN tb.sign = '-' THEN 1 ELSE -1 END
-            * CASE WHEN a.currency_id = ?
+            CASE WHEN a.currency_id = ?
                 THEN (tb.amount_int + tb.amount_frac * 1e-18)
                 ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
               END
@@ -277,6 +283,7 @@ export const budgetRepository = {
           JOIN trx ON trx.id = tb.trx_id
           JOIN account a ON a.id = tb.account_id
           WHERE tb.tag_id = b.tag_id
+            AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
             AND (tb.rate_int > 0 OR tb.rate_frac > 0)

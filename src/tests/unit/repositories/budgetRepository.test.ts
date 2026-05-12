@@ -125,6 +125,17 @@ describe('budgetRepository', () => {
                 expect.anything()
             )
         })
+
+        it('filters actuals by budget type sign', async () => {
+            mockQuerySQL.mockResolvedValue([])
+
+            await budgetRepository.findByMonth('2024-01')
+
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining("tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END"),
+                expect.anything()
+            )
+        })
     })
 
     describe('findByTagId', () => {
@@ -138,6 +149,17 @@ describe('budgetRepository', () => {
                 [SYSTEM_TAGS.FOOD]
             )
             expect(result).toEqual([sampleBudget])
+        })
+
+        it('can filter budgets for a tag by type', async () => {
+            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, type: 'income' }])
+
+            await budgetRepository.findByTagId(SYSTEM_TAGS.FOOD, 'income')
+
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining('AND b.type = ?'),
+                [SYSTEM_TAGS.FOOD, 'income']
+            )
         })
     })
 
@@ -180,7 +202,7 @@ describe('budgetRepository', () => {
 
     describe('getSummary', () => {
         it('returns budget summary from view', async () => {
-            const summary: BudgetSummary[] = [{ tag: 'food', amount_int: 500, amount_frac: 0, actual: 250.00 }]
+            const summary: BudgetSummary[] = [{ tag: 'food', type: 'expense', amount_int: 500, amount_frac: 0, actual: 250.00 }]
             mockQuerySQL.mockResolvedValue(summary)
 
             const result = await budgetRepository.getSummary()
@@ -228,7 +250,7 @@ describe('budgetRepository', () => {
 
             expect(mockExecSQL).toHaveBeenCalledWith(
                 expect.stringContaining('INSERT INTO budget'),
-                [SYSTEM_TAGS.FOOD, 500, 0, 1704067200, 1706745600]
+                [SYSTEM_TAGS.FOOD, 'expense', 500, 0, 1704067200, 1706745600]
             )
         })
 
@@ -243,6 +265,32 @@ describe('budgetRepository', () => {
 
             await expect(budgetRepository.create(input)).rejects.toThrow(
                 'A budget already exists for this tag and period'
+            )
+        })
+
+        it('allows separate income and expense budgets for the same tag and period', async () => {
+            const input: BudgetInput = {
+                tag_id: SYSTEM_TAGS.FOOD,
+                type: 'income',
+                amount_int: 500,
+                amount_frac: 0,
+                start: 1704067200,
+                end: 1706745600,
+            }
+
+            mockQueryOne
+                .mockResolvedValueOnce(null)
+                .mockResolvedValueOnce({ ...sampleBudget, type: 'income' })
+
+            await budgetRepository.create(input)
+
+            expect(mockQueryOne).toHaveBeenCalledWith(
+                expect.stringContaining('b.type = ?'),
+                [SYSTEM_TAGS.FOOD, 1704067200, 1706745600, 'income']
+            )
+            expect(mockExecSQL).toHaveBeenCalledWith(
+                expect.stringContaining('INSERT INTO budget'),
+                [SYSTEM_TAGS.FOOD, 'income', 500, 0, 1704067200, 1706745600]
             )
         })
 

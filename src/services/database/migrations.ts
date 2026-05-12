@@ -1,8 +1,8 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
-import { v13, v14, v15, v16, v17 } from './versions'
+import { v13, v14, v15, v16, v17, v18 } from './versions'
 
-export const CURRENT_VERSION = 17
+export const CURRENT_VERSION = 18
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1439,6 +1439,7 @@ ORDER BY id
   15: [v15],
   16: [v16],
   17: [v17],
+  18: [v18],
 }
 
 export async function runMigrations(): Promise<void> {

@@ -22,7 +22,7 @@ import { SYSTEM_TAGS } from '../types'
 import { useDataRefresh } from '../hooks/useDataRefresh'
 
 const TABS = [
-  { id: 'income-expense', label: 'Income/Expense' },
+  { id: 'income-expense', label: 'Budgets' },
   { id: 'tags', label: 'By Tags' },
   { id: 'counterparties', label: 'By Counterparties' },
 ]
@@ -56,13 +56,17 @@ export function SummariesPage() {
 
   // Budget state
   const [budgets, setBudgets] = useState<Budget[]>([])
+  const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
+  const [selectedBudgetType, setSelectedBudgetType] = useState<'income' | 'expense'>('expense')
   const [selectedTagId, setSelectedTagId] = useState<number | ''>('')
   const [budgetAmount, setBudgetAmount] = useState('')
   const [budgetPeriod, setBudgetPeriod] = useState(getCurrentMonth()) // defaults to current month
   const [submitting, setSubmitting] = useState(false)
+  const [incomeExpanded, setIncomeExpanded] = useState(true)
+  const [expensesExpanded, setExpensesExpanded] = useState(true)
 
   const isCurrentMonth = month === todayMonth
 
@@ -80,6 +84,7 @@ export function SummariesPage() {
       onClick: () => {
         setSelectedTagId('')
         setEditingBudget(null)
+        setSelectedBudgetType('expense')
         setBudgetAmount('')
         setBudgetPeriod(getCurrentMonth())
         setModalOpen(true)
@@ -103,13 +108,14 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allExpenseTags] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags] = await Promise.all([
         transactionRepository.getMonthSummary(month),
         accountRepository.getTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
         transactionRepository.getMonthlyCounterpartiesSummary(month),
         transactionRepository.getMonthlyCategoryBreakdown(month),
         budgetRepository.findByMonth(month),
+        tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
       ])
 
@@ -125,7 +131,8 @@ export function SummariesPage() {
       setCategoryBreakdown(breakdown)
 
       setBudgets(monthBudgets)
-      setExpenseTags(allExpenseTags.filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setIncomeTags((allIncomeTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setExpenseTags((allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
     } catch (error) {
       console.error('Failed to load summaries:', error)
     } finally {
@@ -156,8 +163,10 @@ export function SummariesPage() {
   }, [month, navigate])
 
   // Budget helpers
-  const getBudgetForTag = useCallback((tagId: number): Budget | undefined => {
-    return budgets.find(b => b.tag_id === tagId)
+  const budgetType = (budget: Budget): 'income' | 'expense' => budget.type ?? 'expense'
+
+  const getBudgetForTag = useCallback((tagId: number, type: 'income' | 'expense'): Budget | undefined => {
+    return budgets.find(b => b.tag_id === tagId && budgetType(b) === type)
   }, [budgets])
 
   const generateMonthOptions = (): { value: string; label: string }[] => {
@@ -179,10 +188,12 @@ export function SummariesPage() {
     return toIntFrac(Math.abs(parsed))
   }
 
-  const openBudgetModal = (tagId: number, suggestedAmount: number, existingBudget?: Budget) => {
+  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget) => {
     setSelectedTagId(tagId)
+    setSelectedBudgetType(type)
     if (existingBudget) {
       setEditingBudget(existingBudget)
+      setSelectedBudgetType(budgetType(existingBudget))
       setBudgetAmount(fromIntFrac(existingBudget.amount_int, existingBudget.amount_frac).toString())
       // Convert budget start timestamp to YYYY-MM format
       const budgetDate = new Date(existingBudget.start * 1000)
@@ -195,12 +206,13 @@ export function SummariesPage() {
     setModalOpen(true)
   }
 
-  const openSetBudgetModal = async (tagId: number, suggestedAmount: number) => {
+  const openSetBudgetModal = async (type: 'income' | 'expense', tagId: number, suggestedAmount: number) => {
     setSelectedTagId(tagId)
+    setSelectedBudgetType(type)
     setEditingBudget(null)
     setBudgetAmount(suggestedAmount.toFixed(decimalPlaces))
     try {
-      const allForTag = await budgetRepository.findByTagId(tagId)
+      const allForTag = await budgetRepository.findByTagId(tagId, type)
       const occupied = new Set(
         allForTag.map(b => {
           const d = new Date(b.start * 1000)
@@ -226,6 +238,7 @@ export function SummariesPage() {
     setModalOpen(false)
     setEditingBudget(null)
     setSelectedTagId('')
+    setSelectedBudgetType('expense')
     setBudgetAmount('')
     setBudgetPeriod(getCurrentMonth())
   }
@@ -243,6 +256,7 @@ export function SummariesPage() {
       const { int: amount_int, frac: amount_frac } = parseAmountToIntFrac(budgetAmount)
       const data: BudgetInput = {
         tag_id: selectedTagId as number,
+        type: selectedBudgetType,
         amount_int,
         amount_frac,
         start: Math.floor(startDate.getTime() / 1000),
@@ -280,23 +294,107 @@ export function SummariesPage() {
     }
   }
 
-  const incomeCategories = categoryBreakdown.filter(c => c.type === 'income')
+  const buildBudgetCategories = (type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
+    const categoriesFromBreakdown = categoryBreakdown.filter(c => c.type === type)
+    const tagIds = new Set(categoriesFromBreakdown.map(c => c.tag_id))
+    const budgetOnlyCategories: MonthlyCategoryBreakdown[] = budgets
+      .filter(b => budgetType(b) === type && !tagIds.has(b.tag_id))
+      .map(b => ({
+        tag_id: b.tag_id,
+        tag: b.tag || '',
+        amount: 0,
+        type,
+      }))
 
-  // Merge expense categories with budgets - show categories with budgets even if no expenses
-  const expenseCategoriesFromBreakdown = categoryBreakdown.filter(c => c.type === 'expense')
-  const expenseTagIds = new Set(expenseCategoriesFromBreakdown.map(c => c.tag_id))
+    return [...categoriesFromBreakdown, ...budgetOnlyCategories]
+  }
 
-  // Add budget categories that have no expenses this month
-  const budgetOnlyCategories: MonthlyCategoryBreakdown[] = budgets
-    .filter(b => !expenseTagIds.has(b.tag_id))
-    .map(b => ({
-      tag_id: b.tag_id,
-      tag: b.tag || '',
-      amount: 0,
-      type: 'expense' as const,
-    }))
+  const incomeCategories = buildBudgetCategories('income')
+  const expenseCategories = buildBudgetCategories('expense')
+  const incomeBudgets = budgets.filter(b => budgetType(b) === 'income')
+  const expenseBudgets = budgets.filter(b => budgetType(b) === 'expense')
+  const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
+  const expenseBudgetTotal = expenseBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
+  const getCategoryActual = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): number => {
+    const budget = getBudgetForTag(category.tag_id, type)
+    if (!budget || fromIntFrac(budget.amount_int, budget.amount_frac) <= 0) return category.amount
+    return budget.actual ?? category.amount
+  }
+  const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
+  const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
+  const typeTags = selectedBudgetType === 'income' ? incomeTags : expenseTags
 
-  const expenseCategories = [...expenseCategoriesFromBreakdown, ...budgetOnlyCategories]
+  const sectionProgress = (actual: number, budget: number): number => {
+    if (budget <= 0) return actual > 0 ? 100 : 0
+    return Math.min(100, (actual / budget) * 100)
+  }
+
+  const sectionBarColor = (type: 'income' | 'expense', progress: number): string => {
+    if (type === 'income') {
+      if (progress >= 100) return 'bg-green-500'
+      if (progress >= 80) return 'bg-yellow-500'
+      return 'bg-red-500'
+    }
+    if (progress >= 100) return 'bg-red-500'
+    if (progress >= 80) return 'bg-yellow-500'
+    return 'bg-green-500'
+  }
+
+  const renderBudgetSection = (
+    type: 'income' | 'expense',
+    title: string,
+    categories: MonthlyCategoryBreakdown[],
+    actualTotal: number,
+    budgetTotal: number,
+    expanded: boolean,
+    setExpanded: (value: boolean) => void
+  ) => {
+    const progress = sectionProgress(actualTotal, budgetTotal)
+    return (
+      <div className="mb-4">
+        <button type="button" className="w-full text-left px-1 mb-2" onClick={() => setExpanded(!expanded)}>
+          <div className="flex items-center justify-between text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <span>
+              {title} {formatCurrencyValue(actualTotal, currencySymbol, decimalPlaces)}/{formatCurrencyValue(budgetTotal, currencySymbol, decimalPlaces)}
+            </span>
+            <span className="text-xs">{expanded ? 'Hide' : 'Show'}</span>
+          </div>
+          <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div className={`h-full ${sectionBarColor(type, progress)} rounded-full transition-all duration-300`} style={{ width: `${progress}%` }} />
+          </div>
+        </button>
+        {expanded && (
+          categories.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No {title.toLowerCase()} this month</p>
+          ) : (
+            <div className="space-y-2">
+              {categories.map((cat) => {
+                const budget = getBudgetForTag(cat.tag_id, type)
+                const sectionTags = type === 'income' ? incomeTags : expenseTags
+                const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
+                return (
+                  <CategoryCard
+                    key={`${type}-${cat.tag_id}`}
+                    title={cat.tag}
+                    amount={cat.amount}
+                    total={type === 'income' ? summary.income : summary.expenses}
+                    currencySymbol={currencySymbol}
+                    decimalPlaces={decimalPlaces}
+                    type={type}
+                    onClick={() => handleCategoryClick(type, cat.tag_id)}
+                    budget={budget}
+                    onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount) : undefined}
+                    onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, budget) : undefined}
+                    onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
+                  />
+                )
+              })}
+            </div>
+          )
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -359,66 +457,8 @@ export function SummariesPage() {
                 <EmptyState message="No transactions this month" />
               ) : (
                 <>
-                  {/* Income Section */}
-                  <div className="mb-4">
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
-                      onClick={() => handleCategoryClick('income')}
-                    >
-                      Income ({formatCurrencyValue(summary.income, currencySymbol, decimalPlaces)})
-                    </h3>
-                    {incomeCategories.length === 0 ? (
-                      <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No income this month</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {incomeCategories.map((cat) => (
-                          <CategoryCard
-                            key={`income-${cat.tag_id}`}
-                            title={cat.tag}
-                            amount={cat.amount}
-                            total={summary.income}
-                            currencySymbol={currencySymbol}
-                            decimalPlaces={decimalPlaces}
-                            type="income"
-                            onClick={() => handleCategoryClick('income', cat.tag_id)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Expense Section */}
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 px-1"
-                      onClick={() => handleCategoryClick('expense')}
-                    >
-                      Expenses ({formatCurrencyValue(summary.expenses, currencySymbol, decimalPlaces)}{budgets.length > 0 ? '/' + formatCurrencyValue(budgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0.0), currencySymbol, decimalPlaces) : ''})
-                    </h3>
-                    {expenseCategories.length === 0 ? (
-                      <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No expenses this month</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {expenseCategories.map((cat) => {
-                          const budget = getBudgetForTag(cat.tag_id)
-                          return (
-                            <CategoryCard
-                              key={`expense-${cat.tag_id}`}
-                              title={cat.tag}
-                              amount={cat.amount}
-                              total={summary.expenses}
-                              currencySymbol={currencySymbol}
-                              decimalPlaces={decimalPlaces}
-                              type="expense"
-                              onClick={() => handleCategoryClick('expense', cat.tag_id)}
-                              budget={budget}
-                              onSetBudget={() => openSetBudgetModal(cat.tag_id, cat.amount)}
-                              onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(cat.tag_id, cat.amount, budget) : undefined}
-                              onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
-                            />
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  {renderBudgetSection('income', 'Income', incomeCategories, incomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
+                  {renderBudgetSection('expense', 'Expenses', expenseCategories, expenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
                 </>
               )}
             </>
@@ -430,13 +470,28 @@ export function SummariesPage() {
       <Modal isOpen={modalOpen} onClose={closeBudgetModal} title={editingBudget ? 'Edit Budget' : 'Set Budget'}>
         <form onSubmit={handleBudgetSubmit} className="space-y-4">
           <Select
+            label="Type"
+            value={selectedBudgetType}
+            onChange={(e) => {
+              setSelectedBudgetType(e.target.value as 'income' | 'expense')
+              setSelectedTagId('')
+            }}
+            required
+            disabled={!!editingBudget}
+            options={[
+              { value: 'income', label: 'Income' },
+              { value: 'expense', label: 'Expense' },
+            ]}
+          />
+
+          <Select
             label="Category"
             value={selectedTagId.toString()}
             onChange={(e) => setSelectedTagId(e.target.value ? parseInt(e.target.value) : '')}
             required
             disabled={!!editingBudget || selectedTagId !== ''}
             placeholder="Select a category"
-            options={expenseTags.map((tag) => ({
+            options={typeTags.map((tag) => ({
               value: tag.id,
               label: tag.name,
             }))}
@@ -554,13 +609,22 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
   if (hasBudget) {
     // budgetAmountDecimal is guaranteed > 0 since hasBudget requires budget.amount > 0
     progress = Math.min(100, (budgetActualDecimal / budgetAmountDecimal) * 100)
-    // Budget colors: green < 80%, yellow 80-100%, red > 100%
-    if (progress >= 100) {
-      barColor = 'bg-red-500'
-    } else if (progress >= 80) {
-      barColor = 'bg-yellow-500'
+    if (type === 'income') {
+      if (progress >= 100) {
+        barColor = 'bg-green-500'
+      } else if (progress >= 80) {
+        barColor = 'bg-yellow-500'
+      } else {
+        barColor = 'bg-red-500'
+      }
     } else {
-      barColor = 'bg-green-500'
+      if (progress >= 100) {
+        barColor = 'bg-red-500'
+      } else if (progress >= 80) {
+        barColor = 'bg-yellow-500'
+      } else {
+        barColor = 'bg-green-500'
+      }
     }
   } else {
     // Default percentage of total behavior
@@ -568,18 +632,16 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
     barColor = type === 'income' ? 'bg-green-500' : 'bg-red-500'
   }
 
-  // Build dropdown menu items for expense cards
+  // Build dropdown menu items for budget actions
   const dropdownItems = []
-  if (type === 'expense') {
-    if (onAdjustBudget) {
-      dropdownItems.push({ label: 'Adjust budget', onClick: onAdjustBudget })
-    }
-    if (onSetBudget) {
-      dropdownItems.push({ label: 'Set budget', onClick: onSetBudget })
-    }
-    if (budget && onDeleteBudget) {
-      dropdownItems.push({ label: 'Delete budget', onClick: onDeleteBudget, variant: 'danger' as const })
-    }
+  if (onAdjustBudget) {
+    dropdownItems.push({ label: 'Adjust budget', onClick: onAdjustBudget })
+  }
+  if (onSetBudget) {
+    dropdownItems.push({ label: 'Set budget', onClick: onSetBudget })
+  }
+  if (budget && onDeleteBudget) {
+    dropdownItems.push({ label: 'Delete budget', onClick: onDeleteBudget, variant: 'danger' as const })
   }
 
   return (

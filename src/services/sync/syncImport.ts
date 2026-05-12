@@ -487,6 +487,7 @@ async function insertTrxRelations(trx: SyncTransaction): Promise<void> {
 async function importBudgets(budgets: SyncBudget[]): Promise<number> {
   let count = 0
   for (const b of budgets) {
+    const type = b.type ?? 'expense'
     const local = await queryOne<{ updated_at: number }>(
       `SELECT updated_at FROM budget WHERE hex(id) = ?`,
       [b.id]
@@ -494,14 +495,14 @@ async function importBudgets(budgets: SyncBudget[]): Promise<number> {
 
     if (!local) {
       await execSQL(
-        `INSERT INTO budget (id, start, end, tag_id, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [hexToBlob(b.id), b.start, b.end, b.tag, b.amount_int, b.amount_frac, b.updated_at]
+        `INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(b.id), b.start, b.end, b.tag, type, b.amount_int, b.amount_frac, b.updated_at]
       )
       count++
     } else if (b.updated_at > local.updated_at) {
       await execSQL(
-        `UPDATE budget SET start = ?, end = ?, tag_id = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?`,
-        [b.start, b.end, b.tag, b.amount_int, b.amount_frac, b.updated_at, b.id]
+        `UPDATE budget SET start = ?, end = ?, tag_id = ?, type = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?`,
+        [b.start, b.end, b.tag, type, b.amount_int, b.amount_frac, b.updated_at, b.id]
       )
       count++
     }
