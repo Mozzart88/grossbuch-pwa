@@ -6,7 +6,7 @@ import { Button, Select, DateTimeUI, ChevronIcon, AmountInput } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption } from './transactionFormShared'
+import type { AccountOption, SubmitOptions } from './transactionFormShared'
 import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
@@ -14,9 +14,10 @@ interface TransferTransactionFormProps {
   accounts: AccountOption[]
   defaultAccountId: string
   initialData?: Transaction
-  onSubmit: () => void
+  onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
+  showAddAnother?: boolean
 }
 
 export function TransferTransactionForm({
@@ -26,6 +27,7 @@ export function TransferTransactionForm({
   onSubmit,
   onCancel,
   useActionBar = false,
+  showAddAnother = false,
 }: TransferTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -39,6 +41,7 @@ export function TransferTransactionForm({
   const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [addAnother, setAddAnother] = useState(false)
 
   // Populate from initial data
   useEffect(() => {
@@ -74,6 +77,12 @@ export function TransferTransactionForm({
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
+
+  const resetEntryFields = () => {
+    setAmount('')
+    setNote('')
+    setErrors({})
+  }
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {}
@@ -157,7 +166,9 @@ export function TransferTransactionForm({
       } else {
         await transactionRepository.create(payload)
       }
-      onSubmit()
+      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      onSubmit({ addAnother: shouldAddAnother })
+      if (shouldAddAnother) resetEntryFields()
     } catch (error) {
       console.error('Failed to save transaction:', error)
     } finally {
@@ -253,6 +264,18 @@ export function TransferTransactionForm({
       </div>
 
       {/* Actions */}
+      {showAddAnother && !initialData && (
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={addAnother}
+            onChange={(e) => setAddAnother(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          Add another
+        </label>
+      )}
+
       {!useActionBar && (
         <div className="flex gap-3 pt-4">
           <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">

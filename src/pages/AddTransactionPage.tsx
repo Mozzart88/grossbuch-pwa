@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { TransactionForm } from '../components/transactions'
+import type { SubmitOptions } from '../components/transactions/transactionFormShared'
 
 type TransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
 
@@ -15,7 +16,8 @@ export function AddTransactionPage() {
     ? typeParam as TransactionMode
     : undefined)
 
-  const handleSubmit = () => {
+  const handleSubmit = (options?: SubmitOptions) => {
+    if (options?.addAnother) return
     navigate(-1)
   }
 
@@ -32,6 +34,7 @@ export function AddTransactionPage() {
           onSubmit={handleSubmit}
           onCancel={handleCancel}
           useActionBar
+          showAddAnother
         />
       </div>
     </div>

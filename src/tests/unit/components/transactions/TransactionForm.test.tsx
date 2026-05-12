@@ -332,9 +332,13 @@ describe('TransactionForm', () => {
       renderForm()
 
       await waitFor(() => {
-        // Account dropdown should show wallet name, currency code, and balance
-        expect(screen.getByText(/Cash.*USD/)).toBeInTheDocument()
+        expect(screen.getByRole('combobox', { name: /wallet/i })).toHaveValue('1')
       })
+
+      const walletSelect = screen.getByRole('combobox', { name: /wallet/i })
+      const accountSelect = screen.getByRole('combobox', { name: /account/i })
+      expect(within(walletSelect).getByRole('option', { name: 'Cash' })).toBeInTheDocument()
+      expect(within(accountSelect).getByRole('option', { name: /USD \(150[.,]00\)/ })).toBeInTheDocument()
     })
   })
 

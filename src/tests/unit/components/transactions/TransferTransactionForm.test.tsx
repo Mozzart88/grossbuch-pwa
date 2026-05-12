@@ -214,6 +214,28 @@ describe('TransferTransactionForm', () => {
     })
   })
 
+  it('add another preserves accounts and fee while clearing amount and note', async () => {
+    render(<TransferTransactionForm {...defaultProps} showAddAnother />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /add another/i }))
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/fee.*optional/i), { target: { value: '3' } })
+    fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'move funds' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalledWith({ addAnother: true })
+      expect(document.getElementById('amount')).toHaveValue(null)
+      expect(screen.getByPlaceholderText('Add notes...')).toHaveValue('')
+    })
+
+    expect(screen.getByRole('checkbox', { name: /add another/i })).toBeChecked()
+    expect(screen.getAllByRole('combobox')[0]).toHaveValue('1')
+    expect(screen.getAllByRole('combobox')[1]).toHaveValue('2')
+    expect(screen.getByLabelText(/fee.*optional/i)).toHaveValue((3).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+  })
+
   it('clears feeTagId when fee input cleared', () => {
     render(<TransferTransactionForm {...defaultProps} />)
     const feeInput = screen.getByLabelText(/fee.*optional/i)

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import type { Tag, Counterparty, Currency, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, currencyRepository } from '../../services/repositories'
-import type { TransactionMode, AccountOption } from './transactionFormShared'
+import type { TransactionMode, AccountOption, SubmitOptions } from './transactionFormShared'
 import { IncomeTransactionForm } from './IncomeTransactionForm'
 import { ExpenseTransactionForm } from './ExpenseTransactionForm'
 import { TransferTransactionForm } from './TransferTransactionForm'
@@ -11,9 +11,10 @@ import { ExchangeTransactionForm } from './ExchangeTransactionForm'
 interface TransactionFormProps {
   initialData?: Transaction
   initialMode?: TransactionMode
-  onSubmit: () => void
+  onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
+  showAddAnother?: boolean
 }
 
 const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -27,7 +28,7 @@ const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
   return exchangeLines.length === 2 && expenseLines.length >= 1
 }
 
-export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, useActionBar = false }: TransactionFormProps) {
+export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false }: TransactionFormProps) {
   const [mode, setMode] = useState<TransactionMode>(initialMode || 'expense')
   const [loading, setLoading] = useState(true)
 
@@ -125,7 +126,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     )
   }
 
-  const sharedProps = { initialData, onSubmit, onCancel, useActionBar }
+  const sharedProps = { initialData, onSubmit, onCancel, useActionBar, showAddAnother }
 
   return (
     <div className="space-y-4">

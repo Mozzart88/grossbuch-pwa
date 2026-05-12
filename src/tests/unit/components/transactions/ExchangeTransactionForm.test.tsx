@@ -207,6 +207,30 @@ describe('ExchangeTransactionForm', () => {
     })
   })
 
+  it('add another preserves accounts and fee while clearing amount fields and note', async () => {
+    render(<ExchangeTransactionForm {...defaultProps} showAddAnother />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /add another/i }))
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '90' } })
+    fireEvent.change(screen.getByLabelText(/fee.*optional/i), { target: { value: '2' } })
+    fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'fx note' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalledWith({ addAnother: true })
+      expect(document.getElementById('amount')).toHaveValue(null)
+      expect(document.getElementById('toAmount')).toHaveValue(null)
+      expect(screen.getByPlaceholderText('Add notes...')).toHaveValue('')
+    })
+
+    expect(screen.getByRole('checkbox', { name: /add another/i })).toBeChecked()
+    expect(screen.getAllByRole('combobox')[0]).toHaveValue('1')
+    expect(screen.getAllByRole('combobox')[1]).toHaveValue('2')
+    expect(screen.getByLabelText(/fee.*optional/i)).toHaveValue((2).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+  })
+
   it('populates fee from initialData with fee line', async () => {
     const initialData: Transaction = {
       id: new Uint8Array(8),

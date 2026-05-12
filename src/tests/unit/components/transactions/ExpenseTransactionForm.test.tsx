@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { ExpenseTransactionForm } from '../../../../components/transactions/ExpenseTransactionForm'
 import type { Tag, Counterparty, Currency, Transaction } from '../../../../types'
 import { SYSTEM_TAGS } from '../../../../types'
@@ -44,6 +44,20 @@ const mockAccounts = [
     walletIsDefault: true,
     currencyCode: 'USD',
     currencySymbol: '$',
+    decimalPlaces: 2,
+  },
+  {
+    id: 2,
+    wallet_id: 2,
+    currency_id: 2,
+    balance_int: 200,
+    balance_frac: 0,
+    updated_at: 1704067200,
+    is_default: true,
+    walletName: 'Bank',
+    walletIsDefault: false,
+    currencyCode: 'EUR',
+    currencySymbol: '€',
     decimalPlaces: 2,
   },
 ]
@@ -140,6 +154,49 @@ describe('ExpenseTransactionForm', () => {
         })
       )
       expect(defaultProps.onSubmit).toHaveBeenCalled()
+    })
+  })
+
+  it('shows wallet names and scoped account labels', () => {
+    render(<ExpenseTransactionForm {...defaultProps} />)
+    const walletSelect = screen.getByRole('combobox', { name: /wallet/i })
+    const accountSelect = screen.getByRole('combobox', { name: /account/i })
+
+    expect(within(walletSelect).getByRole('option', { name: 'Cash' })).toBeInTheDocument()
+    expect(within(walletSelect).getByRole('option', { name: 'Bank' })).toBeInTheDocument()
+    expect(within(accountSelect).getByRole('option', { name: /USD \(500[.,]00\)/ })).toBeInTheDocument()
+    expect(within(accountSelect).queryByRole('option', { name: /EUR \(200[.,]00\)/ })).not.toBeInTheDocument()
+  })
+
+  it('changing wallet updates the selected account', () => {
+    render(<ExpenseTransactionForm {...defaultProps} />)
+    fireEvent.change(screen.getByRole('combobox', { name: /wallet/i }), { target: { value: '2' } })
+
+    const accountSelect = screen.getByRole('combobox', { name: /account/i })
+    expect(accountSelect).toHaveValue('2')
+    expect(within(accountSelect).getByRole('option', { name: /EUR \(200[.,]00\)/ })).toBeInTheDocument()
+  })
+
+  it('submits the account selected through wallet and account selectors', async () => {
+    render(<ExpenseTransactionForm {...defaultProps} />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: /wallet/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '42' } })
+
+    const categoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'Food' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Food' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('option', { name: 'Food' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({ account_id: 2 })],
+        })
+      )
     })
   })
 
