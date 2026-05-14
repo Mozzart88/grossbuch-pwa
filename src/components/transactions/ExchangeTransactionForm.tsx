@@ -2,12 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import type { Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, DateTimeUI, ChevronIcon, AmountInput } from '../ui'
+import { Button, SelectUI, DateTimeUI, ChevronIcon, AmountInput, Badge } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, SubmitOptions } from './transactionFormShared'
-import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import type { AccountOption, AccountSelectUIOption, SubmitOptions } from './transactionFormShared'
+import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast, toAccountSelectUIOptions } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface ExchangeTransactionFormProps {
@@ -19,6 +19,16 @@ interface ExchangeTransactionFormProps {
   useActionBar?: boolean
   showAddAnother?: boolean
 }
+
+const renderAccountOption = (option: AccountSelectUIOption) => (
+  <span className="inline-flex items-center">
+    <span>{option.label}</span>
+    {option.accountTypeLabel && <Badge variant="secondary">{option.accountTypeLabel}</Badge>}
+  </span>
+)
+
+const renderAccountSelectedBadge = (option: AccountSelectUIOption) =>
+  option.accountTypeLabel ? <Badge variant="secondary" className="ml-0">{option.accountTypeLabel}</Badge> : null
 
 export function ExchangeTransactionForm({
   accounts,
@@ -83,6 +93,10 @@ export function ExchangeTransactionForm({
   const selectedToAccount = accounts.find(a => a.id.toString() === toAccountId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
   const toDecimalPlaces = selectedToAccount?.decimalPlaces ?? 2
+  const accountOptions = toAccountSelectUIOptions(accounts)
+  const toAccountOptions = toAccountSelectUIOptions(accounts
+    .filter(a => a.id !== selectedAccount?.id)
+    .filter(a => a.currency_id !== selectedAccount?.currency_id))
 
   const resetEntryFields = () => {
     setAmount('')
@@ -228,16 +242,15 @@ export function ExchangeTransactionForm({
 
       {/* Row 1: from amount + from account */}
       <div className="grid grid-cols-2 gap-0 mb-2">
-        <Select
+        <SelectUI
           value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-          options={accounts.map((a) => ({
-            value: a.id,
-            label: `${a.walletName}:${a.currencyCode}`,
-          }))}
+          onChange={(value) => setAccountId(`${value}`)}
+          options={accountOptions}
+          renderOption={(option) => renderAccountOption(option as AccountSelectUIOption)}
+          renderSelectedBadge={(option) => renderAccountSelectedBadge(option as AccountSelectUIOption)}
           placeholder="Account"
           error={errors.accountId}
-          className={`rounded-r-none py-3 font-semibold border-r-0`}
+          triggerClassName="rounded-r-none py-3 font-semibold border-r-0"
         />
         <AmountInput
           id="amount"
@@ -256,19 +269,15 @@ export function ExchangeTransactionForm({
 
       {/* Row 2: to amount + to account */}
       <div className="grid grid-cols-2 gap-0">
-        <Select
+        <SelectUI
           value={toAccountId}
-          onChange={(e) => setToAccountId(e.target.value)}
-          options={accounts
-            .filter(a => a.id !== selectedAccount?.id)
-            .filter(a => a.currency_id !== selectedAccount?.currency_id)
-            .map((a) => ({
-              value: a.id,
-              label: `${a.walletName}:${a.currencyCode}`,
-            }))}
+          onChange={(value) => setToAccountId(`${value}`)}
+          options={toAccountOptions}
+          renderOption={(option) => renderAccountOption(option as AccountSelectUIOption)}
+          renderSelectedBadge={(option) => renderAccountSelectedBadge(option as AccountSelectUIOption)}
           placeholder="Account"
           error={errors.toAccountId}
-          className={`rounded-r-none py-3 font-semibold border-r-0`}
+          triggerClassName="rounded-r-none py-3 font-semibold border-r-0"
         />
         <AmountInput
           id="toAmount"

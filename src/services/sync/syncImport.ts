@@ -316,10 +316,12 @@ async function importAccounts(accounts: SyncAccount[]): Promise<{ count: number;
         [acc.id, acc.wallet, acc.currency, acc.updated_at]
       )
       await syncAccountTags(acc.id, acc.tags)
+      await syncAccountData(acc.id, acc)
       currencyIds.push(acc.currency)
       count++
     } else if (acc.updated_at > local.updated_at) {
       await syncAccountTags(local.id, acc.tags)
+      await syncAccountData(local.id, acc)
       await execSQL(`UPDATE account SET updated_at = ? WHERE id = ?`, [acc.updated_at, local.id])
       count++
     }
@@ -333,6 +335,17 @@ async function syncAccountTags(accountId: number, tagIds: number[]): Promise<voi
     await execSQL(
       `INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)`,
       [accountId, tagId]
+    )
+  }
+}
+
+async function syncAccountData(accountId: number, acc: SyncAccount): Promise<void> {
+  const hasData = acc.note || acc.due_date || acc.rate != null
+  await execSQL(`DELETE FROM account_data WHERE account_id = ?`, [accountId])
+  if (hasData) {
+    await execSQL(
+      `INSERT INTO account_data (account_id, note, due_date, rate, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      [accountId, acc.note ?? null, acc.due_date ?? null, acc.rate ?? null, acc.updated_at]
     )
   }
 }

@@ -104,7 +104,7 @@ export function TransactionList() {
       const [txns, monthSum, totalBalance] = await Promise.all([
         transactionRepository.findByMonthFiltered(month, filter),
         transactionRepository.getMonthSummary(month),
-        accountRepository.getTotalBalance(),
+        accountRepository.getPlainTotalBalance(),
       ])
 
       // Load filter name for display

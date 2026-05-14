@@ -6,8 +6,11 @@ import {
   getSelectedWalletId,
   getWalletOptions,
   formatAccountOptionLabel,
+  formatAccountSelectLabel,
+  getAccountTypeLabel,
   encodeTagSelection,
   parseTagSelection,
+  toAccountSelectUIOptions,
   toTagLiveSearchOptions,
 } from '../../../../components/transactions/transactionFormShared'
 import type { AccountOption } from '../../../../components/transactions/transactionFormShared'
@@ -84,6 +87,36 @@ describe('transactionFormShared account helpers', () => {
   it('formats account option labels without wallet names', () => {
     expect(formatAccountOptionLabel(accounts[0])).toMatch(/USD \(500[.,]00\)/)
     expect(formatAccountOptionLabel(accounts[2])).toMatch(/USD \(100[.,]50\)/)
+  })
+
+  it('formats account select labels with typed account badges', () => {
+    const savingsAccount = { ...accounts[0], id: 4, account_type: 'savings' as const }
+    const creditAccount = { ...accounts[0], id: 5, account_type: 'credits' as const }
+
+    expect(formatAccountSelectLabel(accounts[0])).toBe('Cash:USD')
+    expect(getAccountTypeLabel(accounts[0])).toBeNull()
+    expect(getAccountTypeLabel(savingsAccount)).toBe('Savings')
+    expect(getAccountTypeLabel(creditAccount)).toBe('Credit')
+    expect(toAccountSelectUIOptions([accounts[0], savingsAccount, creditAccount])).toEqual([
+      {
+        value: 1,
+        label: 'Cash:USD',
+        account: accounts[0],
+        accountTypeLabel: null,
+      },
+      {
+        value: 4,
+        label: 'Cash:USD',
+        account: savingsAccount,
+        accountTypeLabel: 'Savings',
+      },
+      {
+        value: 5,
+        label: 'Cash:USD',
+        account: creditAccount,
+        accountTypeLabel: 'Credit',
+      },
+    ])
   })
 
   it('encodes and parses tag selections with optional context', () => {

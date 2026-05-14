@@ -37,6 +37,15 @@ type SummaryTreeItem = {
 
 type SummaryView = 'nested' | 'flat'
 
+const isAccountBudgetTag = (tag: Pick<Tag, 'name'>): boolean =>
+  tag.name === 'savings' || tag.name === 'credits'
+
+const accountBudgetTagLabel = (tagName: string): string => {
+  if (tagName === 'savings') return 'Savings'
+  if (tagName === 'credits') return 'Credit'
+  return tagName
+}
+
 export function SummariesPage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
@@ -125,19 +134,29 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, systemTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
         transactionRepository.getMonthSummary(month),
-        accountRepository.getTotalBalance(),
+        accountRepository.getPlainTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
         transactionRepository.getMonthlyCounterpartiesSummary(month),
         transactionRepository.getMonthlyCategoryBreakdown(month),
         budgetRepository.findByMonth(month),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
+        tagRepository.findSystemTags?.() ?? Promise.resolve([]),
         tagRepository.getContextOptions('income') ?? Promise.resolve([]),
         tagRepository.getContextOptions('expense') ?? Promise.resolve([]),
         tagRepository.getHierarchy?.() ?? Promise.resolve([]),
       ])
+      const accountBudgetTags = (systemTags ?? []).filter(isAccountBudgetTag)
+      const accountBudgetOptions: TagContextOption[] = accountBudgetTags.map((tag) => ({
+        tag_id: tag.id,
+        tag_name: tag.name,
+        context_id: null,
+        context_name: null,
+        label: accountBudgetTagLabel(tag.name),
+        type: 'expense',
+      }))
 
       setSummary({
         income: monthSum.income,
@@ -152,9 +171,12 @@ export function SummariesPage() {
 
       setBudgets(monthBudgets)
       setIncomeTags((allIncomeTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
-      setExpenseTags((allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setExpenseTags([
+        ...(allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED),
+        ...accountBudgetTags,
+      ])
       setIncomeTagOptions(incomeOptions)
-      setExpenseTagOptions(expenseOptions)
+      setExpenseTagOptions([...(expenseOptions ?? []), ...accountBudgetOptions])
       setTagHierarchy(hierarchy)
       setExpandedSummaryTagIds(prev => {
         if (prev.size > 0) return prev

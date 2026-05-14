@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AccountsPage } from '../../../pages/AccountsPage'
 import { LayoutProvider } from '../../../store/LayoutContext'
@@ -25,6 +25,7 @@ vi.mock('../../../services/repositories', () => ({
   accountRepository: {
     delete: vi.fn(),
     setDefault: vi.fn(),
+    updateData: vi.fn(),
     getWalletBalancesInSystemCurrency: vi.fn(),
   },
   transactionRepository: {
@@ -126,6 +127,7 @@ describe('AccountsPage', () => {
     mockCurrencyRepository.findAll.mockResolvedValue(mockCurrencies)
     mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrencies[0])
     mockAccountRepository.getWalletBalancesInSystemCurrency.mockResolvedValue({ 1: 1500, 2: 15000 })
+    mockAccountRepository.updateData.mockResolvedValue(mockAccount)
   })
 
   const renderWithRouter = () => {
@@ -135,6 +137,14 @@ describe('AccountsPage', () => {
           <AccountsPage />
           <TestPlusButton />
         </LayoutProvider>
+      </MemoryRouter>
+    )
+  }
+
+  const renderWithoutLayoutProvider = () => {
+    return render(
+      <MemoryRouter>
+        <AccountsPage />
       </MemoryRouter>
     )
   }
@@ -1690,6 +1700,26 @@ describe('AccountsPage', () => {
       expect(screen.getByLabelText('Name')).toBeInTheDocument()
     })
 
+    it('renders without layout context', async () => {
+      renderWithoutLayoutProvider()
+
+      await waitFor(() => {
+        expect(screen.getByText('Cash')).toBeInTheDocument()
+      })
+    })
+
+    it('does not submit wallet form with a blank name', async () => {
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => expect(screen.getByText('Add Wallet')).toBeInTheDocument())
+
+      const dialog = screen.getByRole('dialog')
+      fireEvent.submit(dialog.querySelector('form') as HTMLFormElement)
+
+      expect(mockWalletRepository.create).not.toHaveBeenCalled()
+    })
+
     it('handles wallet without accounts (accounts fallback)', async () => {
       mockWalletRepository.findAll.mockResolvedValue([
         { ...mockWallets[0], accounts: undefined as any },
@@ -1720,6 +1750,161 @@ describe('AccountsPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Add Currency to Wallet')).toBeInTheDocument()
       })
+    })
+
+    it('does not add currency when no currency is selected', async () => {
+      const walletWithBothCurrencies: Wallet = {
+        ...mockWallets[0],
+        accounts: [
+          mockAccount,
+          { ...mockAccount, id: 3, currency_id: 2, currency: 'EUR', symbol: '€' },
+        ],
+      }
+      mockWalletRepository.findAll.mockResolvedValue([walletWithBothCurrencies])
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+
+      await openDropdownAndClick(0, '+ Currency')
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.submit(dialog.querySelector('form') as HTMLFormElement)
+
+      expect(mockWalletRepository.addAccount).not.toHaveBeenCalled()
+    })
+
+    it('allows adding a savings account in a currency already used by a plain account', async () => {
+      mockWalletRepository.addAccount.mockResolvedValue({ ...mockAccount, id: 5, account_type: 'savings' })
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+
+      await openDropdownAndClick(0, '+ Currency')
+      const dialog = await screen.findByRole('dialog')
+      const typeSelect = within(dialog).getByLabelText('Type')
+      const currencySelect = within(dialog).getByLabelText('Currency')
+
+      expect(currencySelect).not.toHaveTextContent('USD - US Dollar')
+      fireEvent.change(typeSelect, { target: { value: 'savings' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Add' }))
+
+      await waitFor(() => {
+        expect(mockWalletRepository.addAccount).toHaveBeenCalledWith(1, 1, undefined, 'savings')
+      })
+    })
+
+    it('shows savings and credit badges plus account metadata', async () => {
+      mockWalletRepository.findAll.mockResolvedValue([
+        {
+          ...mockWallets[0],
+          account_type: 'savings',
+          accounts: [
+            { ...mockAccount, account_type: 'savings', note: 'Reserve', due_date: '2026-06-01', rate: 4.2 },
+            { ...mockAccount, id: 4, account_type: 'credits', currency: 'EUR', currency_id: 2, balance_int: -200 },
+          ],
+        },
+      ])
+      mockAccountRepository.getWalletBalancesInSystemCurrency.mockResolvedValue({ 1: -200 })
+
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+
+      expect(screen.getAllByText('Savings').length).toBeGreaterThanOrEqual(2)
+      expect(screen.getByText('Credit')).toBeInTheDocument()
+      expect(screen.getByText('Reserve · Due 2026-06-01 · 4.2%')).toBeInTheDocument()
+      expect(screen.getByText(/€200[.,]00/)).toHaveClass('text-red-600')
+    })
+
+    it('hides typed metadata fields for a plain account details modal and clears saved metadata', async () => {
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+
+      await openDropdownAndClick(1, 'Details')
+      const dialog = await screen.findByRole('dialog')
+
+      expect(within(dialog).getByLabelText('Type')).toHaveValue('plain')
+      expect(within(dialog).queryByLabelText('Note')).not.toBeInTheDocument()
+      expect(within(dialog).queryByLabelText('Due Date')).not.toBeInTheDocument()
+      expect(within(dialog).queryByLabelText('Profitability')).not.toBeInTheDocument()
+
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+      await waitFor(() => {
+        expect(mockAccountRepository.updateData).toHaveBeenCalledWith(1, {
+          account_type: 'plain',
+          note: null,
+          due_date: null,
+          rate: null,
+        })
+      })
+    })
+
+    it('edits savings account metadata with profitability label', async () => {
+      mockWalletRepository.findAll.mockResolvedValue([
+        {
+          ...mockWallets[0],
+          accounts: [
+            { ...mockAccount, account_type: 'savings', note: 'Old', due_date: '2026-01-01', rate: 1.5 },
+          ],
+        },
+      ])
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+
+      await openDropdownAndClick(1, 'Details')
+      const dialog = await screen.findByRole('dialog')
+
+      expect(within(dialog).getByLabelText('Profitability')).toBeInTheDocument()
+      fireEvent.change(within(dialog).getByLabelText('Note'), { target: { value: 'New fund' } })
+      fireEvent.change(within(dialog).getByLabelText('Due Date'), { target: { value: '2026-07-01' } })
+      fireEvent.change(within(dialog).getByLabelText('Profitability'), { target: { value: '5.25' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockAccountRepository.updateData).toHaveBeenCalledWith(1, {
+          account_type: 'savings',
+          note: 'New fund',
+          due_date: '2026-07-01',
+          rate: 5.25,
+        })
+      })
+    })
+
+    it('uses loan rate label when account details type is credit', async () => {
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+
+      await openDropdownAndClick(1, 'Details')
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.change(within(dialog).getByLabelText('Type'), { target: { value: 'credits' } })
+
+      expect(within(dialog).getByLabelText('Loan Rate')).toBeInTheDocument()
+      fireEvent.change(within(dialog).getByLabelText('Loan Rate'), { target: { value: '12' } })
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockAccountRepository.updateData).toHaveBeenCalledWith(1, expect.objectContaining({
+          account_type: 'credits',
+          rate: 12,
+        }))
+      })
+    })
+
+    it('shows generic message when account details save throws non-Error', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => { })
+      mockAccountRepository.updateData.mockRejectedValue('string error')
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+
+      await openDropdownAndClick(1, 'Details')
+      const dialog = await screen.findByRole('dialog')
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Failed to save account details', 'error')
+      })
+      vi.restoreAllMocks()
     })
 
     it('does not delete account when user cancels confirm', async () => {
@@ -1775,6 +1960,23 @@ describe('AccountsPage', () => {
         expect(mockShowToast).toHaveBeenCalledWith('Failed to adjust balance', 'error')
       })
       vi.restoreAllMocks()
+    })
+
+    it('does not create an adjustment when target balance already matches', async () => {
+      renderWithRouter()
+      await waitFor(() => expect(screen.getByText('Cash')).toBeInTheDocument())
+      expandWallet('Cash')
+      await openDropdownAndClick(1, 'Adjust Balance')
+      const dialog = await screen.findByRole('dialog')
+      const targetInput = dialog.querySelector('input[placeholder]') as HTMLInputElement
+
+      fireEvent.change(targetInput, { target: { value: '1500' } })
+      fireEvent.click(dialog.querySelector('button[type="submit"]') as HTMLButtonElement)
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith('Balance already matches target', 'info')
+      })
+      expect(mockTransactionRepository.createBalanceAdjustment).not.toHaveBeenCalled()
     })
   })
 })

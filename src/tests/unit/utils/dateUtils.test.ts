@@ -11,6 +11,7 @@ import {
   toDateTimeLocal,
   fromDateTimeLocal,
   groupByDate,
+  toLocalISOString,
 } from '../../../utils/dateUtils'
 
 describe('dateUtils', () => {
@@ -283,6 +284,23 @@ describe('dateUtils', () => {
       expect(groups.size).toBe(2)
       expect(groups.get('2025-01-31')).toHaveLength(1)
       expect(groups.get('2025-02-01')).toHaveLength(1)
+    })
+  })
+
+  describe('toLocalISOString', () => {
+    it('formats a provided date as a local ISO string', () => {
+      const date = new Date(2025, 0, 9, 14, 30, 0)
+
+      expect(toLocalISOString(date)).toContain('2025-01-09T')
+    })
+
+    it('defaults to the current date when no date is provided', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2025, 0, 9, 14, 30, 0))
+
+      expect(toLocalISOString()).toContain('2025-01-09T')
+
+      vi.useRealTimers()
     })
   })
 })

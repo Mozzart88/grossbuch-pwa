@@ -1,5 +1,5 @@
 import type { Account, TagContextOption } from '../../types'
-import type { LiveSearchOption } from '../ui'
+import type { LiveSearchOption, SelectUIOption } from '../ui'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { toLocalISOString } from '../../utils/dateUtils'
 import { formatAmount } from '../../utils/formatters';
@@ -125,7 +125,28 @@ export const getDefaultAccountForWallet = (accounts: AccountOption[], walletId: 
 }
 
 export const formatAccountOptionLabel = (account: AccountOption): string =>
-  `${account.currencyCode} (${formatAmount(account.balance_int, account.balance_frac, account.decimal_places)})`
+  `${account.currencyCode}${account.account_type && account.account_type !== 'plain' ? ` ${account.account_type === 'credits' ? 'Credit' : 'Savings'}` : ''} (${formatAmount(account.balance_int, account.balance_frac, account.decimal_places)})`
+
+export interface AccountSelectUIOption extends SelectUIOption {
+  account: AccountOption
+  accountTypeLabel: string | null
+}
+
+export const getAccountTypeLabel = (account: AccountOption): string | null => {
+  if (!account.account_type || account.account_type === 'plain') return null
+  return account.account_type === 'credits' ? 'Credit' : 'Savings'
+}
+
+export const formatAccountSelectLabel = (account: AccountOption): string =>
+  `${account.walletName}:${account.currencyCode}`
+
+export const toAccountSelectUIOptions = (accounts: AccountOption[]): AccountSelectUIOption[] =>
+  accounts.map((account) => ({
+    value: account.id,
+    label: formatAccountSelectLabel(account),
+    account,
+    accountTypeLabel: getAccountTypeLabel(account),
+  }))
 
 export const getStep = (decimals: number) =>
   (1 / Math.pow(10, decimals)).toFixed(decimals)

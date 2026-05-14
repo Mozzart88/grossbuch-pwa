@@ -29,6 +29,9 @@ export interface SyncAccount {
   currency: number
   updated_at: number
   tags: number[]
+  note?: string | null
+  due_date?: string | null
+  rate?: number | null
 }
 
 export interface SyncCounterparty {

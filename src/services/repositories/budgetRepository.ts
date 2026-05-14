@@ -34,61 +34,77 @@ const actualSpendSubquery = `
           LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
           WHERE (
             (
-              tb.tag_id = b.tag_id
-              AND (
-                (bctx.tag_id IS NULL AND ctx.tag_id IS NULL)
-                OR ctx.tag_id = bctx.tag_id
+              t.name IN ('savings', 'credits')
+              AND tb.sign = '+'
+              AND tb.tag_id IN (SELECT id FROM tag WHERE name IN ('transfer', 'exchange'))
+              AND EXISTS (
+                SELECT 1
+                FROM account_to_tags a2t
+                WHERE a2t.account_id = a.id
+                  AND a2t.tag_id = b.tag_id
               )
             )
             OR (
-              tb.tag_id IN (
-                WITH RECURSIVE descendants(id) AS (
-                  SELECT child_id FROM tag_to_tag WHERE parent_id = b.tag_id
-                  UNION
-                  SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
-                )
-                SELECT id FROM descendants
-              )
+              t.name NOT IN ('savings', 'credits')
+              AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
               AND (
-                ctx.tag_id = bctx.tag_id
-                OR (
-                  bctx.tag_id IS NULL
-                  AND ctx.tag_id = b.tag_id
+                (
+                  tb.tag_id = b.tag_id
+                  AND (
+                    (bctx.tag_id IS NULL AND ctx.tag_id IS NULL)
+                    OR ctx.tag_id = bctx.tag_id
+                  )
                 )
                 OR (
-                  bctx.tag_id IS NULL
-                  AND ctx.tag_id IS NULL
-                  AND 1 = (
-                    SELECT COUNT(DISTINCT rel.child_id)
-                    FROM tag_to_tag rel
-                    WHERE rel.parent_id IN (9, 10)
-                      AND rel.child_id IN (
-                        WITH RECURSIVE ancestors(id) AS (
-                          SELECT tb.tag_id
-                          UNION
-                          SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
-                        )
-                        SELECT id FROM ancestors
-                      )
+                  tb.tag_id IN (
+                    WITH RECURSIVE descendants(id) AS (
+                      SELECT child_id FROM tag_to_tag WHERE parent_id = b.tag_id
+                      UNION
+                      SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
+                    )
+                    SELECT id FROM descendants
                   )
-                  AND b.tag_id IN (
-                    SELECT rel.child_id
-                    FROM tag_to_tag rel
-                    WHERE rel.parent_id IN (9, 10)
-                      AND rel.child_id IN (
-                        WITH RECURSIVE ancestors(id) AS (
-                          SELECT tb.tag_id
-                          UNION
-                          SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
-                        )
-                        SELECT id FROM ancestors
+                  AND (
+                    ctx.tag_id = bctx.tag_id
+                    OR (
+                      bctx.tag_id IS NULL
+                      AND ctx.tag_id = b.tag_id
+                    )
+                    OR (
+                      bctx.tag_id IS NULL
+                      AND ctx.tag_id IS NULL
+                      AND 1 = (
+                        SELECT COUNT(DISTINCT rel.child_id)
+                        FROM tag_to_tag rel
+                        WHERE rel.parent_id IN (9, 10)
+                          AND rel.child_id IN (
+                            WITH RECURSIVE ancestors(id) AS (
+                              SELECT tb.tag_id
+                              UNION
+                              SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
+                            )
+                            SELECT id FROM ancestors
+                          )
                       )
+                      AND b.tag_id IN (
+                        SELECT rel.child_id
+                        FROM tag_to_tag rel
+                        WHERE rel.parent_id IN (9, 10)
+                          AND rel.child_id IN (
+                            WITH RECURSIVE ancestors(id) AS (
+                              SELECT tb.tag_id
+                              UNION
+                              SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
+                            )
+                            SELECT id FROM ancestors
+                          )
+                      )
+                    )
                   )
                 )
               )
             )
           )
-            AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
             AND (tb.rate_int > 0 OR tb.rate_frac > 0)

@@ -175,8 +175,12 @@ async function exportAccounts(since: number): Promise<SyncAccount[]> {
          FROM account_to_tags a2t
          WHERE a2t.account_id = a.id),
         ''
-      ) as tags
+      ) as tags,
+      ad.note,
+      ad.due_date,
+      ad.rate
     FROM account a
+    LEFT JOIN account_data ad ON ad.account_id = a.id
     WHERE a.updated_at >= ?`,
     [since]
   ).then(rows => rows.map(r => ({

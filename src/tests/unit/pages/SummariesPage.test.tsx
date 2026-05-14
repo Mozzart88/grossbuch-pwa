@@ -85,7 +85,7 @@ describe('SummariesPage', () => {
       income: 1000,
       expenses: 500,
     })
-    mockAccountRepository.getTotalBalance.mockResolvedValue(1500)
+    mockAccountRepository.getPlainTotalBalance.mockResolvedValue(1500)
     mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
       { tag_id: 1, tag: 'Food', income: 0, expense: 300, net: -300 },
       { tag_id: 2, tag: 'Salary', income: 1000, expense: 0, net: 1000 },
@@ -131,6 +131,21 @@ describe('SummariesPage', () => {
       { id: 25, name: 'Mixed', sort_order: 10 },
       { id: 13, name: 'Transport', sort_order: 10 },
     ])
+    mockTagRepository.findSystemTags?.mockResolvedValue([
+      { id: 21, name: 'savings', sort_order: 0 },
+      { id: 22, name: 'credits', sort_order: 0 },
+      { id: 3, name: 'archived', sort_order: 0 },
+    ])
+    mockTagRepository.getContextOptions?.mockImplementation((type: 'income' | 'expense') => Promise.resolve(
+      type === 'expense'
+        ? [
+            { tag_id: 12, tag_name: 'Food', context_id: null, context_name: null, label: 'Food', type: 'expense' },
+          ]
+        : [
+            { tag_id: 24, tag_name: 'Consulting', context_id: null, context_name: null, label: 'Consulting', type: 'income' },
+          ]
+    ))
+    mockTagRepository.getHierarchy?.mockResolvedValue([])
   })
 
   describe('Page structure', () => {
@@ -1897,6 +1912,59 @@ describe('SummariesPage', () => {
 
       // Verify form renders without crashing
       expect(screen.getByText('Set Budget')).toBeInTheDocument()
+    })
+
+    it('offers savings and credit tags when setting an expense budget', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const categorySelect = screen.getByLabelText('Category')
+      expect(categorySelect).toHaveTextContent('Savings')
+      expect(categorySelect).toHaveTextContent('Credit')
+      expect(categorySelect).not.toHaveTextContent('archived')
+    })
+
+    it('creates a credit refund budget from the system credit tag', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      fireEvent.change(screen.getByLabelText('Category'), { target: { value: '22:' } })
+      fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '300' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tag_id: 22,
+            tag_context_id: null,
+            type: 'expense',
+            amount_int: 300,
+          })
+        )
+      })
     })
 
     it('handles budget save Error instance', async () => {

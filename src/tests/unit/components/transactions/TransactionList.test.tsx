@@ -17,6 +17,7 @@ vi.mock('../../../../services/repositories', () => ({
   },
   accountRepository: {
     getTotalBalance: vi.fn(),
+    getPlainTotalBalance: vi.fn(),
   },
   currencyRepository: {
     findSystem: vi.fn(),
@@ -87,7 +88,7 @@ describe('TransactionList', () => {
     mockTransactionRepository.findByMonthFiltered.mockResolvedValue([sampleTransaction])
     mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 1000, expenses: 500 })
     mockTransactionRepository.getDaySummary.mockResolvedValue(-50) // natural float
-    mockAccountRepository.getTotalBalance.mockResolvedValue(1500)
+    mockAccountRepository.getPlainTotalBalance.mockResolvedValue(1500)
     mockTagRepository.findById.mockResolvedValue({ id: 10, name: 'Food', sort_order: 10 })
     mockCounterpartyRepository.findById.mockResolvedValue({ id: 1, name: 'Supermarket', sort_order: 10 })
   })
@@ -195,7 +196,7 @@ describe('TransactionList', () => {
       is_crypto: true,
     })
     mockTransactionRepository.getMonthSummary.mockResolvedValue({ income: 1, expenses: 0.5 })
-    mockAccountRepository.getTotalBalance.mockResolvedValue(1.5)
+    mockAccountRepository.getPlainTotalBalance.mockResolvedValue(1.5)
 
     renderWithRouter()
 

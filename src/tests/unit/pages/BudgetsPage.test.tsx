@@ -17,6 +17,7 @@ vi.mock('../../../services/repositories', () => ({
   },
   tagRepository: {
     findExpenseTags: vi.fn(),
+    findSystemTags: vi.fn(),
   },
   currencyRepository: {
     findSystem: vi.fn(),
@@ -45,6 +46,12 @@ const mockExpenseTags = [
   { id: 13, name: 'transport', created_at: 1, updated_at: 1, sort_order: 8 },
 ]
 
+const mockSystemTags = [
+  { id: 21, name: 'savings', created_at: 1, updated_at: 1, sort_order: 0 },
+  { id: 22, name: 'credits', created_at: 1, updated_at: 1, sort_order: 0 },
+  { id: SYSTEM_TAGS.ARCHIVED, name: 'archived', created_at: 1, updated_at: 1, sort_order: 0 },
+]
+
 const mockCurrency = {
   id: 1,
   code: 'USD',
@@ -71,6 +78,7 @@ describe('BudgetsPage', () => {
     vi.clearAllMocks()
     mockBudgetRepository.findByMonth.mockResolvedValue([])
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
+    mockTagRepository.findSystemTags.mockResolvedValue(mockSystemTags)
     mockCurrencyRepository.findSystem.mockResolvedValue(mockCurrency)
   })
 
@@ -206,6 +214,21 @@ describe('BudgetsPage', () => {
       expect(screen.getByLabelText(/Category/i)).toBeInTheDocument()
     })
 
+    it('includes savings and credit system tags as budget categories', async () => {
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+      const categorySelect = screen.getByLabelText(/Category/i)
+      expect(categorySelect).toHaveTextContent('Savings')
+      expect(categorySelect).toHaveTextContent('Credit')
+      expect(categorySelect).not.toHaveTextContent('archived')
+    })
+
     it('shows amount input', async () => {
       renderPage()
 
@@ -254,6 +277,30 @@ describe('BudgetsPage', () => {
 
       await waitFor(() => {
         expect(mockBudgetRepository.create).toHaveBeenCalled()
+      })
+    })
+
+    it('creates a savings budget as an expense budget', async () => {
+      mockBudgetRepository.create.mockResolvedValue({ ...mockBudget, tag_id: 21, tag: 'savings' })
+      renderPage()
+
+      await waitFor(() => {
+        expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      fireEvent.change(screen.getByLabelText(/Category/i), { target: { value: '21' } })
+      fireEvent.change(screen.getByLabelText(/Amount/i), { target: { value: '250' } })
+      fireEvent.click(screen.getByRole('button', { name: /Save/i }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tag_id: 21,
+            type: 'expense',
+            amount_int: 250,
+          })
+        )
       })
     })
   })

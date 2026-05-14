@@ -84,6 +84,7 @@ export interface Wallet {
   id: number
   name: string
   color: string | null
+  account_type?: AccountType
   // Joined fields
   tags?: string[]
   is_default?: boolean
@@ -95,6 +96,17 @@ export interface Wallet {
 export interface WalletInput {
   name: string
   color?: string
+  account_type?: AccountType
+}
+
+export type AccountType = 'plain' | 'savings' | 'credits'
+
+export interface AccountData {
+  account_id: number
+  note: string | null
+  due_date: string | null
+  rate: number | null
+  updated_at: number
 }
 
 // Account (wallet + currency combination) - balance as (int, frac), no created_at
@@ -111,12 +123,20 @@ export interface Account {
   symbol?: string
   decimal_places?: number
   tags?: string
+  account_type?: AccountType
+  note?: string | null
+  due_date?: string | null
+  rate?: number | null
   is_default?: boolean
 }
 
 export interface AccountInput {
   wallet_id: number
   currency_id: number
+  account_type?: AccountType
+  note?: string | null
+  due_date?: string | null
+  rate?: number | null
 }
 
 // Counterparty - no timestamps, note in separate table

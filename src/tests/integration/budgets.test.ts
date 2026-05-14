@@ -333,4 +333,88 @@ describe('Budget Integration', () => {
     expect(budgets.find(b => b.tag_context_id === autoId)?.actual).toBeCloseTo(25, 1)
     expect(budgets.find(b => b.tag_context_id === boatId)?.actual).toBeCloseTo(40, 1)
   })
+
+  it('calculates savings and credit budget actuals from inbound transfer and exchange lines', async () => {
+    const budgetRepository = await getRepository()
+    const db = getTestDatabase()
+    const walletId = insertWallet({ name: 'Account Budget Wallet' })
+    const plainAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+    const savingsAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 0 })
+    const creditAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: -300 })
+    const savingsTagId = Number(db.exec("SELECT id FROM tag WHERE name = 'savings'")[0].values[0][0])
+    const creditsTagId = Number(db.exec("SELECT id FROM tag WHERE name = 'credits'")[0].values[0][0])
+
+    db.run('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [savingsAccountId, savingsTagId])
+    db.run('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [creditAccountId, creditsTagId])
+
+    await budgetRepository.create({
+      tag_id: savingsTagId,
+      amount_int: 100,
+      amount_frac: 0,
+      type: 'expense',
+    })
+    await budgetRepository.create({
+      tag_id: creditsTagId,
+      amount_int: 200,
+      amount_frac: 0,
+      type: 'expense',
+    })
+
+    const now = Math.floor(Date.now() / 1000)
+    insertTransaction({
+      account_id: savingsAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '+',
+      amount_int: 60,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: savingsAccountId,
+      tag_id: SYSTEM_TAGS.EXCHANGE,
+      sign: '+',
+      amount_int: 15,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: savingsAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '-',
+      amount_int: 10,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: plainAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '+',
+      amount_int: 999,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: creditAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '+',
+      amount_int: 120,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: creditAccountId,
+      tag_id: SYSTEM_TAGS.FOOD,
+      sign: '-',
+      amount_int: 45,
+      rate_int: 1,
+      timestamp: now,
+    })
+
+    const date = new Date(now * 1000)
+    const currentMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+
+    expect(budgets.find(b => b.tag_id === savingsTagId)?.actual).toBeCloseTo(75, 1)
+    expect(budgets.find(b => b.tag_id === creditsTagId)?.actual).toBeCloseTo(120, 1)
+  })
 })

@@ -133,6 +133,15 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
   }
 
   const sharedProps = { initialData, onSubmit, onCancel, useActionBar, showAddAnother }
+  const incomeAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') === 'plain')
+  const expenseAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') !== 'savings')
+  const getDefaultFor = (list: AccountOption[]) => {
+    const defaultAcc = list.find(a => a.id.toString() === defaultAccountId)
+      || list.find(a => a.walletIsDefault && a.is_default)
+      || list.find(a => a.is_default)
+      || list[0]
+    return defaultAcc?.id.toString() ?? ''
+  }
 
   return (
     <div className="space-y-4">
@@ -156,24 +165,24 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       {mode === 'income' && (
         <IncomeTransactionForm
           {...sharedProps}
-          accounts={accounts}
+          accounts={incomeAccounts}
           incomeTags={incomeTags}
           incomeTagOptions={incomeTagOptions}
           counterparties={counterparties}
-          defaultAccountId={defaultAccountId}
+          defaultAccountId={getDefaultFor(incomeAccounts)}
         />
       )}
       {mode === 'expense' && (
         <ExpenseTransactionForm
           {...sharedProps}
-          accounts={accounts}
+          accounts={expenseAccounts}
           currencies={currencies}
           activeCurrencies={activeCurrencies}
           expenseTags={expenseTags}
           expenseTagOptions={expenseTagOptions}
           commonTags={commonTags}
           counterparties={counterparties}
-          defaultAccountId={defaultAccountId}
+          defaultAccountId={getDefaultFor(expenseAccounts)}
           defaultPaymentCurrencyId={defaultPaymentCurrencyId}
         />
       )}

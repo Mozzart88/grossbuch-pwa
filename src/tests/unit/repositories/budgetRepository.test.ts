@@ -136,6 +136,29 @@ describe('budgetRepository', () => {
                 expect.anything()
             )
         })
+
+        it('calculates savings and credit budgets from inbound transfers and exchanges to tagged accounts', async () => {
+            mockQuerySQL.mockResolvedValue([])
+
+            await budgetRepository.findByMonth('2024-01')
+
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining("t.name IN ('savings', 'credits')"),
+                expect.anything()
+            )
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining("tb.sign = '+'"),
+                expect.anything()
+            )
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining("tb.tag_id IN (SELECT id FROM tag WHERE name IN ('transfer', 'exchange'))"),
+                expect.anything()
+            )
+            expect(mockQuerySQL).toHaveBeenCalledWith(
+                expect.stringContaining('a2t.tag_id = b.tag_id'),
+                expect.anything()
+            )
+        })
     })
 
     describe('findByTagId', () => {

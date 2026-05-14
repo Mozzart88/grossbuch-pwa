@@ -25,6 +25,9 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_account_to_tags_insert',
   'trg_account_to_tags_update',
   'trg_account_to_tags_delete',
+  'trg_account_data_insert',
+  'trg_account_data_update',
+  'trg_account_data_delete',
   // Counterparty
   'trg_counterparty_update',
   'trg_counterparty_to_tags_insert',
@@ -204,6 +207,34 @@ END`)
 
   await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_to_tags_delete
 AFTER DELETE ON account_to_tags
+FOR EACH ROW
+BEGIN
+  UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account.id = OLD.account_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_data_insert
+AFTER INSERT ON account_data
+FOR EACH ROW
+BEGIN
+  UPDATE account_data SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account_id = NEW.account_id;
+  UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account.id = NEW.account_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_data_update
+AFTER UPDATE OF note, due_date, rate ON account_data
+FOR EACH ROW
+BEGIN
+  UPDATE account_data SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account_id = NEW.account_id;
+  UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account.id = NEW.account_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_data_delete
+AFTER DELETE ON account_data
 FOR EACH ROW
 BEGIN
   UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)

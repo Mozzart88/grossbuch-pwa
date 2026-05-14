@@ -137,6 +137,18 @@ describe('accountRepository', () => {
 
       expect(result).toBeNull()
     })
+
+    it('filters by account type when provided', async () => {
+      mockQueryOne.mockResolvedValue({ ...sampleAccount, account_type: 'savings' })
+
+      const result = await accountRepository.findByWalletAndCurrency(1, 1, 'savings')
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining("= ?"),
+        [SYSTEM_TAGS.DEFAULT, 1, 1, 'savings']
+      )
+      expect(result?.account_type).toBe('savings')
+    })
   })
 
   describe('create', () => {
@@ -185,6 +197,105 @@ describe('accountRepository', () => {
       mockGetLastInsertId.mockResolvedValue(3)
 
       await expect(accountRepository.create(input)).rejects.toThrow('Failed to create account')
+    })
+
+    it('creates a typed account and stores metadata', async () => {
+      const input: AccountInput = {
+        wallet_id: 1,
+        currency_id: 2,
+        account_type: 'savings',
+        note: 'Emergency fund',
+        due_date: '2026-06-01',
+        rate: 4.5,
+      }
+
+      mockQueryOne
+        .mockResolvedValueOnce(null) // findByWalletAndCurrency check
+        .mockResolvedValueOnce({ wallet_id: 1, currency_id: 2 }) // validateUniqueAccountType account lookup
+        .mockResolvedValueOnce(null) // duplicate lookup
+        .mockResolvedValueOnce({ id: 21 }) // savings tag lookup
+        .mockResolvedValueOnce({ ...sampleAccount, id: 9, currency_id: 2, account_type: 'savings' }) // findById
+      mockGetLastInsertId.mockResolvedValue(9)
+
+      const result = await accountRepository.create(input)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM account_to_tags"),
+        [9]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [9, 21]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO account_data'),
+        [9, 'Emergency fund', '2026-06-01', 4.5]
+      )
+      expect(result.account_type).toBe('savings')
+    })
+
+    it('does not add a type tag when account_type is omitted', async () => {
+      const input: AccountInput = {
+        wallet_id: 1,
+        currency_id: 2,
+      }
+
+      mockQueryOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2 })
+      mockGetLastInsertId.mockResolvedValue(2)
+
+      await accountRepository.create(input)
+
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        expect.anything()
+      )
+    })
+  })
+
+  describe('updateData', () => {
+    it('updates account type and clears metadata for plain accounts', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 1, currency_id: 1 })
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...sampleAccount, account_type: 'plain' })
+
+      const result = await accountRepository.updateData(1, {
+        account_type: 'plain',
+        note: null,
+        due_date: null,
+        rate: null,
+      })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("DELETE FROM account_to_tags"),
+        [1]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM account_data WHERE account_id = ?', [1])
+      expect(result.account_type).toBe('plain')
+    })
+
+    it('throws when updating to a duplicate account type', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 1, currency_id: 1 })
+        .mockResolvedValueOnce({ id: 2 })
+
+      await expect(accountRepository.updateData(1, { account_type: 'credits' })).rejects.toThrow(
+        'This wallet already has an account with this currency and type'
+      )
+    })
+
+    it('throws when account lookup fails while syncing account type', async () => {
+      mockQueryOne.mockResolvedValueOnce(null)
+
+      await expect(accountRepository.updateData(1, { account_type: 'savings' })).rejects.toThrow('Account not found')
+    })
+
+    it('throws when updated account cannot be loaded', async () => {
+      mockQueryOne.mockResolvedValueOnce(null)
+
+      await expect(accountRepository.updateData(1, { note: 'Only metadata' })).rejects.toThrow('Account not found')
     })
   })
 
@@ -275,6 +386,20 @@ describe('accountRepository', () => {
       const result = await accountRepository.getTotalBalance()
 
       expect(result).toBe(0)
+    })
+  })
+
+  describe('getPlainTotalBalance', () => {
+    it('excludes savings and credit accounts from the total', async () => {
+      mockQueryOne.mockResolvedValue({ total: 1500.00 })
+
+      const result = await accountRepository.getPlainTotalBalance()
+
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        expect.stringContaining("account_tag.name IN ('savings', 'credits')"),
+        expect.arrayContaining([expect.any(Number), expect.any(Number)])
+      )
+      expect(result).toBe(1500.00)
     })
   })
 
