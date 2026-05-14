@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Tag, Counterparty, Transaction, TransactionLine } from '../../types'
+import type { Tag, TagContextOption, Counterparty, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput } from '../ui'
+import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput, Badge } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
@@ -18,12 +18,17 @@ import {
   getAccountsForWallet,
   getDefaultAccountForWallet,
   formatAccountOptionLabel,
+  encodeTagSelection,
+  parseTagSelection,
+  toTagLiveSearchOptions,
+  type TagLiveSearchOption,
 } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface IncomeTransactionFormProps {
   accounts: AccountOption[]
   incomeTags: Tag[]
+  incomeTagOptions?: TagContextOption[]
   counterparties: Counterparty[]
   defaultAccountId: string
   initialData?: Transaction
@@ -36,6 +41,7 @@ interface IncomeTransactionFormProps {
 export function IncomeTransactionForm({
   accounts,
   incomeTags,
+  incomeTagOptions,
   counterparties,
   defaultAccountId,
   initialData,
@@ -68,7 +74,7 @@ export function IncomeTransactionForm({
     const firstLine = lines[0]
     setDateTime(new Date(initialData.timestamp * 1000).getTime())
     setAccountId(firstLine.account_id.toString())
-    setTagId(firstLine.tag_id.toString())
+    setTagId(encodeTagSelection(firstLine.tag_id, firstLine.tag_context_id))
     setNote(initialData.note || '')
     setAmount(fromIntFrac(firstLine.amount_int, firstLine.amount_frac).toString())
     if (initialData.counterparty_id) {
@@ -116,22 +122,25 @@ export function IncomeTransactionForm({
   // Tags sorted by counterparty affinity
   const sortedTagsOptions = (() => {
     const cId = counterpartyId ? parseInt(counterpartyId) : 0
-    const res: { value: number, label: string }[] = []
+    const allOptions = incomeTagOptions?.length
+      ? toTagLiveSearchOptions(incomeTagOptions)
+      : incomeTags.map(t => ({ value: encodeTagSelection(t.id, null), label: t.name, tagName: t.name, contextName: null }))
+    const res: TagLiveSearchOption[] = []
     if (cId) {
       const cp = counterparties.find(c => c.id === cId)
       incomeTags
         .filter(t => cp?.tag_ids?.includes(t.id))
         .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-        .forEach(t => res.push({ value: t.id, label: t.name }))
+        .forEach(t => {
+          allOptions.filter(o => parseTagSelection(o.value).tagId === t.id).forEach(o => res.push(o))
+        })
     }
-    incomeTags
-      .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-      .forEach(t => { if (!res.find(r => r.value === t.id)) res.push({ value: t.id, label: t.name }) })
+    allOptions.forEach(o => { if (!res.find(r => r.value === o.value)) res.push(o) })
     return res
   })()
 
   const sortedCounterpartiesOptions = (() => {
-    const tId = tagId ? parseInt(tagId) : 0
+    const tId = tagId ? parseTagSelection(tagId).tagId : 0
     const res: { value: number, label: string }[] = []
     if (tId) {
       counterparties
@@ -181,7 +190,8 @@ export function IncomeTransactionForm({
         : await currencyRepository.getRateForCurrency(accountCurrencyId)
 
       let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
-      const tagIdNum = parseInt(finalTagId)
+      const parsedTag = parseTagSelection(finalTagId)
+      const tagIdNum = parsedTag.tagId
       if (counterpartyName && !counterpartyId) {
         finalCounterpartyId = (await counterpartyRepository.create({
           name: counterpartyName,
@@ -201,7 +211,8 @@ export function IncomeTransactionForm({
         note: note || undefined,
         lines: [{
           account_id: parseInt(accountId),
-          tag_id: parseInt(finalTagId),
+          tag_id: tagIdNum,
+          tag_context_id: parsedTag.contextId,
           sign: '+' as const,
           amount_int: amountInt,
           amount_frac: amountFrac,
@@ -287,6 +298,20 @@ export function IncomeTransactionForm({
           options={sortedTagsOptions}
           placeholder="Select category"
           error={errors.tagId}
+          renderOption={(option) => {
+            const tagOption = option as TagLiveSearchOption
+            return (
+              <span className="inline-flex items-center">
+                <span>{tagOption.tagName ?? option.label}</span>
+                {tagOption.contextName && <Badge variant="secondary">{tagOption.contextName}</Badge>}
+              </span>
+            )
+          }}
+          getDisplayValue={(option) => (option as TagLiveSearchOption).tagName ?? option.label}
+          renderSelectedBadge={(option) => {
+            const contextName = (option as TagLiveSearchOption).contextName
+            return contextName ? <Badge variant="secondary" className="ml-0">{contextName}</Badge> : null
+          }}
           onCreateNew={(name) => {
             setNewTagName(name)
             setNewTagType('income')

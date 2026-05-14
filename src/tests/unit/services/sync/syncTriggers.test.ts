@@ -45,6 +45,8 @@ const EXPECTED_TRIGGER_NAMES = [
   'trg_trx_base_insert',
   'trg_trx_base_update',
   'trg_trx_base_delete',
+  'trg_trx_base_tag_context_insert',
+  'trg_trx_base_tag_context_delete',
   'trg_budget_update',
 ]
 
@@ -54,10 +56,10 @@ describe('syncTriggers', () => {
   })
 
   describe('dropUpdatedAtTriggers', () => {
-    it('drops all 37 updated_at triggers', async () => {
+    it('drops all updated_at triggers', async () => {
       await dropUpdatedAtTriggers()
 
-      expect(mockExecSQL).toHaveBeenCalledTimes(37)
+      expect(mockExecSQL).toHaveBeenCalledTimes(EXPECTED_TRIGGER_NAMES.length)
       for (const name of EXPECTED_TRIGGER_NAMES) {
         expect(mockExecSQL).toHaveBeenCalledWith(`DROP TRIGGER IF EXISTS ${name}`)
       }
@@ -74,10 +76,10 @@ describe('syncTriggers', () => {
   })
 
   describe('restoreUpdatedAtTriggers', () => {
-    it('restores all 37 updated_at triggers', async () => {
+    it('restores all updated_at triggers', async () => {
       await restoreUpdatedAtTriggers()
 
-      expect(mockExecSQL).toHaveBeenCalledTimes(37)
+      expect(mockExecSQL).toHaveBeenCalledTimes(EXPECTED_TRIGGER_NAMES.length)
     })
 
     it('uses CREATE TRIGGER IF NOT EXISTS for each trigger', async () => {

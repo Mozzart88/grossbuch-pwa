@@ -71,7 +71,52 @@ export const budgetRepository = {
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
           JOIN account a ON a.id = tb.account_id
-          WHERE tb.tag_id = b.tag_id
+          LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+          WHERE (
+            tb.tag_id = b.tag_id
+            OR (
+              tb.tag_id IN (
+                WITH RECURSIVE descendants(id) AS (
+                  SELECT child_id FROM tag_to_tag WHERE parent_id = b.tag_id
+                  UNION
+                  SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
+                )
+                SELECT id FROM descendants
+              )
+              AND (
+                ctx.tag_id = b.tag_id
+                OR (
+                  ctx.tag_id IS NULL
+                  AND 1 = (
+                    SELECT COUNT(DISTINCT rel.child_id)
+                    FROM tag_to_tag rel
+                    WHERE rel.parent_id IN (9, 10)
+                      AND rel.child_id IN (
+                        WITH RECURSIVE ancestors(id) AS (
+                          SELECT tb.tag_id
+                          UNION
+                          SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
+                        )
+                        SELECT id FROM ancestors
+                      )
+                  )
+                  AND b.tag_id IN (
+                    SELECT rel.child_id
+                    FROM tag_to_tag rel
+                    WHERE rel.parent_id IN (9, 10)
+                      AND rel.child_id IN (
+                        WITH RECURSIVE ancestors(id) AS (
+                          SELECT tb.tag_id
+                          UNION
+                          SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
+                        )
+                        SELECT id FROM ancestors
+                      )
+                  )
+                )
+              )
+            )
+          )
             AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
@@ -134,7 +179,21 @@ export const budgetRepository = {
           FROM trx_base tb
           JOIN trx ON trx.id = tb.trx_id
           JOIN account a ON a.id = tb.account_id
-          WHERE tb.tag_id = b.tag_id
+          LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+          WHERE (
+            tb.tag_id = b.tag_id
+            OR (
+              tb.tag_id IN (
+                WITH RECURSIVE descendants(id) AS (
+                  SELECT child_id FROM tag_to_tag WHERE parent_id = b.tag_id
+                  UNION
+                  SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
+                )
+                SELECT id FROM descendants
+              )
+              AND ctx.tag_id = b.tag_id
+            )
+          )
             AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end

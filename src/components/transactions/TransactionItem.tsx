@@ -3,6 +3,7 @@ import { type TransactionLog } from '../../types'
 import { formatCurrencyValue } from '../../utils/formatters'
 import { fromIntFrac } from '../../utils/amount'
 import { formatTime } from '../../utils/dateUtils'
+import { Badge } from '../ui'
 
 interface TransactionItemProps {
   transaction: TransactionLog[]
@@ -186,7 +187,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     return 'text-gray-900 dark:text-gray-100'
   }
 
-  const getTitle = () => {
+  const getTitle = (): ReactNode => {
     if (transactionType === 'initial') {
       return 'Initial Balance'
     }
@@ -209,11 +210,28 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     // Primary (non-add-on) category tags
     const primaryTags = relevantLines
       .filter(l => !l.tag_is_common && l.tags && !systemTagNames.has(l.tags.toLowerCase()))
-      .map(l => capitalize(l.tags))
-      .filter((name, index, arr) => arr.indexOf(name) === index) // dedupe
+      .map(l => ({
+        name: capitalize(l.tags),
+        context: l.tag_context || null,
+        key: `${l.tags}:${l.tag_context_id ?? ''}`,
+      }))
+      .filter((tag, index, arr) => arr.findIndex(item => item.key === tag.key) === index)
 
     if (primaryTags.length > 0) {
-      return primaryTags.join(', ')
+      if (primaryTags.every(tag => !tag.context)) {
+        return primaryTags.map(tag => tag.name).join(', ')
+      }
+      return (
+        <>
+          {primaryTags.map((tag, index) => (
+            <span key={tag.key} className="inline-flex items-center">
+              {index > 0 && <span className="mr-1">,</span>}
+              <span>{tag.name}</span>
+              {tag.context && <Badge variant="secondary">{tag.context}</Badge>}
+            </span>
+          ))}
+        </>
+      )
     }
 
     // Fallback: show add-on tag names when no primary category exists

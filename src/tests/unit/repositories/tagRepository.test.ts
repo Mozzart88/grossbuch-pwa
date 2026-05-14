@@ -120,8 +120,22 @@ describe('tagRepository', () => {
       const result = await tagRepository.findIncomeTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE th.parent_id = ?'),
-        [SYSTEM_TAGS.INCOME]
+        expect.stringContaining('direct_type.parent_id IN (?, ?)'),
+        [
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+        ]
       )
       expect(result).toEqual(incomeTags)
     })
@@ -135,8 +149,22 @@ describe('tagRepository', () => {
       const result = await tagRepository.findExpenseTags()
 
       expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('WHERE th.parent_id = ?'),
-        [SYSTEM_TAGS.EXPENSE]
+        expect.stringContaining('direct_type.parent_id IN (?, ?)'),
+        [
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.INCOME,
+          SYSTEM_TAGS.EXPENSE,
+          SYSTEM_TAGS.EXPENSE,
+        ]
       )
       expect(result).toEqual(expenseTags)
     })
@@ -194,11 +222,11 @@ describe('tagRepository', () => {
 
       expect(mockExecSQL).toHaveBeenCalledWith('INSERT INTO tag (name) VALUES (?)', ['NewTag'])
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
         [25, SYSTEM_TAGS.DEFAULT]
       )
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
         [25, SYSTEM_TAGS.EXPENSE]
       )
       expect(result.name).toBe('NewTag')
@@ -368,6 +396,60 @@ describe('tagRepository', () => {
 
       expect(mockQuerySQL).toHaveBeenCalledWith('SELECT * FROM tags_summary')
       expect(result).toEqual(summary)
+    })
+  })
+
+  describe('removeRelation', () => {
+    it('restores inherited expense root when removing the last nested parent', async () => {
+      mockQuerySQL
+        .mockResolvedValueOnce([{ id: SYSTEM_TAGS.EXPENSE }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+
+      await tagRepository.removeRelation(101, 100)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM tag_to_tag WHERE child_id = ? AND parent_id = ?',
+        [101, 100]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+        [101, SYSTEM_TAGS.EXPENSE]
+      )
+    })
+
+    it('does not restore a root while another nested parent remains', async () => {
+      mockQuerySQL
+        .mockResolvedValueOnce([{ id: SYSTEM_TAGS.EXPENSE }])
+        .mockResolvedValueOnce([{ id: 200, name: 'Boat' }])
+
+      await tagRepository.removeRelation(101, 100)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM tag_to_tag WHERE child_id = ? AND parent_id = ?',
+        [101, 100]
+      )
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+        [101, SYSTEM_TAGS.EXPENSE]
+      )
+    })
+  })
+
+  describe('addRelation', () => {
+    it('keeps direct income and expense roots when adding a nested parent', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await tagRepository.addRelation(101, 100)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+        [101, 100]
+      )
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'DELETE FROM tag_to_tag WHERE child_id = ? AND parent_id IN (?, ?)',
+        [101, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE]
+      )
     })
   })
 })

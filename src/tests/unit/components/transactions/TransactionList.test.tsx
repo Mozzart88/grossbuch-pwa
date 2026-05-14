@@ -478,6 +478,17 @@ describe('TransactionList', () => {
       })
     })
 
+    it('reads tag context filter from URL parameter', async () => {
+      renderWithRouter(['/?month=2025-01&tag=10&tagContext=20'])
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.findByMonthFiltered).toHaveBeenCalledWith(
+          '2025-01',
+          expect.objectContaining({ tagId: 10, tagContextId: 20 })
+        )
+      })
+    })
+
     it('reads counterparty filter from URL parameter', async () => {
       renderWithRouter(['/?month=2025-01&counterparty=5'])
 

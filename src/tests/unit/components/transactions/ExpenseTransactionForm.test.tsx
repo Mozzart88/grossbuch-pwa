@@ -157,6 +157,50 @@ describe('ExpenseTransactionForm', () => {
     })
   })
 
+  it('shows context badges for category options and submits selected context', async () => {
+    render(
+      <ExpenseTransactionForm
+        {...defaultProps}
+        expenseTagOptions={[
+          {
+            tag_id: 10,
+            tag_name: 'Maintenance',
+            context_id: 30,
+            context_name: 'Central Park',
+            label: 'Maintenance Central Park',
+            type: 'expense',
+          },
+        ]}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '42' } })
+
+    const categoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(categoryInput)
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+    const categoryOption = within(screen.getByRole('listbox')).getByRole('option')
+    expect(categoryOption).toHaveTextContent('Maintenance')
+    expect(screen.getByText('Central Park')).toBeInTheDocument()
+    fireEvent.click(categoryOption)
+
+    expect(categoryInput).toHaveValue('Maintenance')
+    expect(screen.getByText('Central Park')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({
+            tag_id: 10,
+            tag_context_id: 30,
+          })],
+        })
+      )
+    })
+  })
+
   it('shows wallet names and scoped account labels', () => {
     render(<ExpenseTransactionForm {...defaultProps} />)
     const walletSelect = screen.getByRole('combobox', { name: /wallet/i })
@@ -443,6 +487,30 @@ describe('ExpenseTransactionForm', () => {
             lines: expect.arrayContaining([
               expect.objectContaining({ tag_id: 10, sign: '-' }),
               expect.objectContaining({ tag_id: TIP_TAG_ID }),
+            ]),
+          })
+        )
+      })
+    })
+
+    it('submits discount common tag as income line and subtracts from total', async () => {
+      const discountTag: Tag = { id: SYSTEM_TAGS.DISCOUNT, name: 'Discount', sort_order: 1 }
+      render(<ExpenseTransactionForm {...defaultProps} commonTags={[discountTag]} />)
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Food' } })
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Food' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: 'Food' }))
+      fireEvent.click(screen.getByRole('button', { name: '+ Discount' }))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.change(screen.getAllByPlaceholderText('0.00')[2], { target: { value: '5' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ tag_id: SYSTEM_TAGS.DISCOUNT, sign: '+' }),
             ]),
           })
         )

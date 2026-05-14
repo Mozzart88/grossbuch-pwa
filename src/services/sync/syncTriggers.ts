@@ -1,7 +1,7 @@
 import { execSQL } from '../database/connection'
 
 /**
- * All 37 v13 updated_at triggers that must be dropped during sync import
+ * All updated_at triggers that must be dropped during sync import
  * to prevent the receiving device's clock from overwriting the sender's timestamps.
  */
 const UPDATED_AT_TRIGGER_NAMES = [
@@ -48,12 +48,14 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_trx_base_insert',
   'trg_trx_base_update',
   'trg_trx_base_delete',
+  'trg_trx_base_tag_context_insert',
+  'trg_trx_base_tag_context_delete',
   // Budget
   'trg_budget_update',
 ] as const
 
 /**
- * Drop all 37 v13 updated_at triggers.
+ * Drop all updated_at triggers.
  * Must be called BEFORE BEGIN TRANSACTION in sync import.
  */
 export async function dropUpdatedAtTriggers(): Promise<void> {
@@ -63,7 +65,7 @@ export async function dropUpdatedAtTriggers(): Promise<void> {
 }
 
 /**
- * Restore all 37 v13 updated_at triggers with exact original SQL.
+ * Restore all updated_at triggers with exact original SQL.
  * Must be called in finally block after sync import completes.
  */
 export async function restoreUpdatedAtTriggers(): Promise<void> {
@@ -370,6 +372,22 @@ FOR EACH ROW
 BEGIN
   UPDATE trx SET updated_at = unixepoch(CURRENT_TIMESTAMP)
   WHERE trx.id = OLD.trx_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_trx_base_tag_context_insert
+AFTER INSERT ON trx_base_tag_context
+FOR EACH ROW
+BEGIN
+  UPDATE trx SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = (SELECT trx_id FROM trx_base WHERE id = NEW.trx_base_id);
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_trx_base_tag_context_delete
+AFTER DELETE ON trx_base_tag_context
+FOR EACH ROW
+BEGIN
+  UPDATE trx SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = (SELECT trx_id FROM trx_base WHERE id = OLD.trx_base_id);
 END`)
 
   // Budget

@@ -52,6 +52,7 @@ export interface SyncTransactionLine {
   id: string // hex
   account: number
   tag: number
+  tag_context?: number | null
   sign: '+' | '-'
   amount_int: number
   amount_frac: number

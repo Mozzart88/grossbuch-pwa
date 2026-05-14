@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { Tag, Counterparty, Currency, Transaction, TransactionLine } from '../../types'
+import type { Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, currencyRepository } from '../../services/repositories'
 import type { TransactionMode, AccountOption, SubmitOptions } from './transactionFormShared'
@@ -37,6 +37,8 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
   const [activeCurrencies, setActiveCurrencies] = useState<Currency[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
+  const [incomeTagOptions, setIncomeTagOptions] = useState<TagContextOption[]>([])
+  const [expenseTagOptions, setExpenseTagOptions] = useState<TagContextOption[]>([])
   const [commonTags, setCommonTags] = useState<Tag[]>([])
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [defaultAccountId, setDefaultAccountId] = useState('')
@@ -65,10 +67,12 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
   const loadData = async () => {
     try {
-      const [wallets, incomeTagList, expenseTagList, cps, currencyList, usedCurrencies, commonTagList] = await Promise.all([
+      const [wallets, incomeTagList, expenseTagList, incomeContextOptions, expenseContextOptions, cps, currencyList, usedCurrencies, commonTagList] = await Promise.all([
         walletRepository.findActive(),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
+        tagRepository.getContextOptions?.('income') ?? Promise.resolve([]),
+        tagRepository.getContextOptions?.('expense') ?? Promise.resolve([]),
         counterpartyRepository.findAll(),
         currencyRepository.findAll(),
         currencyRepository.findUsedInAccounts(),
@@ -79,6 +83,8 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setActiveCurrencies(usedCurrencies)
       setIncomeTags(incomeTagList)
       setExpenseTags(expenseTagList)
+      setIncomeTagOptions(incomeContextOptions)
+      setExpenseTagOptions(expenseContextOptions)
       setCounterparties(cps)
       setCommonTags(commonTagList)
 
@@ -152,6 +158,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           {...sharedProps}
           accounts={accounts}
           incomeTags={incomeTags}
+          incomeTagOptions={incomeTagOptions}
           counterparties={counterparties}
           defaultAccountId={defaultAccountId}
         />
@@ -163,6 +170,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           currencies={currencies}
           activeCurrencies={activeCurrencies}
           expenseTags={expenseTags}
+          expenseTagOptions={expenseTagOptions}
           commonTags={commonTags}
           counterparties={counterparties}
           defaultAccountId={defaultAccountId}

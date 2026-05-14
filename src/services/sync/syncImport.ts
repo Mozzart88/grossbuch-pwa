@@ -232,6 +232,7 @@ async function resolveTagIdConflict(oldId: number, newId: number): Promise<void>
   await execSQL(`UPDATE counterparty_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE currency_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE trx_base SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE trx_base_tag_context SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE budget SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`DELETE FROM tag WHERE id = ?`, [oldId])
 }
@@ -442,6 +443,7 @@ async function importTransactions(transactions: SyncTransaction[]): Promise<numb
       count++
     } else if (trx.updated_at > local.updated_at) {
       // Last-write-wins: replace transaction data
+      await deleteTrxBaseContexts(trxBlob)
       await execSQL(`DELETE FROM trx_base WHERE trx_id = ?`, [trxBlob])
       await execSQL(`DELETE FROM trx_to_counterparty WHERE trx_id = ?`, [trxBlob])
       await execSQL(`DELETE FROM trx_note WHERE trx_id = ?`, [trxBlob])
@@ -454,6 +456,14 @@ async function importTransactions(transactions: SyncTransaction[]): Promise<numb
   return count
 }
 
+async function deleteTrxBaseContexts(trxBlob: Uint8Array): Promise<void> {
+  await execSQL(
+    `DELETE FROM trx_base_tag_context
+     WHERE trx_base_id IN (SELECT id FROM trx_base WHERE trx_id = ?)`,
+    [trxBlob]
+  )
+}
+
 async function insertTrxRelations(trx: SyncTransaction): Promise<void> {
   const trxBlob = hexToBlob(trx.id)
 
@@ -463,6 +473,12 @@ async function insertTrxRelations(trx: SyncTransaction): Promise<void> {
       `INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [hexToBlob(line.id), trxBlob, line.account, line.tag, line.sign, line.amount_int, line.amount_frac, line.rate_int, line.rate_frac]
     )
+    if (line.tag_context) {
+      await execSQL(
+        `INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)`,
+        [hexToBlob(line.id), line.tag_context]
+      )
+    }
   }
 
   // Insert counterparty link
@@ -604,6 +620,11 @@ async function applyDeletion(del: SyncDeletion): Promise<boolean> {
         [del.entity_id]
       )
       if (local && del.deleted_at > local.updated_at) {
+        await execSQL(
+          `DELETE FROM trx_base_tag_context
+           WHERE trx_base_id IN (SELECT id FROM trx_base WHERE hex(trx_id) = ?)`,
+          [del.entity_id]
+        )
         await execSQL(`DELETE FROM trx_base WHERE hex(trx_id) = ?`, [del.entity_id])
         await execSQL(`DELETE FROM trx_to_counterparty WHERE hex(trx_id) = ?`, [del.entity_id])
         await execSQL(`DELETE FROM trx_note WHERE hex(trx_id) = ?`, [del.entity_id])

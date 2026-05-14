@@ -1,4 +1,5 @@
-import type { Account } from '../../types'
+import type { Account, TagContextOption } from '../../types'
+import type { LiveSearchOption } from '../ui'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { toLocalISOString } from '../../utils/dateUtils'
 import { formatAmount } from '../../utils/formatters';
@@ -17,6 +18,71 @@ export interface AccountOption extends Account {
 export interface SubmitOptions {
   addAnother?: boolean
 }
+
+export const encodeTagSelection = (tagId: number, contextId?: number | null): string =>
+  `${tagId}:${contextId ?? ''}`
+
+export const parseTagSelection = (value: string | number): { tagId: number; contextId: number | null } => {
+  const [tagPart, contextPart] = String(value).split(':')
+  return {
+    tagId: parseInt(tagPart, 10) || 0,
+    contextId: contextPart ? parseInt(contextPart, 10) || null : null,
+  }
+}
+
+export interface TagLiveSearchOption extends LiveSearchOption {
+  tagName: string
+  contextName: string | null
+}
+
+const normalizeTagContextOptions = (options: TagContextOption[]): TagContextOption[] => {
+  const contextualTagIds = new Set(
+    options
+      .filter(option => option.context_id !== null && option.context_id !== undefined)
+      .map(option => option.tag_id)
+  )
+  const contextualTagNames = new Set(
+    options
+      .filter(option => option.context_id !== null && option.context_id !== undefined)
+      .map(option => option.tag_name)
+  )
+  const contextNames = new Set(
+    options
+      .map(option => option.context_name)
+      .filter((name): name is string => !!name)
+  )
+  const emittedBranchParentNames = new Set<string>()
+  const emittedValues = new Set<string>()
+
+  return options.filter(option => {
+    const hasContext = option.context_id !== null && option.context_id !== undefined
+    if (!hasContext) {
+      return !contextualTagIds.has(option.tag_id)
+    }
+
+    if (option.context_name && contextualTagNames.has(option.context_name)) {
+      return false
+    }
+
+    if (contextNames.has(option.tag_name)) {
+      if (emittedBranchParentNames.has(option.tag_name)) return false
+      emittedBranchParentNames.add(option.tag_name)
+    }
+
+    const value = encodeTagSelection(option.tag_id, option.context_id)
+    if (emittedValues.has(value)) return false
+    emittedValues.add(value)
+    return true
+  })
+}
+
+export const toTagLiveSearchOptions = (options: TagContextOption[]) =>
+  normalizeTagContextOptions(options).map((option) => ({
+    value: encodeTagSelection(option.tag_id, option.context_id),
+    label: option.context_name ? `${option.tag_name} ${option.context_name}` : option.tag_name,
+    tagName: option.tag_name,
+    contextName: option.context_name,
+  }))
 
 export interface WalletOption {
   id: number

@@ -193,6 +193,60 @@ describe('Sync Integration', () => {
       expect(orphan!.parents).toEqual([])
     })
 
+    it('exports nested tag relations', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+
+      const parentId = insertTag({ name: 'SyncNestedParent', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const childId = insertTag({ name: 'SyncNestedChild', parent_ids: [parentId] })
+      const grandchildId = insertTag({ name: 'SyncNestedGrandchild', parent_ids: [childId] })
+
+      const pkg = await exportSyncPackage(0, 'sender-1')
+
+      const parent = pkg.tags.find(t => t.id === parentId)
+      const child = pkg.tags.find(t => t.id === childId)
+      const grandchild = pkg.tags.find(t => t.id === grandchildId)
+
+      expect(parent).toBeDefined()
+      expect(parent!.parents).toContain(SYSTEM_TAGS.EXPENSE)
+      expect(parent!.children).toContain(childId)
+      expect(child).toBeDefined()
+      expect(child!.parents).toContain(parentId)
+      expect(child!.children).toContain(grandchildId)
+      expect(grandchild).toBeDefined()
+      expect(grandchild!.parents).toContain(childId)
+    })
+
+    it('exports transaction line tag context', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+
+      const walletId = insertWallet({ name: 'ContextExportWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const parentId = insertTag({ name: 'ContextExportParent', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const childId = insertTag({ name: 'ContextExportChild', parent_ids: [parentId] })
+      const trxId = insertTransaction({
+        account_id: accountId,
+        tag_id: childId,
+        sign: '-',
+        amount_int: 12,
+        rate_int: 1,
+      })
+      const trxHex = Array.from(trxId).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+      const db = getTestDatabase()
+      db.run(
+        `INSERT INTO trx_base_tag_context (trx_base_id, tag_id)
+         SELECT id, ? FROM trx_base WHERE hex(trx_id) = ?`,
+        [parentId, trxHex]
+      )
+
+      const pkg = await exportSyncPackage(0, 'sender-1')
+      const trx = pkg.transactions.find(t => t.id === trxHex)
+
+      expect(trx).toBeDefined()
+      expect(trx!.lines[0].tag).toBe(childId)
+      expect(trx!.lines[0].tag_context).toBe(parentId)
+    })
+
     it('exports transactions without lines', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
@@ -447,6 +501,141 @@ describe('Sync Integration', () => {
       // Verify balance recalculated
       const balance = db.exec(`SELECT balance_int, balance_frac FROM account WHERE id = ${accountId}`)
       expect(balance[0]?.values[0]?.[0]).toBe(-50)
+    })
+
+    it('imports transaction line tag context', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'ContextImportWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const parentId = insertTag({ name: 'ContextImportParent', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const childId = insertTag({ name: 'ContextImportChild', parent_ids: [parentId] })
+      const trxId = 'C0A1C0A1C0A1C0A1'
+      const lineId = 'C0A2C0A2C0A2C0A2'
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [{
+          id: trxId,
+          timestamp: 1000,
+          updated_at: 1000,
+          counterparty: null,
+          note: null,
+          lines: [{
+            id: lineId,
+            account: accountId,
+            tag: childId,
+            tag_context: parentId,
+            sign: '-',
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 1,
+            rate_frac: 0,
+          }],
+        }],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.imported.transactions).toBe(1)
+
+      const db = getTestDatabase()
+      const context = db.exec(`SELECT tag_id FROM trx_base_tag_context WHERE hex(trx_base_id) = '${lineId}'`)
+      expect(context[0]?.values[0]?.[0]).toBe(parentId)
+    })
+
+    it('removes stale transaction line tag context during sync replacement', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'ContextReplaceWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const parentId = insertTag({ name: 'ContextReplaceParent', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const childId = insertTag({ name: 'ContextReplaceChild', parent_ids: [parentId] })
+      const trxId = 'C0B1C0B1C0B1C0B1'
+      const lineId = 'C0B2C0B2C0B2C0B2'
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+
+      await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [{
+          id: trxId,
+          timestamp: futureTs,
+          updated_at: futureTs,
+          counterparty: null,
+          note: null,
+          lines: [{
+            id: lineId,
+            account: accountId,
+            tag: childId,
+            tag_context: parentId,
+            sign: '-',
+            amount_int: 50,
+            amount_frac: 0,
+            rate_int: 1,
+            rate_frac: 0,
+          }],
+        }],
+        budgets: [],
+        deletions: [],
+      })
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs + 1,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [{
+          id: trxId,
+          timestamp: futureTs + 1,
+          updated_at: futureTs + 1,
+          counterparty: null,
+          note: null,
+          lines: [{
+            id: lineId,
+            account: accountId,
+            tag: childId,
+            sign: '-',
+            amount_int: 25,
+            amount_frac: 0,
+            rate_int: 1,
+            rate_frac: 0,
+          }],
+        }],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.imported.transactions).toBe(1)
+
+      const db = getTestDatabase()
+      const contexts = db.exec(`SELECT COUNT(*) FROM trx_base_tag_context WHERE hex(trx_base_id) = '${lineId}'`)
+      expect(contexts[0]?.values[0]?.[0]).toBe(0)
     })
 
     it('imports transactions with counterparty link', async () => {
@@ -898,6 +1087,45 @@ describe('Sync Integration', () => {
 
       const icon = db.exec(`SELECT icon_id FROM tag_icon WHERE tag_id = ${tagId}`)
       expect(icon[0]?.values).toHaveLength(1)
+    })
+
+    it('imports nested tag relations', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [
+          { id: 6100, name: 'RemoteNestedParent', updated_at: 1000, parents: [SYSTEM_TAGS.EXPENSE], children: [6101], icon: null },
+          { id: 6101, name: 'RemoteNestedChild', updated_at: 1000, parents: [6100], children: [6102], icon: null },
+          { id: 6102, name: 'RemoteNestedGrandchild', updated_at: 1000, parents: [6101], children: [], icon: null },
+        ],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.imported.tags).toBe(3)
+
+      const db = getTestDatabase()
+      const relations = db.exec(`
+        SELECT child_id, parent_id
+        FROM tag_to_tag
+        WHERE child_id IN (6100, 6101, 6102)
+        ORDER BY child_id, parent_id
+      `)
+      expect(relations[0]?.values).toEqual([
+        [6100, SYSTEM_TAGS.EXPENSE],
+        [6101, 6100],
+        [6102, 6101],
+      ])
     })
 
     it('updates existing tag with last-write-wins', async () => {

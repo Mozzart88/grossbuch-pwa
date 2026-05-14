@@ -32,6 +32,8 @@ export const transactionRepository = {
         a.symbol as symbol,
         a.decimal_places as decimal_places,
         tag.name as tags,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context,
         CASE WHEN EXISTS(
           SELECT 1 FROM tags_hierarchy th2
           WHERE th2.child_id = tag.id
@@ -46,6 +48,8 @@ export const transactionRepository = {
       JOIN trx_base tb ON tb.trx_id = t.id
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
       LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
       WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?
@@ -64,7 +68,7 @@ export const transactionRepository = {
     // Build a query similar to trx_log view but with filters
     const conditions: string[] = [
       `datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?`,
-      'tag_id NOT IN (?, ?, ?)'
+      'tb.tag_id NOT IN (?, ?, ?)'
     ]
     const params: unknown[] = [
       `${yearMonth}%`,
@@ -75,8 +79,28 @@ export const transactionRepository = {
 
     // Filter by tag_id
     if (filter.tagId !== undefined) {
-      conditions.push('tb.tag_id = ?')
-      params.push(filter.tagId)
+      if (filter.includeChildren) {
+        conditions.push(`(
+          tb.tag_id = ?
+          OR (
+            tb.tag_id IN (
+              WITH RECURSIVE descendants(id) AS (
+                SELECT child_id FROM tag_to_tag WHERE parent_id = ?
+                UNION
+                SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
+              )
+              SELECT id FROM descendants
+            )
+            ${filter.tagContextId ? 'AND (ctx.tag_id = ? OR ctx.tag_id IS NULL)' : ''}
+          )
+        )`)
+        params.push(filter.tagId, filter.tagId)
+        if (filter.tagContextId) params.push(filter.tagContextId)
+      } else {
+        conditions.push(`tb.tag_id = ?${filter.tagContextId ? ' AND (ctx.tag_id = ? OR ctx.tag_id IS NULL)' : ''}`)
+        params.push(filter.tagId)
+        if (filter.tagContextId) params.push(filter.tagContextId)
+      }
     }
 
     // Filter by counterparty_id (0 means "No counterparty" - NULL in database)
@@ -105,6 +129,8 @@ export const transactionRepository = {
         a.symbol as symbol,
         a.decimal_places as decimal_places,
         tag.name as tags,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context,
         CASE WHEN EXISTS(
           SELECT 1 FROM tags_hierarchy th2
           WHERE th2.child_id = tag.id
@@ -119,12 +145,13 @@ export const transactionRepository = {
       JOIN trx_base tb ON tb.trx_id = t.id
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
       LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
       WHERE ${conditions.join(' AND ')}
       ORDER BY t.timestamp DESC
     `
-
     return querySQL<TransactionLog>(sql, params)
   },
 
@@ -169,6 +196,8 @@ export const transactionRepository = {
         a.wallet,
         a.currency,
         tag.name as tag,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context,
         CASE WHEN EXISTS(
           SELECT 1 FROM tags_hierarchy th2
           WHERE th2.child_id = tag.id
@@ -177,6 +206,8 @@ export const transactionRepository = {
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       WHERE tb.trx_id = ?
     `, [id])
 
@@ -254,8 +285,28 @@ export const transactionRepository = {
 
     if (filter) {
       if (filter.tagId !== undefined) {
-        conditions.push('tb.tag_id = ?')
-        params.push(filter.tagId)
+        if (filter.includeChildren) {
+          conditions.push(`(
+            tb.tag_id = ?
+            OR (
+              tb.tag_id IN (
+                WITH RECURSIVE descendants(id) AS (
+                  SELECT child_id FROM tag_to_tag WHERE parent_id = ?
+                  UNION
+                  SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
+                )
+                SELECT id FROM descendants
+              )
+              ${filter.tagContextId ? 'AND (ctx.tag_id = ? OR ctx.tag_id IS NULL)' : ''}
+            )
+          )`)
+          params.push(filter.tagId, filter.tagId)
+          if (filter.tagContextId) params.push(filter.tagContextId)
+        } else {
+          conditions.push(`tb.tag_id = ?${filter.tagContextId ? ' AND (ctx.tag_id = ? OR ctx.tag_id IS NULL)' : ''}`)
+          params.push(filter.tagId)
+          if (filter.tagContextId) params.push(filter.tagContextId)
+        }
       }
       if (filter.counterpartyId !== undefined) {
         if (filter.counterpartyId === 0) {
@@ -284,6 +335,7 @@ export const transactionRepository = {
       FROM trx t
       JOIN trx_base tb ON tb.trx_id = t.id
       JOIN account a ON a.id = tb.account_id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
       LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
       LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
       WHERE ${conditions.join(' AND ')}
@@ -302,14 +354,13 @@ export const transactionRepository = {
     const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
 
     return querySQL<MonthlyTagSummary>(`
-      SELECT
-        tag_id,
-        tag,
-        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN sign = '-' THEN conv_amount ELSE 0 END), 0) as expense,
-        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE -conv_amount END), 0) as net
-      FROM (
-        SELECT tb.tag_id, tag.name as tag, tb.sign,
+      WITH line_values AS (
+        SELECT
+          tb.tag_id as own_tag_id,
+          tag.name as own_tag,
+          COALESCE(ctx.tag_id, CASE WHEN top_parent.parent_count = 1 THEN top_parent.parent_id ELSE NULL END) as rollup_tag_id,
+          COALESCE(ctx_tag.name, CASE WHEN top_parent.parent_count = 1 THEN top_parent.parent_name ELSE NULL END) as rollup_tag,
+          tb.sign,
           CASE WHEN a.currency_id = ?
             THEN (tb.amount_int + tb.amount_frac * 1e-18)
             ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
@@ -318,14 +369,67 @@ export const transactionRepository = {
         JOIN trx_base tb ON tb.trx_id = t.id
         JOIN account a ON a.id = tb.account_id
         JOIN tag ON tb.tag_id = tag.id
+        LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+        LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
+        LEFT JOIN (
+          SELECT
+            base.id as trx_base_id,
+            COUNT(DISTINCT root.child_id) as parent_count,
+            MIN(root.child_id) as parent_id,
+            MIN(root_tag.name) as parent_name
+          FROM trx_base base
+          JOIN tag_to_tag root ON root.parent_id IN (?, ?)
+            AND root.child_id IN (
+              WITH RECURSIVE ancestors(id, line_id) AS (
+                SELECT tag_id, id FROM trx_base
+                UNION
+                SELECT ttt.parent_id, ancestors.line_id
+                FROM tag_to_tag ttt
+                JOIN ancestors ON ancestors.id = ttt.child_id
+              )
+              SELECT id FROM ancestors WHERE line_id = base.id
+            )
+          JOIN tag root_tag ON root_tag.id = root.child_id
+          GROUP BY base.id
+        ) top_parent ON top_parent.trx_base_id = tb.id
         WHERE t.timestamp >= ? AND t.timestamp < ?
           AND (tb.rate_int > 0 OR tb.rate_frac > 0)
           AND tb.tag_id NOT IN (?, ?, ?)
-      ) sub
-      GROUP BY tag_id, tag
+      ),
+      summary_lines AS (
+        SELECT
+          own_tag_id as group_tag_id,
+          own_tag as group_tag,
+          CASE WHEN rollup_tag_id IS NOT NULL AND rollup_tag_id != own_tag_id THEN rollup_tag_id ELSE NULL END as group_context_id,
+          CASE WHEN rollup_tag_id IS NOT NULL AND rollup_tag_id != own_tag_id THEN rollup_tag ELSE NULL END as group_context,
+          sign,
+          conv_amount
+        FROM line_values
+        UNION ALL
+        SELECT
+          rollup_tag_id as group_tag_id,
+          rollup_tag as group_tag,
+          NULL as group_context_id,
+          NULL as group_context,
+          sign,
+          conv_amount
+        FROM line_values
+        WHERE rollup_tag_id IS NOT NULL AND rollup_tag_id != own_tag_id
+      )
+      SELECT
+        group_tag_id as tag_id,
+        group_tag as tag,
+        group_context_id as tag_context_id,
+        group_context as tag_context,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN sign = '-' THEN conv_amount ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE -conv_amount END), 0) as net
+      FROM summary_lines
+      GROUP BY group_tag_id, group_tag, group_context_id, group_context
       ORDER BY ABS(net) DESC
     `, [
       sysCurrencyId, sysRate,
+      SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE,
       startTs, endTs,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
     ])
@@ -384,27 +488,81 @@ export const transactionRepository = {
     const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
 
     return querySQL<MonthlyCategoryBreakdown>(`
-      SELECT
-        tb.tag_id,
-        tag.name as tag,
-        COALESCE(SUM(
+      WITH line_values AS (
+        SELECT
+          tb.tag_id as own_tag_id,
+          tag.name as own_tag,
+          COALESCE(ctx.tag_id, CASE WHEN top_parent.parent_count = 1 THEN top_parent.parent_id ELSE NULL END) as rollup_tag_id,
+          COALESCE(ctx_tag.name, CASE WHEN top_parent.parent_count = 1 THEN top_parent.parent_name ELSE NULL END) as rollup_tag,
           CASE WHEN a.currency_id = ?
             THEN (tb.amount_int + tb.amount_frac * 1e-18)
             ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
-          END
-        ), 0) as amount,
-        CASE WHEN tb.sign = '+' THEN 'income' ELSE 'expense' END as type
-      FROM trx t
-      JOIN trx_base tb ON tb.trx_id = t.id
-      JOIN account a ON a.id = tb.account_id
-      JOIN tag ON tb.tag_id = tag.id
-      WHERE t.timestamp >= ? AND t.timestamp < ?
-        AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        AND tb.tag_id NOT IN (?, ?, ?)
-      GROUP BY tb.tag_id, tag.name, tb.sign
+          END as conv_amount,
+          CASE WHEN tb.sign = '+' THEN 'income' ELSE 'expense' END as type
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN account a ON a.id = tb.account_id
+        JOIN tag ON tb.tag_id = tag.id
+        LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+        LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
+        LEFT JOIN (
+          SELECT
+            base.id as trx_base_id,
+            COUNT(DISTINCT root.child_id) as parent_count,
+            MIN(root.child_id) as parent_id,
+            MIN(root_tag.name) as parent_name
+          FROM trx_base base
+          JOIN tag_to_tag root ON root.parent_id IN (?, ?)
+            AND root.child_id IN (
+              WITH RECURSIVE ancestors(id, line_id) AS (
+                SELECT tag_id, id FROM trx_base
+                UNION
+                SELECT ttt.parent_id, ancestors.line_id
+                FROM tag_to_tag ttt
+                JOIN ancestors ON ancestors.id = ttt.child_id
+              )
+              SELECT id FROM ancestors WHERE line_id = base.id
+            )
+          JOIN tag root_tag ON root_tag.id = root.child_id
+          GROUP BY base.id
+        ) top_parent ON top_parent.trx_base_id = tb.id
+        WHERE t.timestamp >= ? AND t.timestamp < ?
+          AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+          AND tb.tag_id NOT IN (?, ?, ?)
+      ),
+      grouped_lines AS (
+        SELECT
+          own_tag_id as group_tag_id,
+          own_tag as group_tag,
+          CASE WHEN rollup_tag_id IS NOT NULL AND rollup_tag_id != own_tag_id THEN rollup_tag_id ELSE NULL END as group_context_id,
+          CASE WHEN rollup_tag_id IS NOT NULL AND rollup_tag_id != own_tag_id THEN rollup_tag ELSE NULL END as group_context,
+          conv_amount,
+          type
+        FROM line_values
+        UNION ALL
+        SELECT
+          rollup_tag_id as group_tag_id,
+          rollup_tag as group_tag,
+          NULL as group_context_id,
+          NULL as group_context,
+          conv_amount,
+          type
+        FROM line_values
+        WHERE rollup_tag_id IS NOT NULL AND rollup_tag_id != own_tag_id
+      )
+      SELECT
+        group_tag_id as tag_id,
+        group_tag as tag,
+        group_context_id as tag_context_id,
+        group_context as tag_context,
+        COALESCE(SUM(conv_amount), 0) as amount,
+        type
+      FROM grouped_lines
+      GROUP BY group_tag_id, group_tag, group_context_id, group_context, type
       ORDER BY amount DESC
     `, [
       sysCurrencyId, sysRate,
+      SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE,
       startTs, endTs,
       SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
     ])
@@ -479,15 +637,26 @@ export const transactionRepository = {
     )
     if (!lineResult) throw new Error('Failed to create transaction line')
 
+    if (line.tag_context_id) {
+      await execSQL(
+        'INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
+        [lineResult.id, line.tag_context_id]
+      )
+    }
+
     const result = await queryOne<TransactionLine>(`
       SELECT
         tb.*,
         a.wallet,
         a.currency,
-        tag.name as tag
+        tag.name as tag,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       WHERE tb.id = ?
     `, [lineResult.id])
 
@@ -539,15 +708,29 @@ export const transactionRepository = {
       )
     }
 
+    if (input.tag_context_id !== undefined) {
+      await execSQL('DELETE FROM trx_base_tag_context WHERE trx_base_id = ?', [lineId])
+      if (input.tag_context_id) {
+        await execSQL(
+          'INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
+          [lineId, input.tag_context_id]
+        )
+      }
+    }
+
     const result = await queryOne<TransactionLine>(`
       SELECT
         tb.*,
         a.wallet,
         a.currency,
-        tag.name as tag
+        tag.name as tag,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context
       FROM trx_base tb
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       WHERE tb.id = ?
     `, [lineId])
 
@@ -674,6 +857,8 @@ export const transactionRepository = {
     currency_code: string
     tag_id: number
     tag_name: string
+    tag_context_id: number | null
+    tag_context_name: string | null
     sign: '+' | '-'
     amount_int: number
     amount_frac: number
@@ -725,6 +910,8 @@ export const transactionRepository = {
         c.code as currency_code,
         tb.tag_id,
         tag.name as tag_name,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context_name,
         tb.sign,
         tb.amount_int,
         tb.amount_frac,
@@ -740,6 +927,8 @@ export const transactionRepository = {
       JOIN wallet w ON a.wallet_id = w.id
       JOIN currency c ON a.currency_id = c.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
       LEFT JOIN counterparty cp ON t2c.counterparty_id = cp.id
       LEFT JOIN trx_note tn ON tn.trx_id = t.id
@@ -771,6 +960,15 @@ export const transactionRepository = {
       INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac)
       VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?)
     `, [trxId, line.account_id, line.tag_id, line.sign, line.amount_int, line.amount_frac, line.rate_int ?? 0, line.rate_frac ?? 0])
+    if (line.tag_context_id) {
+      const lineResult = await queryOne<{ id: Uint8Array }>('SELECT id FROM trx_base ORDER BY rowid DESC LIMIT 1')
+      if (lineResult) {
+        await execSQL(
+          'INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
+          [lineResult.id, line.tag_context_id]
+        )
+      }
+    }
   },
 
   // Get transactions for a specific account and month (includes ALL transaction types)
@@ -785,6 +983,8 @@ export const transactionRepository = {
         a.symbol as symbol,
         a.decimal_places as decimal_places,
         tag.name as tags,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context,
         tb.amount_int as amount_int,
         tb.amount_frac as amount_frac,
         tb.sign as sign,
@@ -794,6 +994,8 @@ export const transactionRepository = {
       JOIN trx_base tb ON tb.trx_id = t.id
       JOIN accounts a ON tb.account_id = a.id
       JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
       LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
       LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
       WHERE datetime(t.timestamp, 'unixepoch', 'localtime') LIKE ?

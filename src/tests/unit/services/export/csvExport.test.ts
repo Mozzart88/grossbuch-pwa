@@ -32,6 +32,8 @@ describe('csvExport', () => {
     currency_code: 'USD',
     tag_id: 12,
     tag_name: 'food',
+    tag_context_id: null as number | null,
+    tag_context_name: null as string | null,
     sign: '-' as const,
     amount_int: 50,
     amount_frac: 250000000000000000,
@@ -50,7 +52,7 @@ describe('csvExport', () => {
       const result = await exportTransactionsToCSV()
       const headers = result.split('\n')[0]
 
-      expect(headers).toBe('date_time,trx_id,account_id,wallet,currency_code,tag_id,tag,amount,rate,counterparty_id,counterparty,note')
+      expect(headers).toBe('date_time,trx_id,account_id,wallet,currency_code,tag_id,tag,tag_context_id,tag_context,amount,rate,counterparty_id,counterparty,note')
     })
 
     it('includes transaction data in CSV', async () => {

@@ -4,7 +4,7 @@ import { useLayoutContext } from '../store/LayoutContext'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
-import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast } from '../components/ui'
+import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast, ChevronIcon } from '../components/ui'
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrencyValue } from '../utils/formatters'
@@ -17,6 +17,7 @@ import type {
   Budget,
   BudgetInput,
   Tag,
+  TagHierarchy,
 } from '../types'
 import { SYSTEM_TAGS } from '../types'
 import { useDataRefresh } from '../hooks/useDataRefresh'
@@ -26,6 +27,11 @@ const TABS = [
   { id: 'tags', label: 'By Tags' },
   { id: 'counterparties', label: 'By Counterparties' },
 ]
+
+type SummaryTreeItem = {
+  tag_id: number
+  tag_context_id?: number | null
+}
 
 export function SummariesPage() {
   const navigate = useNavigate()
@@ -58,6 +64,8 @@ export function SummariesPage() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
+  const [tagHierarchy, setTagHierarchy] = useState<TagHierarchy[]>([])
+  const [expandedSummaryTagIds, setExpandedSummaryTagIds] = useState<Set<number>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [selectedBudgetType, setSelectedBudgetType] = useState<'income' | 'expense'>('expense')
@@ -108,7 +116,7 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, hierarchy] = await Promise.all([
         transactionRepository.getMonthSummary(month),
         accountRepository.getTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
@@ -117,6 +125,7 @@ export function SummariesPage() {
         budgetRepository.findByMonth(month),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
+        tagRepository.getHierarchy?.() ?? Promise.resolve([]),
       ])
 
       setSummary({
@@ -133,6 +142,11 @@ export function SummariesPage() {
       setBudgets(monthBudgets)
       setIncomeTags((allIncomeTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
       setExpenseTags((allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setTagHierarchy(hierarchy)
+      setExpandedSummaryTagIds(prev => {
+        if (prev.size > 0) return prev
+        return new Set(hierarchy.map(h => h.parent_id))
+      })
     } catch (error) {
       console.error('Failed to load summaries:', error)
     } finally {
@@ -149,18 +163,31 @@ export function SummariesPage() {
   }
 
   // Navigation handlers for clicking cards
-  const handleTagClick = useCallback((tagId: number) => {
-    navigate(`/?month=${month}&tag=${tagId}`)
-  }, [month, navigate])
+  const buildTagFilterUrl = useCallback((type: 'income' | 'expense' | null, tagId: number, includeChildren = false, tagContextId?: number | null) => {
+    const params = new URLSearchParams()
+    params.set('month', month)
+    if (type) params.set('type', type)
+    params.set('tag', tagId.toString())
+    if (includeChildren) params.set('includeChildren', '1')
+    if (tagContextId) params.set('tagContext', tagContextId.toString())
+    return `/?${params.toString()}`
+  }, [month])
+
+  const handleTagClick = useCallback((tagId: number, includeChildren = false, tagContextId?: number | null) => {
+    navigate(buildTagFilterUrl(null, tagId, includeChildren, tagContextId))
+  }, [buildTagFilterUrl, navigate])
 
   const handleCounterpartyClick = useCallback((counterpartyId: number) => {
     navigate(`/?month=${month}&counterparty=${counterpartyId}`)
   }, [month, navigate])
 
-  const handleCategoryClick = useCallback((type: 'income' | 'expense', tagId?: number) => {
-    const uri = `/?month=${month}&type=${type}${tagId === undefined ? '' : `&tag=${tagId}`}`
-    navigate(uri)
-  }, [month, navigate])
+  const handleCategoryClick = useCallback((type: 'income' | 'expense', tagId?: number, includeChildren = false, tagContextId?: number | null) => {
+    if (tagId === undefined) {
+      navigate(`/?month=${month}&type=${type}`)
+      return
+    }
+    navigate(buildTagFilterUrl(type, tagId, includeChildren, tagContextId))
+  }, [buildTagFilterUrl, month, navigate])
 
   // Budget helpers
   const budgetType = (budget: Budget): 'income' | 'expense' => budget.type ?? 'expense'
@@ -302,6 +329,8 @@ export function SummariesPage() {
       .map(b => ({
         tag_id: b.tag_id,
         tag: b.tag || '',
+        tag_context_id: null,
+        tag_context: null,
         amount: 0,
         type,
       }))
@@ -309,8 +338,96 @@ export function SummariesPage() {
     return [...categoriesFromBreakdown, ...budgetOnlyCategories]
   }
 
-  const incomeCategories = buildBudgetCategories('income')
-  const expenseCategories = buildBudgetCategories('expense')
+  const getHierarchyTagName = (tagId: number): string =>
+    tagHierarchy.find(h => h.parent_id === tagId)?.parent
+    || tagHierarchy.find(h => h.child_id === tagId)?.child
+    || incomeTags.find(t => t.id === tagId)?.name
+    || expenseTags.find(t => t.id === tagId)?.name
+    || ''
+
+  const isTopLevelCategoryTag = (tagId: number): boolean =>
+    tagHierarchy.some(h =>
+      h.child_id === tagId &&
+      (h.parent_id === SYSTEM_TAGS.INCOME || h.parent_id === SYSTEM_TAGS.EXPENSE)
+    )
+
+  const getAncestorIdsForTree = (tagId: number, validIds?: Set<number>, contextId?: number | null): number[] => {
+    const result: number[] = []
+    const visit = (childId: number) => {
+      tagHierarchy
+        .filter(h => h.child_id === childId)
+        .forEach(h => {
+          if (h.parent_id === SYSTEM_TAGS.INCOME || h.parent_id === SYSTEM_TAGS.EXPENSE || h.parent_id === SYSTEM_TAGS.SYSTEM || h.parent_id === SYSTEM_TAGS.DEFAULT) {
+            return
+          }
+          if (contextId !== null && contextId !== undefined && h.parent_id === contextId) {
+            return
+          }
+          if (!validIds || validIds.has(h.parent_id)) {
+            result.push(h.parent_id)
+          }
+          visit(h.parent_id)
+        })
+    }
+    visit(tagId)
+    return result
+  }
+
+  const summaryItemKey = (item: SummaryTreeItem): string => `${item.tag_id}:${item.tag_context_id ?? ''}`
+
+  const withSummaryAncestors = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
+    const byId = new Map(items.map(item => [summaryItemKey(item), { ...item }]))
+    for (const item of items) {
+      for (const ancestorId of getAncestorIdsForTree(item.tag_id, undefined, item.tag_context_id ?? null)) {
+        const ancestorKey = summaryItemKey({ tag_id: ancestorId, tag_context_id: item.tag_context_id ?? null })
+        const existing = byId.get(ancestorKey)
+        if (existing) {
+          existing.income += item.income
+          existing.expense += item.expense
+          existing.net += item.net
+        } else {
+          byId.set(ancestorKey, {
+            tag_id: ancestorId,
+            tag: getHierarchyTagName(ancestorId),
+            tag_context_id: item.tag_context_id ?? null,
+            tag_context: item.tag_context ?? null,
+            income: item.income,
+            expense: item.expense,
+            net: item.net,
+          })
+        }
+      }
+    }
+    return Array.from(byId.values())
+  }
+
+  const withCategoryAncestors = (items: MonthlyCategoryBreakdown[], type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
+    const typeTagIds = new Set((type === 'income' ? incomeTags : expenseTags).map(t => t.id))
+    const byId = new Map(items.map(item => [summaryItemKey(item), { ...item }]))
+    for (const item of items) {
+      for (const ancestorId of getAncestorIdsForTree(item.tag_id, typeTagIds.size ? typeTagIds : undefined, item.tag_context_id ?? null)) {
+        const ancestorKey = summaryItemKey({ tag_id: ancestorId, tag_context_id: item.tag_context_id ?? null })
+        const existing = byId.get(ancestorKey)
+        if (existing) {
+          existing.amount += item.amount
+        } else {
+          byId.set(ancestorKey, {
+            tag_id: ancestorId,
+            tag: getHierarchyTagName(ancestorId),
+            tag_context_id: item.tag_context_id ?? null,
+            tag_context: item.tag_context ?? null,
+            amount: item.amount,
+            type,
+          })
+        }
+      }
+    }
+    return Array.from(byId.values())
+  }
+
+  const tagsSummaryWithAncestors = withSummaryAncestors(tagsSummary)
+  const incomeCategories = withCategoryAncestors(buildBudgetCategories('income'), 'income')
+  const expenseCategories = withCategoryAncestors(buildBudgetCategories('expense'), 'expense')
   const incomeBudgets = budgets.filter(b => budgetType(b) === 'income')
   const expenseBudgets = budgets.filter(b => budgetType(b) === 'expense')
   const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
@@ -323,6 +440,36 @@ export function SummariesPage() {
   const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
   const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
   const typeTags = selectedBudgetType === 'income' ? incomeTags : expenseTags
+
+  const toggleSummaryTag = (tagId: number) => {
+    setExpandedSummaryTagIds(prev => {
+      const next = new Set(prev)
+      if (next.has(tagId)) next.delete(tagId)
+      else next.add(tagId)
+      return next
+    })
+  }
+
+  const getChildIds = useCallback((tagId: number): number[] =>
+    tagHierarchy
+      .filter(h => h.parent_id === tagId)
+      .map(h => h.child_id),
+  [tagHierarchy])
+
+  const getBranchContextId = (root: SummaryTreeItem): number | null =>
+    root.tag_context_id ?? (isTopLevelCategoryTag(root.tag_id) ? root.tag_id : null)
+
+  const getChildItems = <T extends SummaryTreeItem>(parent: T, allItems: T[], branchContextId: number | null): T[] =>
+    getChildIds(parent.tag_id)
+      .flatMap(childId => allItems.filter(item =>
+        item.tag_id === childId &&
+        (branchContextId === null
+          ? (item.tag_context_id ?? null) === null
+          : item.tag_context_id === branchContextId)
+      ))
+
+  const getTopLevelSummaryItems = <T extends SummaryTreeItem>(items: T[]): T[] =>
+    items.filter(item => (item.tag_context_id ?? null) === null)
 
   const sectionProgress = (actual: number, budget: number): number => {
     if (budget <= 0) return actual > 0 ? 100 : 0
@@ -339,6 +486,12 @@ export function SummariesPage() {
     if (progress >= 80) return 'bg-yellow-500'
     return 'bg-green-500'
   }
+
+  const renderBudgetCategoryCard = (type: 'income' | 'expense', root: MonthlyCategoryBreakdown, allCategories: MonthlyCategoryBreakdown[]): React.ReactNode => (
+    <Card key={`${type}-root-${summaryItemKey(root)}`} className="divide-y divide-gray-200 dark:divide-gray-700">
+      {renderCategoryTree(type, [root], allCategories)}
+    </Card>
+  )
 
   const renderBudgetSection = (
     type: 'income' | 'expense',
@@ -367,33 +520,93 @@ export function SummariesPage() {
           categories.length === 0 ? (
             <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No {title.toLowerCase()} this month</p>
           ) : (
-            <div className="space-y-2">
-              {categories.map((cat) => {
-                const budget = getBudgetForTag(cat.tag_id, type)
-                const sectionTags = type === 'income' ? incomeTags : expenseTags
-                const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
-                return (
-                  <CategoryCard
-                    key={`${type}-${cat.tag_id}`}
-                    title={cat.tag}
-                    amount={cat.amount}
-                    total={type === 'income' ? summary.income : summary.expenses}
-                    currencySymbol={currencySymbol}
-                    decimalPlaces={decimalPlaces}
-                    type={type}
-                    onClick={() => handleCategoryClick(type, cat.tag_id)}
-                    budget={budget}
-                    onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount) : undefined}
-                    onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, budget) : undefined}
-                    onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
-                  />
-                )
-              })}
+            <div className="space-y-4">
+              {getTopLevelSummaryItems(categories).map(root => renderBudgetCategoryCard(type, root, categories))}
             </div>
           )
         )}
       </div>
     )
+  }
+
+  const renderTagsSummaryTree = (items: MonthlyTagSummary[], allItems = tagsSummaryWithAncestors, depth = 0, branchContextId: number | null = null): React.ReactNode => {
+    return items.flatMap(tag => {
+      const currentBranchContextId = depth === 0 ? getBranchContextId(tag) : branchContextId
+      const children = getChildItems(tag, allItems, currentBranchContextId)
+      const hasVisibleChildren = children.length > 0
+      const expanded = expandedSummaryTagIds.has(tag.tag_id)
+      const row = (
+          <SummaryCard
+            key={`tag-${summaryItemKey(tag)}`}
+            asRow
+            title={tag.tag}
+            income={tag.income}
+            expense={tag.expense}
+            net={tag.net}
+            currencySymbol={currencySymbol}
+            decimalPlaces={decimalPlaces}
+            depth={depth}
+            hasChildren={hasVisibleChildren}
+            expanded={expanded}
+            onClick={() => hasVisibleChildren ? toggleSummaryTag(tag.tag_id) : handleTagClick(tag.tag_id, false, tag.tag_context_id)}
+            onTitleClick={hasVisibleChildren ? () => handleTagClick(tag.tag_id, true, currentBranchContextId) : undefined}
+          />
+      )
+      return hasVisibleChildren && expanded
+        ? [row, renderTagsSummaryTree(children, allItems, depth + 1, currentBranchContextId)]
+        : [row]
+    })
+  }
+
+  const renderTagSummaryCard = (root: MonthlyTagSummary): React.ReactNode => (
+    <Card key={`tag-root-${summaryItemKey(root)}`} className="divide-y divide-gray-200 dark:divide-gray-700">
+      {renderTagsSummaryTree([root], tagsSummaryWithAncestors)}
+    </Card>
+  )
+
+  const renderCategoryTree = (
+    type: 'income' | 'expense',
+    categories: MonthlyCategoryBreakdown[],
+    allCategories = categories,
+    depth = 0,
+    branchContextId: number | null = null
+  ): React.ReactNode => {
+    const currentItems = depth === 0
+      ? getTopLevelSummaryItems(categories)
+      : categories
+    return currentItems.flatMap(cat => {
+      const currentBranchContextId = depth === 0 ? getBranchContextId(cat) : branchContextId
+      const children = getChildItems(cat, allCategories, currentBranchContextId)
+      const hasVisibleChildren = children.length > 0
+      const expanded = expandedSummaryTagIds.has(cat.tag_id)
+      const budget = getBudgetForTag(cat.tag_id, type)
+      const sectionTags = type === 'income' ? incomeTags : expenseTags
+      const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
+      const row = (
+          <CategoryCard
+            key={`${type}-${summaryItemKey(cat)}`}
+            asRow
+            title={cat.tag}
+            amount={cat.amount}
+            total={type === 'income' ? summary.income : summary.expenses}
+            currencySymbol={currencySymbol}
+            decimalPlaces={decimalPlaces}
+            type={type}
+            depth={depth}
+            hasChildren={hasVisibleChildren}
+            expanded={expanded}
+            onClick={() => hasVisibleChildren ? toggleSummaryTag(cat.tag_id) : handleCategoryClick(type, cat.tag_id, false, cat.tag_context_id)}
+            onTitleClick={hasVisibleChildren ? () => handleCategoryClick(type, cat.tag_id, true, currentBranchContextId) : undefined}
+            budget={budget}
+            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount) : undefined}
+            onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, budget) : undefined}
+            onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
+          />
+      )
+      return hasVisibleChildren && expanded
+        ? [row, renderCategoryTree(type, children, allCategories, depth + 1, currentBranchContextId)]
+        : [row]
+    })
   }
 
   return (
@@ -414,18 +627,9 @@ export function SummariesPage() {
               {tagsSummary.length === 0 ? (
                 <EmptyState message="No transactions this month" />
               ) : (
-                tagsSummary.map((tag) => (
-                  <SummaryCard
-                    key={tag.tag_id}
-                    title={tag.tag}
-                    income={tag.income}
-                    expense={tag.expense}
-                    net={tag.net}
-                    currencySymbol={currencySymbol}
-                    decimalPlaces={decimalPlaces}
-                    onClick={() => handleTagClick(tag.tag_id)}
-                  />
-                ))
+                <div className="space-y-4">
+                  {getTopLevelSummaryItems(tagsSummaryWithAncestors).map(renderTagSummaryCard)}
+                </div>
               )}
             </>
           )}
@@ -542,6 +746,7 @@ function EmptyState({ message }: { message: string }) {
 
 // Summary card for tags and counterparties
 interface SummaryCardProps {
+  asRow?: boolean
   title: string
   income: number
   expense: number
@@ -549,21 +754,42 @@ interface SummaryCardProps {
   currencySymbol: string
   decimalPlaces: number
   onClick: () => void
+  onTitleClick?: () => void
+  depth?: number
+  hasChildren?: boolean
+  expanded?: boolean
 }
 
-function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlaces, onClick }: SummaryCardProps) {
+function SummaryCard({ asRow = false, title, income, expense, net, currencySymbol, decimalPlaces, onClick, onTitleClick, depth = 0, hasChildren = false, expanded = false }: SummaryCardProps) {
   const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
-
-  return (
-    <Card className={`p-4 ${clickableStyles}`} onClick={onClick}>
+  const content = (
+    <>
       <div className="flex items-center justify-between mb-2">
-        <h4 className="font-medium text-gray-900 dark:text-gray-100">{title}</h4>
+        <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 16 }}>
+          <span className="w-4 shrink-0 text-gray-400">
+            {hasChildren ? <ChevronIcon expanded={expanded} /> : null}
+          </span>
+          {onTitleClick ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onTitleClick()
+              }}
+              className="truncate font-medium text-gray-900 dark:text-gray-100 hover:text-primary-600 dark:hover:text-primary-400"
+            >
+              {title}
+            </button>
+          ) : (
+            <h4 className="truncate font-medium text-gray-900 dark:text-gray-100">{title}</h4>
+          )}
+        </div>
         <span className={`text-sm font-semibold ${net >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
           {formatCurrencyValue(net, currencySymbol, decimalPlaces)}
         </span>
       </div>
       {income > 0 && expense > 0 &&
-        <div className="flex gap-4 text-sm">
+        <div className="flex gap-4 text-sm" style={{ paddingLeft: depth * 16 + 24 }}>
           <div>
             <span className="text-gray-500 dark:text-gray-400">In: </span>
             <span className="text-green-600 dark:text-green-400">{formatCurrencyValue(income, currencySymbol, decimalPlaces)}</span>
@@ -574,12 +800,27 @@ function SummaryCard({ title, income, expense, net, currencySymbol, decimalPlace
           </div>
         </div>
       }
+    </>
+  )
+
+  if (asRow) {
+    return (
+      <div className={`px-4 py-3 ${clickableStyles}`} onClick={onClick}>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <Card className={`p-4 ${clickableStyles}`} onClick={onClick}>
+      {content}
     </Card>
   )
 }
 
 // Category card for income/expense breakdown with progress bar
 interface CategoryCardProps {
+  asRow?: boolean
   title: string
   amount: number
   total: number
@@ -587,13 +828,17 @@ interface CategoryCardProps {
   decimalPlaces: number
   type: 'income' | 'expense'
   onClick: () => void
+  onTitleClick?: () => void
+  depth?: number
+  hasChildren?: boolean
+  expanded?: boolean
   budget?: Budget
   onSetBudget?: () => void
   onAdjustBudget?: () => void
   onDeleteBudget?: () => void
 }
 
-function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, type, onClick, budget, onSetBudget, onAdjustBudget, onDeleteBudget }: CategoryCardProps) {
+function CategoryCard({ asRow = false, title, amount, total, currencySymbol, decimalPlaces, type, onClick, onTitleClick, depth = 0, hasChildren = false, expanded = false, budget, onSetBudget, onAdjustBudget, onDeleteBudget }: CategoryCardProps) {
   const clickableStyles = 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 active:bg-gray-100 dark:active:bg-gray-800 transition-colors'
 
   // Calculate progress based on whether we have a budget
@@ -644,10 +889,28 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
     dropdownItems.push({ label: 'Delete budget', onClick: onDeleteBudget, variant: 'danger' as const })
   }
 
-  return (
-    <Card className={`p-3 ${clickableStyles}`} onClick={onClick}>
+  const content = (
+    <>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</span>
+        <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: depth * 16 }}>
+          <span className="w-4 shrink-0 text-gray-400">
+            {hasChildren ? <ChevronIcon expanded={expanded} /> : null}
+          </span>
+          {onTitleClick ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onTitleClick()
+              }}
+              className="truncate text-sm font-medium text-gray-900 dark:text-gray-100 hover:text-primary-600 dark:hover:text-primary-400"
+            >
+              {title}
+            </button>
+          ) : (
+            <span className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{title}</span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <span className={`text-sm font-semibold ${type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
             {hasBudget
@@ -670,6 +933,20 @@ function CategoryCard({ title, amount, total, currencySymbol, decimalPlaces, typ
           {progress.toFixed(0)}%
         </span>
       </div>
+    </>
+  )
+
+  if (asRow) {
+    return (
+      <div className={`px-4 py-3 ${clickableStyles}`} onClick={onClick}>
+        {content}
+      </div>
+    )
+  }
+
+  return (
+    <Card className={`p-3 ${clickableStyles}`} onClick={onClick}>
+      {content}
     </Card>
   )
 }

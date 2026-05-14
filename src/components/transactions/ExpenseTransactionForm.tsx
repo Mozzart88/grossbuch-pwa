@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import type { Tag, Counterparty, Transaction, TransactionLine, Currency } from '../../types'
+import type { Tag, TagContextOption, Counterparty, Transaction, TransactionLine, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, walletRepository, transactionRepository } from '../../services/repositories'
 import { Button, Select, LiveSearch, DateTimeUI, Modal, Badge, AmountInput } from '../ui'
@@ -19,6 +19,10 @@ import {
   getAccountsForWallet,
   getDefaultAccountForWallet,
   formatAccountOptionLabel,
+  encodeTagSelection,
+  parseTagSelection,
+  toTagLiveSearchOptions,
+  type TagLiveSearchOption,
 } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
@@ -49,6 +53,7 @@ interface ExpenseTransactionFormProps {
   currencies: Currency[]
   activeCurrencies: Currency[]
   expenseTags: Tag[]
+  expenseTagOptions?: TagContextOption[]
   commonTags: Tag[]
   counterparties: Counterparty[]
   defaultAccountId: string
@@ -76,6 +81,7 @@ export function ExpenseTransactionForm({
   currencies,
   activeCurrencies,
   expenseTags,
+  expenseTagOptions,
   commonTags,
   counterparties,
   defaultAccountId,
@@ -138,7 +144,7 @@ export function ExpenseTransactionForm({
       }
       setSubEntries(expenseLines.map((l, i) => ({
         id: `sub-${i + 1}`,
-        tagId: l.tag_id.toString(),
+        tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
         newTagName: '',
         newTagType: 'expense' as const,
         amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
@@ -177,7 +183,7 @@ export function ExpenseTransactionForm({
     if (plainLines.length > 0) {
       setSubEntries(plainLines.map((l: TransactionLine, i: number) => ({
         id: `sub-${i + 1}`,
-        tagId: l.tag_id.toString(),
+        tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
         newTagName: '',
         newTagType: 'expense' as const,
         amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
@@ -300,22 +306,25 @@ export function ExpenseTransactionForm({
   // Tags sorted by counterparty affinity
   const sortedTagsOptions = (() => {
     const cId = counterpartyId ? parseInt(counterpartyId) : 0
-    const res: { value: number, label: string }[] = []
+    const allOptions = expenseTagOptions?.length
+      ? toTagLiveSearchOptions(expenseTagOptions)
+      : expenseTags.map(t => ({ value: encodeTagSelection(t.id, null), label: t.name, tagName: t.name, contextName: null }))
+    const res: TagLiveSearchOption[] = []
     if (cId) {
       const cp = counterparties.find(c => c.id === cId)
       expenseTags
         .filter(t => cp?.tag_ids?.includes(t.id))
         .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-        .forEach(t => res.push({ value: t.id, label: t.name }))
+        .forEach(t => {
+          allOptions.filter(o => parseTagSelection(o.value).tagId === t.id).forEach(o => res.push(o))
+        })
     }
-    expenseTags
-      .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-      .forEach(t => { if (!res.find(r => r.value === t.id)) res.push({ value: t.id, label: t.name }) })
+    allOptions.forEach(o => { if (!res.find(r => r.value === o.value)) res.push(o) })
     return res
   })()
 
   const sortedCounterpartiesOptions = (() => {
-    const tId = subEntries[0]?.tagId ? parseInt(subEntries[0].tagId) : 0
+    const tId = subEntries[0]?.tagId ? parseTagSelection(subEntries[0].tagId).tagId : 0
     const res: { value: number, label: string }[] = []
     if (tId) {
       counterparties
@@ -427,7 +436,7 @@ export function ExpenseTransactionForm({
     setSubmitting(true)
     try {
       // Resolve sub-entry tag IDs (create new tags if pending)
-      const resolvedSubTagIds: Record<string, number> = {}
+      const resolvedSubTagIds: Record<string, { tagId: number; contextId: number | null }> = {}
       for (const entry of subEntries) {
         if (entry.newTagName && !entry.tagId) {
           const parentIds =
@@ -440,9 +449,10 @@ export function ExpenseTransactionForm({
             name: entry.newTagName.trim(),
             parent_ids: parentIds,
           })
-          resolvedSubTagIds[entry.id] = newTag.id
+          resolvedSubTagIds[entry.id] = { tagId: newTag.id, contextId: null }
         } else if (entry.tagId) {
-          resolvedSubTagIds[entry.id] = parseInt(entry.tagId)
+          const parsed = parseTagSelection(entry.tagId)
+          resolvedSubTagIds[entry.id] = { tagId: parsed.tagId, contextId: parsed.contextId }
         }
       }
 
@@ -450,7 +460,7 @@ export function ExpenseTransactionForm({
       const accountRateData = isDateInPast(datetime)
         ? await getRateForDate(accountCurrencyId, toDateString(datetime))
         : await currencyRepository.getRateForCurrency(accountCurrencyId)
-      const primaryTagIdsForCp = Object.values(resolvedSubTagIds).filter(id => id > 0)
+      const primaryTagIdsForCp = Object.values(resolvedSubTagIds).map(v => v.tagId).filter(id => id > 0)
 
       let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
       if (counterpartyName && !counterpartyId) {
@@ -468,6 +478,7 @@ export function ExpenseTransactionForm({
       const lines: {
         account_id: number
         tag_id: number
+        tag_context_id?: number | null
         sign: '+' | '-'
         amount_int: number
         amount_frac: number
@@ -518,12 +529,13 @@ export function ExpenseTransactionForm({
           rate_frac: targetRateData.frac,
         })
         for (const entry of subEntries) {
-          const subTagId = resolvedSubTagIds[entry.id] || 0
+          const subTag = resolvedSubTagIds[entry.id] || { tagId: 0, contextId: null }
           const subAmountStr = isExpenseMainEditable ? amount : entry.amount
           const subAmountIF = toAmountIntFrac(subAmountStr)
           lines.push({
             account_id: targetAccount.id,
-            tag_id: subTagId,
+            tag_id: subTag.tagId,
+            tag_context_id: subTag.contextId,
             sign: '-',
             amount_int: subAmountIF.int,
             amount_frac: subAmountIF.frac,
@@ -552,12 +564,13 @@ export function ExpenseTransactionForm({
       } else {
         const accId = parseInt(accountId)
         for (const entry of subEntries) {
-          const subTagId = resolvedSubTagIds[entry.id] || 0
+          const subTag = resolvedSubTagIds[entry.id] || { tagId: 0, contextId: null }
           const subAmountStr = isExpenseMainEditable ? amount : entry.amount
           const subAmountIF = toAmountIntFrac(subAmountStr)
           lines.push({
             account_id: accId,
-            tag_id: subTagId,
+            tag_id: subTag.tagId,
+            tag_context_id: subTag.contextId,
             sign: '-',
             amount_int: subAmountIF.int,
             amount_frac: subAmountIF.frac,
@@ -730,6 +743,20 @@ export function ExpenseTransactionForm({
                 value={entry.tagId}
                 onChange={(v) => updateSubEntry(entry.id, { tagId: `${v}`, newTagName: '' })}
                 options={sortedTagsOptions}
+                renderOption={(option) => {
+                  const tagOption = option as TagLiveSearchOption
+                  return (
+                    <span className="inline-flex items-center">
+                      <span>{tagOption.tagName ?? option.label}</span>
+                      {tagOption.contextName && <Badge variant="secondary">{tagOption.contextName}</Badge>}
+                    </span>
+                  )
+                }}
+                getDisplayValue={(option) => (option as TagLiveSearchOption).tagName ?? option.label}
+                renderSelectedBadge={(option) => {
+                  const contextName = (option as TagLiveSearchOption).contextName
+                  return contextName ? <Badge variant="secondary" className="ml-0">{contextName}</Badge> : null
+                }}
                 placeholder="Select category"
                 onCreateNew={(name) => {
                   updateSubEntry(entry.id, { newTagName: name, tagId: '' })

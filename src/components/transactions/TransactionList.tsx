@@ -39,6 +39,8 @@ export function TransactionList() {
   // Get filter params from URL
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tagParam = searchParams.get('tag')
+  const tagContextParam = searchParams.get('tagContext')
+  const includeChildrenParam = searchParams.get('includeChildren')
   const counterpartyParam = searchParams.get('counterparty')
   const typeParam = searchParams.get('type') as 'income' | 'expense' | null
   const dataVersion = useDataRefresh()
@@ -61,6 +63,8 @@ export function TransactionList() {
   const filter: TransactionFilter | undefined = (tagParam || counterpartyParam !== null || typeParam)
     ? {
       tagId: tagParam ? parseInt(tagParam, 10) : undefined,
+      tagContextId: tagContextParam ? parseInt(tagContextParam, 10) : undefined,
+      includeChildren: includeChildrenParam === '1',
       counterpartyId: counterpartyParam !== null ? parseInt(counterpartyParam, 10) : undefined,
       type: typeParam || undefined,
     }
@@ -87,7 +91,7 @@ export function TransactionList() {
 
   useEffect(() => {
     loadData()
-  }, [month, tagParam, counterpartyParam, typeParam, dataVersion])
+  }, [month, tagParam, tagContextParam, includeChildrenParam, counterpartyParam, typeParam, dataVersion])
 
   const loadData = async () => {
     setLoading(true)
@@ -107,7 +111,7 @@ export function TransactionList() {
       let filterDisplayName: string | null = null
       if (tagParam) {
         const tag = await tagRepository.findById(parseInt(tagParam, 10))
-        filterDisplayName = tag ? `Tag: ${tag.name}` : null
+        filterDisplayName = tag ? `Tag: ${tag.name}${includeChildrenParam === '1' ? ' and sub-tags' : ''}` : null
       } else if (counterpartyParam !== null) {
         const cpId = parseInt(counterpartyParam, 10)
         if (cpId === 0) {
