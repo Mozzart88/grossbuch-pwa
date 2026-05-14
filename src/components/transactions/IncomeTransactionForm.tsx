@@ -1,35 +1,54 @@
 import { useState, useEffect, useRef } from 'react'
-import type { Tag, Counterparty, Transaction, TransactionLine } from '../../types'
+import type { Tag, TagContextOption, Counterparty, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput } from '../ui'
+import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput, Badge } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption } from './transactionFormShared'
-import { getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import type { AccountOption, SubmitOptions } from './transactionFormShared'
+import {
+  getPlaceholder,
+  formatBalance,
+  toAmountIntFrac,
+  toDateString,
+  isDateInPast,
+  getWalletOptions,
+  getSelectedWalletId,
+  getAccountsForWallet,
+  getDefaultAccountForWallet,
+  formatAccountOptionLabel,
+  encodeTagSelection,
+  parseTagSelection,
+  toTagLiveSearchOptions,
+  type TagLiveSearchOption,
+} from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface IncomeTransactionFormProps {
   accounts: AccountOption[]
   incomeTags: Tag[]
+  incomeTagOptions?: TagContextOption[]
   counterparties: Counterparty[]
   defaultAccountId: string
   initialData?: Transaction
-  onSubmit: () => void
+  onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
+  showAddAnother?: boolean
 }
 
 export function IncomeTransactionForm({
   accounts,
   incomeTags,
+  incomeTagOptions,
   counterparties,
   defaultAccountId,
   initialData,
   onSubmit,
   onCancel,
   useActionBar = false,
+  showAddAnother = false,
 }: IncomeTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -46,6 +65,7 @@ export function IncomeTransactionForm({
   const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [addAnother, setAddAnother] = useState(false)
 
   // Populate from initial data
   useEffect(() => {
@@ -54,7 +74,7 @@ export function IncomeTransactionForm({
     const firstLine = lines[0]
     setDateTime(new Date(initialData.timestamp * 1000).getTime())
     setAccountId(firstLine.account_id.toString())
-    setTagId(firstLine.tag_id.toString())
+    setTagId(encodeTagSelection(firstLine.tag_id, firstLine.tag_context_id))
     setNote(initialData.note || '')
     setAmount(fromIntFrac(firstLine.amount_int, firstLine.amount_frac).toString())
     if (initialData.counterparty_id) {
@@ -77,27 +97,50 @@ export function IncomeTransactionForm({
   }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
+  const walletOptions = getWalletOptions(accounts)
+  const selectedWalletId = getSelectedWalletId(accounts, accountId)
+  const accountOptionsForWallet = getAccountsForWallet(accounts, selectedWalletId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
+
+  const handleWalletChange = (walletId: string) => {
+    const nextAccount = getDefaultAccountForWallet(accounts, walletId)
+    setAccountId(nextAccount?.id.toString() ?? '')
+  }
+
+  const resetEntryFields = () => {
+    setAmount('')
+    setTagId('')
+    setCounterpartyId('')
+    setCounterpartyName('')
+    setNewTagName('')
+    setNewTagType('income')
+    setShowTagModal(false)
+    setNote('')
+    setErrors({})
+  }
 
   // Tags sorted by counterparty affinity
   const sortedTagsOptions = (() => {
     const cId = counterpartyId ? parseInt(counterpartyId) : 0
-    const res: { value: number, label: string }[] = []
+    const allOptions = incomeTagOptions?.length
+      ? toTagLiveSearchOptions(incomeTagOptions)
+      : incomeTags.map(t => ({ value: encodeTagSelection(t.id, null), label: t.name, tagName: t.name, contextName: null }))
+    const res: TagLiveSearchOption[] = []
     if (cId) {
       const cp = counterparties.find(c => c.id === cId)
       incomeTags
         .filter(t => cp?.tag_ids?.includes(t.id))
         .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-        .forEach(t => res.push({ value: t.id, label: t.name }))
+        .forEach(t => {
+          allOptions.filter(o => parseTagSelection(o.value).tagId === t.id).forEach(o => res.push(o))
+        })
     }
-    incomeTags
-      .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-      .forEach(t => { if (!res.find(r => r.value === t.id)) res.push({ value: t.id, label: t.name }) })
+    allOptions.forEach(o => { if (!res.find(r => r.value === o.value)) res.push(o) })
     return res
   })()
 
   const sortedCounterpartiesOptions = (() => {
-    const tId = tagId ? parseInt(tagId) : 0
+    const tId = tagId ? parseTagSelection(tagId).tagId : 0
     const res: { value: number, label: string }[] = []
     if (tId) {
       counterparties
@@ -147,7 +190,8 @@ export function IncomeTransactionForm({
         : await currencyRepository.getRateForCurrency(accountCurrencyId)
 
       let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
-      const tagIdNum = parseInt(finalTagId)
+      const parsedTag = parseTagSelection(finalTagId)
+      const tagIdNum = parsedTag.tagId
       if (counterpartyName && !counterpartyId) {
         finalCounterpartyId = (await counterpartyRepository.create({
           name: counterpartyName,
@@ -167,7 +211,8 @@ export function IncomeTransactionForm({
         note: note || undefined,
         lines: [{
           account_id: parseInt(accountId),
-          tag_id: parseInt(finalTagId),
+          tag_id: tagIdNum,
+          tag_context_id: parsedTag.contextId,
           sign: '+' as const,
           amount_int: amountInt,
           amount_frac: amountFrac,
@@ -181,7 +226,9 @@ export function IncomeTransactionForm({
       } else {
         await transactionRepository.create(payload)
       }
-      onSubmit()
+      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      onSubmit({ addAnother: shouldAddAnother })
+      if (shouldAddAnother) resetEntryFields()
     } catch (error) {
       console.error('Failed to save transaction:', error)
     } finally {
@@ -204,17 +251,43 @@ export function IncomeTransactionForm({
       />
 
       {/* Account */}
-      <Select
-        label="Account"
-        value={accountId}
-        onChange={(e) => setAccountId(e.target.value)}
-        options={accounts.map((a) => ({
-          value: a.id,
-          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
-        }))}
-        placeholder="Select account"
-        error={errors.accountId}
-      />
+      {!initialData ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            label="Wallet"
+            value={selectedWalletId}
+            onChange={(e) => handleWalletChange(e.target.value)}
+            options={walletOptions.map((wallet) => ({
+              value: wallet.id,
+              label: wallet.name,
+            }))}
+            placeholder="Wallet"
+          />
+          <Select
+            label="Account"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            options={accountOptionsForWallet.map((a) => ({
+              value: a.id,
+              label: formatAccountOptionLabel(a),
+            }))}
+            placeholder="Select account"
+            error={errors.accountId}
+          />
+        </div>
+      ) : (
+        <Select
+          label="Account"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          options={accounts.map((a) => ({
+            value: a.id,
+            label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
+          }))}
+          placeholder="Select account"
+          error={errors.accountId}
+        />
+      )}
 
       {/* Category */}
       <div className="space-y-1">
@@ -225,6 +298,20 @@ export function IncomeTransactionForm({
           options={sortedTagsOptions}
           placeholder="Select category"
           error={errors.tagId}
+          renderOption={(option) => {
+            const tagOption = option as TagLiveSearchOption
+            return (
+              <span className="inline-flex items-center">
+                <span>{tagOption.tagName ?? option.label}</span>
+                {tagOption.contextName && <Badge variant="secondary">{tagOption.contextName}</Badge>}
+              </span>
+            )
+          }}
+          getDisplayValue={(option) => (option as TagLiveSearchOption).tagName ?? option.label}
+          renderSelectedBadge={(option) => {
+            const contextName = (option as TagLiveSearchOption).contextName
+            return contextName ? <Badge variant="secondary" className="ml-0">{contextName}</Badge> : null
+          }}
           onCreateNew={(name) => {
             setNewTagName(name)
             setNewTagType('income')
@@ -272,6 +359,18 @@ export function IncomeTransactionForm({
       </div>
 
       {/* Actions */}
+      {showAddAnother && !initialData && (
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={addAnother}
+            onChange={(e) => setAddAnother(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          Add another
+        </label>
+      )}
+
       {!useActionBar && (
         <div className="flex gap-3 pt-4">
           <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import type { Tag, Counterparty, Transaction, TransactionLine, Currency } from '../../types'
+import type { Tag, TagContextOption, Counterparty, Transaction, TransactionLine, Currency } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, walletRepository, transactionRepository } from '../../services/repositories'
 import { Button, Select, LiveSearch, DateTimeUI, Modal, Badge, AmountInput } from '../ui'
@@ -7,8 +7,23 @@ import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption } from './transactionFormShared'
-import { getPlaceholder, formatBalance, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import type { AccountOption, SubmitOptions } from './transactionFormShared'
+import {
+  getPlaceholder,
+  formatBalance,
+  toAmountIntFrac,
+  toDateString,
+  isDateInPast,
+  getWalletOptions,
+  getSelectedWalletId,
+  getAccountsForWallet,
+  getDefaultAccountForWallet,
+  formatAccountOptionLabel,
+  encodeTagSelection,
+  parseTagSelection,
+  toTagLiveSearchOptions,
+  type TagLiveSearchOption,
+} from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface SubEntry {
@@ -38,14 +53,16 @@ interface ExpenseTransactionFormProps {
   currencies: Currency[]
   activeCurrencies: Currency[]
   expenseTags: Tag[]
+  expenseTagOptions?: TagContextOption[]
   commonTags: Tag[]
   counterparties: Counterparty[]
   defaultAccountId: string
   defaultPaymentCurrencyId: number | null
   initialData?: Transaction
-  onSubmit: () => void
+  onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
+  showAddAnother?: boolean
 }
 
 const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -64,6 +81,7 @@ export function ExpenseTransactionForm({
   currencies,
   activeCurrencies,
   expenseTags,
+  expenseTagOptions,
   commonTags,
   counterparties,
   defaultAccountId,
@@ -72,6 +90,7 @@ export function ExpenseTransactionForm({
   onSubmit,
   onCancel,
   useActionBar = false,
+  showAddAnother = false,
 }: ExpenseTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -94,6 +113,7 @@ export function ExpenseTransactionForm({
   const [activeCommons, setActiveCommons] = useState<CommonEntry[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [addAnother, setAddAnother] = useState(false)
 
   // Populate from initial data
   useEffect(() => {
@@ -124,7 +144,7 @@ export function ExpenseTransactionForm({
       }
       setSubEntries(expenseLines.map((l, i) => ({
         id: `sub-${i + 1}`,
-        tagId: l.tag_id.toString(),
+        tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
         newTagName: '',
         newTagType: 'expense' as const,
         amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
@@ -163,7 +183,7 @@ export function ExpenseTransactionForm({
     if (plainLines.length > 0) {
       setSubEntries(plainLines.map((l: TransactionLine, i: number) => ({
         id: `sub-${i + 1}`,
-        tagId: l.tag_id.toString(),
+        tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
         newTagName: '',
         newTagType: 'expense' as const,
         amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
@@ -208,10 +228,34 @@ export function ExpenseTransactionForm({
   }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
+  const walletOptions = getWalletOptions(accounts)
+  const selectedWalletId = getSelectedWalletId(accounts, accountId)
+  const accountOptionsForWallet = getAccountsForWallet(accounts, selectedWalletId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
   const paymentCurrency = currencies.find(c => c.id === paymentCurrencyId)
   const paymentCurrencyDecimalPlaces = paymentCurrency?.decimal_places ?? 2
   const paymentCurrencyDiffers = paymentCurrencyId != null && paymentCurrencyId !== selectedAccount?.currency_id
+
+  const handleWalletChange = (walletId: string) => {
+    const nextAccount = getDefaultAccountForWallet(accounts, walletId)
+    setAccountId(nextAccount?.id.toString() ?? '')
+  }
+
+  const resetEntryFields = () => {
+    setAmount('')
+    setPaymentAmount('')
+    setCounterpartyId('')
+    setCounterpartyName('')
+    setNewTagType('expense')
+    setShowTagModal(false)
+    setModalTargetEntryId('main')
+    setNote('')
+    setSubEntries([
+      { id: 'sub-1', tagId: '', newTagName: '', newTagType: 'expense', amount: '' },
+    ])
+    setActiveCommons([])
+    setErrors({})
+  }
 
   // Multi-tag computed values
   const isExpenseMainEditable = subEntries.length === 1 && activeCommons.every(c => c.amtType === 'pct')
@@ -262,22 +306,25 @@ export function ExpenseTransactionForm({
   // Tags sorted by counterparty affinity
   const sortedTagsOptions = (() => {
     const cId = counterpartyId ? parseInt(counterpartyId) : 0
-    const res: { value: number, label: string }[] = []
+    const allOptions = expenseTagOptions?.length
+      ? toTagLiveSearchOptions(expenseTagOptions)
+      : expenseTags.map(t => ({ value: encodeTagSelection(t.id, null), label: t.name, tagName: t.name, contextName: null }))
+    const res: TagLiveSearchOption[] = []
     if (cId) {
       const cp = counterparties.find(c => c.id === cId)
       expenseTags
         .filter(t => cp?.tag_ids?.includes(t.id))
         .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-        .forEach(t => res.push({ value: t.id, label: t.name }))
+        .forEach(t => {
+          allOptions.filter(o => parseTagSelection(o.value).tagId === t.id).forEach(o => res.push(o))
+        })
     }
-    expenseTags
-      .toSorted((a, b) => (b.sort_order || 0) - (a.sort_order || 0))
-      .forEach(t => { if (!res.find(r => r.value === t.id)) res.push({ value: t.id, label: t.name }) })
+    allOptions.forEach(o => { if (!res.find(r => r.value === o.value)) res.push(o) })
     return res
   })()
 
   const sortedCounterpartiesOptions = (() => {
-    const tId = subEntries[0]?.tagId ? parseInt(subEntries[0].tagId) : 0
+    const tId = subEntries[0]?.tagId ? parseTagSelection(subEntries[0].tagId).tagId : 0
     const res: { value: number, label: string }[] = []
     if (tId) {
       counterparties
@@ -389,7 +436,7 @@ export function ExpenseTransactionForm({
     setSubmitting(true)
     try {
       // Resolve sub-entry tag IDs (create new tags if pending)
-      const resolvedSubTagIds: Record<string, number> = {}
+      const resolvedSubTagIds: Record<string, { tagId: number; contextId: number | null }> = {}
       for (const entry of subEntries) {
         if (entry.newTagName && !entry.tagId) {
           const parentIds =
@@ -402,9 +449,10 @@ export function ExpenseTransactionForm({
             name: entry.newTagName.trim(),
             parent_ids: parentIds,
           })
-          resolvedSubTagIds[entry.id] = newTag.id
+          resolvedSubTagIds[entry.id] = { tagId: newTag.id, contextId: null }
         } else if (entry.tagId) {
-          resolvedSubTagIds[entry.id] = parseInt(entry.tagId)
+          const parsed = parseTagSelection(entry.tagId)
+          resolvedSubTagIds[entry.id] = { tagId: parsed.tagId, contextId: parsed.contextId }
         }
       }
 
@@ -412,7 +460,7 @@ export function ExpenseTransactionForm({
       const accountRateData = isDateInPast(datetime)
         ? await getRateForDate(accountCurrencyId, toDateString(datetime))
         : await currencyRepository.getRateForCurrency(accountCurrencyId)
-      const primaryTagIdsForCp = Object.values(resolvedSubTagIds).filter(id => id > 0)
+      const primaryTagIdsForCp = Object.values(resolvedSubTagIds).map(v => v.tagId).filter(id => id > 0)
 
       let finalCounterpartyId = counterpartyId ? parseInt(counterpartyId) : 0
       if (counterpartyName && !counterpartyId) {
@@ -430,6 +478,7 @@ export function ExpenseTransactionForm({
       const lines: {
         account_id: number
         tag_id: number
+        tag_context_id?: number | null
         sign: '+' | '-'
         amount_int: number
         amount_frac: number
@@ -480,12 +529,13 @@ export function ExpenseTransactionForm({
           rate_frac: targetRateData.frac,
         })
         for (const entry of subEntries) {
-          const subTagId = resolvedSubTagIds[entry.id] || 0
+          const subTag = resolvedSubTagIds[entry.id] || { tagId: 0, contextId: null }
           const subAmountStr = isExpenseMainEditable ? amount : entry.amount
           const subAmountIF = toAmountIntFrac(subAmountStr)
           lines.push({
             account_id: targetAccount.id,
-            tag_id: subTagId,
+            tag_id: subTag.tagId,
+            tag_context_id: subTag.contextId,
             sign: '-',
             amount_int: subAmountIF.int,
             amount_frac: subAmountIF.frac,
@@ -514,12 +564,13 @@ export function ExpenseTransactionForm({
       } else {
         const accId = parseInt(accountId)
         for (const entry of subEntries) {
-          const subTagId = resolvedSubTagIds[entry.id] || 0
+          const subTag = resolvedSubTagIds[entry.id] || { tagId: 0, contextId: null }
           const subAmountStr = isExpenseMainEditable ? amount : entry.amount
           const subAmountIF = toAmountIntFrac(subAmountStr)
           lines.push({
             account_id: accId,
-            tag_id: subTagId,
+            tag_id: subTag.tagId,
+            tag_context_id: subTag.contextId,
             sign: '-',
             amount_int: subAmountIF.int,
             amount_frac: subAmountIF.frac,
@@ -560,7 +611,9 @@ export function ExpenseTransactionForm({
       } else {
         await transactionRepository.create(payload)
       }
-      onSubmit()
+      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      onSubmit({ addAnother: shouldAddAnother })
+      if (shouldAddAnother) resetEntryFields()
     } catch (error) {
       console.error('Failed to save transaction:', error)
     } finally {
@@ -638,17 +691,43 @@ export function ExpenseTransactionForm({
       )}
 
       {/* Account */}
-      <Select
-        label="Account"
-        value={accountId}
-        onChange={(e) => setAccountId(e.target.value)}
-        options={accounts.map((a) => ({
-          value: a.id,
-          label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
-        }))}
-        placeholder="Select account"
-        error={errors.accountId}
-      />
+      {!initialData ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            label="Wallet"
+            value={selectedWalletId}
+            onChange={(e) => handleWalletChange(e.target.value)}
+            options={walletOptions.map((wallet) => ({
+              value: wallet.id,
+              label: wallet.name,
+            }))}
+            placeholder="Wallet"
+          />
+          <Select
+            label="Account"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            options={accountOptionsForWallet.map((a) => ({
+              value: a.id,
+              label: formatAccountOptionLabel(a),
+            }))}
+            placeholder="Select account"
+            error={errors.accountId}
+          />
+        </div>
+      ) : (
+        <Select
+          label="Account"
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          options={accounts.map((a) => ({
+            value: a.id,
+            label: `${a.walletName} - ${a.currencyCode} (${a.currencySymbol}${formatBalance(a.balance_int, a.balance_frac, a.decimalPlaces)})`,
+          }))}
+          placeholder="Select account"
+          error={errors.accountId}
+        />
+      )}
 
       {/* Categories (multi-sub-entry) */}
       <div className="space-y-2">
@@ -664,6 +743,20 @@ export function ExpenseTransactionForm({
                 value={entry.tagId}
                 onChange={(v) => updateSubEntry(entry.id, { tagId: `${v}`, newTagName: '' })}
                 options={sortedTagsOptions}
+                renderOption={(option) => {
+                  const tagOption = option as TagLiveSearchOption
+                  return (
+                    <span className="inline-flex items-center">
+                      <span>{tagOption.tagName ?? option.label}</span>
+                      {tagOption.contextName && <Badge variant="secondary">{tagOption.contextName}</Badge>}
+                    </span>
+                  )
+                }}
+                getDisplayValue={(option) => (option as TagLiveSearchOption).tagName ?? option.label}
+                renderSelectedBadge={(option) => {
+                  const contextName = (option as TagLiveSearchOption).contextName
+                  return contextName ? <Badge variant="secondary" className="ml-0">{contextName}</Badge> : null
+                }}
                 placeholder="Select category"
                 onCreateNew={(name) => {
                   updateSubEntry(entry.id, { newTagName: name, tagId: '' })
@@ -792,6 +885,18 @@ export function ExpenseTransactionForm({
       </div>
 
       {/* Actions */}
+      {showAddAnother && !initialData && (
+        <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="checkbox"
+            checked={addAnother}
+            onChange={(e) => setAddAnother(e.target.checked)}
+            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          Add another
+        </label>
+      )}
+
       {!useActionBar && (
         <div className="flex gap-3 pt-4">
           <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">

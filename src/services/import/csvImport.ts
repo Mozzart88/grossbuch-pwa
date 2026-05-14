@@ -24,6 +24,8 @@ interface ParsedRow {
   currency_code: string
   tag_id: string
   tag: string
+  tag_context_id: string
+  tag_context: string
   amount: string
   rate: string
   counterparty_id: string
@@ -41,6 +43,11 @@ function countDecimalPlaces(amountStr: string): number {
 const EXPECTED_HEADERS = [
   'date_time', 'trx_id', 'account_id', 'wallet', 'currency_code',
   'tag_id', 'tag', 'amount', 'rate', 'counterparty_id', 'counterparty', 'note',
+]
+
+const EXPECTED_HEADERS_WITH_CONTEXT = [
+  'date_time', 'trx_id', 'account_id', 'wallet', 'currency_code',
+  'tag_id', 'tag', 'tag_context_id', 'tag_context', 'amount', 'rate', 'counterparty_id', 'counterparty', 'note',
 ]
 
 function parseCSVLine(line: string): string[] {
@@ -131,6 +138,7 @@ function parseCSV(text: string): { headers: string[]; rows: ParsedRow[] } {
 
     const fields = parseCSVLine(line)
     if (fields.length < 12) continue
+    const hasContextColumns = headers[7] === 'tag_context_id' && headers[8] === 'tag_context'
 
     rows.push({
       rowNum: i + 1,
@@ -141,11 +149,13 @@ function parseCSV(text: string): { headers: string[]; rows: ParsedRow[] } {
       currency_code: fields[4],
       tag_id: fields[5],
       tag: fields[6],
-      amount: fields[7],
-      rate: fields[8],
-      counterparty_id: fields[9],
-      counterparty: fields[10],
-      note: fields[11],
+      tag_context_id: hasContextColumns ? fields[7] : '',
+      tag_context: hasContextColumns ? fields[8] : '',
+      amount: hasContextColumns ? fields[9] : fields[7],
+      rate: hasContextColumns ? fields[10] : fields[8],
+      counterparty_id: hasContextColumns ? fields[11] : fields[9],
+      counterparty: hasContextColumns ? fields[12] : fields[10],
+      note: hasContextColumns ? fields[13] : fields[11],
     })
   }
 
@@ -167,9 +177,10 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
   const { headers, rows } = parseCSV(csvText)
 
   // Validate headers
-  for (let i = 0; i < EXPECTED_HEADERS.length; i++) {
-    if (headers[i]?.trim() !== EXPECTED_HEADERS[i]) {
-      result.errors.push({ row: 1, message: `Invalid header: expected "${EXPECTED_HEADERS[i]}" at column ${i + 1}, got "${headers[i]}"` })
+  const expectedHeaders = headers[7] === 'tag_context_id' ? EXPECTED_HEADERS_WITH_CONTEXT : EXPECTED_HEADERS
+  for (let i = 0; i < expectedHeaders.length; i++) {
+    if (headers[i]?.trim() !== expectedHeaders[i]) {
+      result.errors.push({ row: 1, message: `Invalid header: expected "${expectedHeaders[i]}" at column ${i + 1}, got "${headers[i]}"` })
       return result
     }
   }
@@ -269,6 +280,9 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
             result.errors.push({ row: row.rowNum, message: `Could not resolve tag: id="${row.tag_id}", name="${row.tag}"` })
             continue
           }
+          const tagContextId = row.tag_context
+            ? await resolveTag(row.tag_context_id, row.tag_context, tagCache, result, createdTagNames)
+            : null
 
           // Resolve wallet
           const walletId = await resolveWallet(row.wallet, walletCache, result)
@@ -333,6 +347,7 @@ export async function importTransactionsFromCSV(csvText: string): Promise<Import
           await transactionRepository.addImportLine(trxIdBlob, {
             account_id: accountId,
             tag_id: tagId,
+            tag_context_id: tagContextId,
             sign,
             amount_int,
             amount_frac,

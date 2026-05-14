@@ -26,6 +26,15 @@ export interface Tag {
   icon?: string // Joined from tag_icon -> icon
 }
 
+export interface TagContextOption {
+  tag_id: number
+  tag_name: string
+  context_id: number | null
+  context_name: string | null
+  label: string
+  type: 'income' | 'expense'
+}
+
 export interface TagInput {
   name: string
   parent_ids?: number[]
@@ -168,11 +177,14 @@ export interface TransactionLine {
   currency?: string
   tag?: string
   is_common?: number // 1 = common add-on tag (computed via tags_hierarchy)
+  tag_context_id?: number | null
+  tag_context?: string | null
 }
 
 export interface TransactionLineInput {
   account_id: number
   tag_id: number
+  tag_context_id?: number | null
   sign: '+' | '-'
   amount_int: number
   amount_frac: number
@@ -192,6 +204,7 @@ export interface Budget {
   start: number // Unix timestamp
   end: number // Unix timestamp
   tag_id: number
+  type: 'income' | 'expense'
   amount_int: number
   amount_frac: number
   // Joined fields
@@ -203,6 +216,7 @@ export interface BudgetInput {
   start?: number
   end?: number
   tag_id: number
+  type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number
 }
@@ -255,6 +269,8 @@ export interface TransactionLog {
   // TODO: tags should be renamed to tag, because trx_log.tags contains only one tag
   tags: string
   tag_is_common: number // 1 = common add-on tag (computed via tags_hierarchy)
+  tag_context_id?: number | null
+  tag_context?: string | null
   sign: '+' | '-'
   amount_int: number
   amount_frac: number
@@ -265,6 +281,8 @@ export interface TransactionLog {
 // From 'summary' view
 export interface BudgetSummary {
   tag: string
+  type: 'income' | 'expense'
+  amount?: number
   amount_int: number
   amount_frac: number
   actual: number
@@ -356,6 +374,8 @@ export interface MonthSummary {
 export interface MonthlyTagSummary {
   tag_id: number
   tag: string
+  tag_context_id?: number | null
+  tag_context?: string | null
   income: number
   expense: number
   net: number
@@ -374,6 +394,8 @@ export interface MonthlyCounterpartySummary {
 export interface MonthlyCategoryBreakdown {
   tag_id: number
   tag: string
+  tag_context_id?: number | null
+  tag_context?: string | null
   amount: number
   type: 'income' | 'expense'
 }
@@ -381,6 +403,8 @@ export interface MonthlyCategoryBreakdown {
 // Transaction filter for filtered navigation
 export interface TransactionFilter {
   tagId?: number
+  tagContextId?: number
+  includeChildren?: boolean
   counterpartyId?: number
   type?: 'income' | 'expense'
   accountId?: number

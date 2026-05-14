@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { TransactionList } from '../../../../components/transactions/TransactionList'
+import { TransactionListUiProvider } from '../../../../contexts/TransactionListUiContext'
 import type { TransactionLog } from '../../../../types'
 import { formatCurrencyValue } from '../../../../utils/formatters'
 import { formatDate, toLocalISOString } from '../../../../utils/dateUtils'
@@ -93,9 +94,11 @@ describe('TransactionList', () => {
 
   const renderWithRouter = (initialEntries = ['/']) => {
     return render(
-      <MemoryRouter initialEntries={initialEntries}>
-        <TransactionList />
-      </MemoryRouter>
+      <TransactionListUiProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <TransactionList />
+        </MemoryRouter>
+      </TransactionListUiProvider>
     )
   }
 
@@ -392,6 +395,47 @@ describe('TransactionList', () => {
       })
     })
 
+    it('keeps an expanded past date when the list remounts in the same session', async () => {
+      const pastDate = '2020-01-01'
+      const pastTransaction: TransactionLog = {
+        ...sampleTransaction,
+        date_time: `${pastDate} 14:30:00`,
+      }
+      mockTransactionRepository.findByMonthFiltered.mockResolvedValue([pastTransaction])
+
+      function Harness({ showList }: { showList: boolean }) {
+        return (
+          <TransactionListUiProvider>
+            <MemoryRouter>
+              {showList && <TransactionList />}
+            </MemoryRouter>
+          </TransactionListUiProvider>
+        )
+      }
+
+      const { rerender } = render(<Harness showList />)
+
+      await waitFor(() => {
+        expect(screen.getByText(formatDate('2020-01-01 00:00:00'))).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText('Food')).not.toBeInTheDocument()
+
+      const dateHeader = screen.getByText(formatDate('2020-01-01 00:00:00')).closest('div[class*="cursor-pointer"]')
+      fireEvent.click(dateHeader!)
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      rerender(<Harness showList={false} />)
+      rerender(<Harness showList />)
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+    })
+
     it('clicking date header collapses expanded section', async () => {
       renderWithRouter()
 
@@ -430,6 +474,17 @@ describe('TransactionList', () => {
         expect(mockTransactionRepository.findByMonthFiltered).toHaveBeenCalledWith(
           '2025-01',
           expect.objectContaining({ tagId: 10 })
+        )
+      })
+    })
+
+    it('reads tag context filter from URL parameter', async () => {
+      renderWithRouter(['/?month=2025-01&tag=10&tagContext=20'])
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.findByMonthFiltered).toHaveBeenCalledWith(
+          '2025-01',
+          expect.objectContaining({ tagId: 10, tagContextId: 20 })
         )
       })
     })

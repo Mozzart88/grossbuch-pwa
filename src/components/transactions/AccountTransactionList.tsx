@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { TransactionLog, Account } from '../../types'
 import { transactionRepository } from '../../services/repositories'
-import { getCurrentMonth, formatDate, toLocalISOString } from '../../utils/dateUtils'
+import { getCurrentMonth, formatDate } from '../../utils/dateUtils'
 import { formatCurrencyValue } from '../../utils/formatters'
 import { fromIntFrac } from '../../utils/amount'
 import { MonthNavigator } from './MonthNavigator'
@@ -10,6 +10,7 @@ import { Spinner, ChevronIcon } from '../ui'
 import { useNavigate } from 'react-router-dom'
 import { blobToHex } from '../../utils/blobUtils'
 import { useDataRefresh } from '../../hooks/useDataRefresh'
+import { useTransactionListUi } from '../../contexts/TransactionListUiContext'
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -46,25 +47,10 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
   const [runningBalances, setRunningBalances] = useState<Map<string, number>>(new Map())
   const [startOfMonthBalance, setStartOfMonthBalance] = useState(0)
   const [endOfMonthBalance, setEndOfMonthBalance] = useState(0)
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
-    const today = toLocalISOString().slice(0, 10)
-    return new Set([today])
-  })
+  const { expandedDates, toggleDate } = useTransactionListUi(`account:${account.id}`)
 
   const symbol = account.symbol ?? '$'
   const isCurrentMonth = month === getCurrentMonth()
-
-  const toggleDate = (date: string) => {
-    setExpandedDates(prev => {
-      const next = new Set(prev)
-      if (next.has(date)) {
-        next.delete(date)
-      } else {
-        next.add(date)
-      }
-      return next
-    })
-  }
 
   const handleMonthChange = useCallback((newMonth: string) => {
     setMonth(newMonth)

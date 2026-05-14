@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TransactionLog, MonthSummary as MonthSummaryType, TransactionFilter } from '../../types';
 import { transactionRepository, accountRepository, currencyRepository, tagRepository, counterpartyRepository } from '../../services/repositories';
-import { getCurrentMonth, formatDate, toLocalISOString } from '../../utils/dateUtils';
+import { getCurrentMonth, formatDate } from '../../utils/dateUtils';
 import { MonthNavigator } from './MonthNavigator';
 import { MonthSummary } from './MonthSummary';
 import { TransactionItem } from './TransactionItem';
@@ -10,6 +10,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { blobToHex } from '../../utils/blobUtils';
 import { useDataRefresh } from '../../hooks/useDataRefresh';
 import { formatCurrencyValue } from '../../utils/formatters';
+import { useTransactionListUi } from '../../contexts/TransactionListUiContext';
 
 // Group transactions by date
 function groupByDate(transactions: TransactionLog[]): Map<string, Map<string, TransactionLog[]>> {
@@ -38,6 +39,8 @@ export function TransactionList() {
   // Get filter params from URL
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tagParam = searchParams.get('tag')
+  const tagContextParam = searchParams.get('tagContext')
+  const includeChildrenParam = searchParams.get('includeChildren')
   const counterpartyParam = searchParams.get('counterparty')
   const typeParam = searchParams.get('type') as 'income' | 'expense' | null
   const dataVersion = useDataRefresh()
@@ -54,32 +57,18 @@ export function TransactionList() {
   const [loading, setLoading] = useState(true)
   const [daySummaries, setDaySummaries] = useState<Map<string, number>>(new Map())
   const [filterName, setFilterName] = useState<string | null>(null)
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => {
-    // Initialize with today's date expanded
-    const today = toLocalISOString().slice(0, 10)
-    return new Set([today])
-  })
+  const { expandedDates, toggleDate } = useTransactionListUi('transactions')
 
   // Build filter object from URL params
   const filter: TransactionFilter | undefined = (tagParam || counterpartyParam !== null || typeParam)
     ? {
       tagId: tagParam ? parseInt(tagParam, 10) : undefined,
+      tagContextId: tagContextParam ? parseInt(tagContextParam, 10) : undefined,
+      includeChildren: includeChildrenParam === '1',
       counterpartyId: counterpartyParam !== null ? parseInt(counterpartyParam, 10) : undefined,
       type: typeParam || undefined,
     }
     : undefined
-
-  const toggleDate = (date: string) => {
-    setExpandedDates(prev => {
-      const next = new Set(prev)
-      if (next.has(date)) {
-        next.delete(date)
-      } else {
-        next.add(date)
-      }
-      return next
-    })
-  }
 
   // Update month when URL param changes
   useEffect(() => {
@@ -102,7 +91,7 @@ export function TransactionList() {
 
   useEffect(() => {
     loadData()
-  }, [month, tagParam, counterpartyParam, typeParam, dataVersion])
+  }, [month, tagParam, tagContextParam, includeChildrenParam, counterpartyParam, typeParam, dataVersion])
 
   const loadData = async () => {
     setLoading(true)
@@ -122,7 +111,7 @@ export function TransactionList() {
       let filterDisplayName: string | null = null
       if (tagParam) {
         const tag = await tagRepository.findById(parseInt(tagParam, 10))
-        filterDisplayName = tag ? `Tag: ${tag.name}` : null
+        filterDisplayName = tag ? `Tag: ${tag.name}${includeChildrenParam === '1' ? ' and sub-tags' : ''}` : null
       } else if (counterpartyParam !== null) {
         const cpId = parseInt(counterpartyParam, 10)
         if (cpId === 0) {

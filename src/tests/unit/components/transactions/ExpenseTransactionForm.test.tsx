@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { ExpenseTransactionForm } from '../../../../components/transactions/ExpenseTransactionForm'
 import type { Tag, Counterparty, Currency, Transaction } from '../../../../types'
 import { SYSTEM_TAGS } from '../../../../types'
@@ -44,6 +44,20 @@ const mockAccounts = [
     walletIsDefault: true,
     currencyCode: 'USD',
     currencySymbol: '$',
+    decimalPlaces: 2,
+  },
+  {
+    id: 2,
+    wallet_id: 2,
+    currency_id: 2,
+    balance_int: 200,
+    balance_frac: 0,
+    updated_at: 1704067200,
+    is_default: true,
+    walletName: 'Bank',
+    walletIsDefault: false,
+    currencyCode: 'EUR',
+    currencySymbol: '€',
     decimalPlaces: 2,
   },
 ]
@@ -140,6 +154,93 @@ describe('ExpenseTransactionForm', () => {
         })
       )
       expect(defaultProps.onSubmit).toHaveBeenCalled()
+    })
+  })
+
+  it('shows context badges for category options and submits selected context', async () => {
+    render(
+      <ExpenseTransactionForm
+        {...defaultProps}
+        expenseTagOptions={[
+          {
+            tag_id: 10,
+            tag_name: 'Maintenance',
+            context_id: 30,
+            context_name: 'Central Park',
+            label: 'Maintenance Central Park',
+            type: 'expense',
+          },
+        ]}
+      />
+    )
+
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '42' } })
+
+    const categoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(categoryInput)
+    await waitFor(() => expect(screen.getByRole('listbox')).toBeInTheDocument())
+    const categoryOption = within(screen.getByRole('listbox')).getByRole('option')
+    expect(categoryOption).toHaveTextContent('Maintenance')
+    expect(screen.getByText('Central Park')).toBeInTheDocument()
+    fireEvent.click(categoryOption)
+
+    expect(categoryInput).toHaveValue('Maintenance')
+    expect(screen.getByText('Central Park')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({
+            tag_id: 10,
+            tag_context_id: 30,
+          })],
+        })
+      )
+    })
+  })
+
+  it('shows wallet names and scoped account labels', () => {
+    render(<ExpenseTransactionForm {...defaultProps} />)
+    const walletSelect = screen.getByRole('combobox', { name: /wallet/i })
+    const accountSelect = screen.getByRole('combobox', { name: /account/i })
+
+    expect(within(walletSelect).getByRole('option', { name: 'Cash' })).toBeInTheDocument()
+    expect(within(walletSelect).getByRole('option', { name: 'Bank' })).toBeInTheDocument()
+    expect(within(accountSelect).getByRole('option', { name: /USD \(500[.,]00\)/ })).toBeInTheDocument()
+    expect(within(accountSelect).queryByRole('option', { name: /EUR \(200[.,]00\)/ })).not.toBeInTheDocument()
+  })
+
+  it('changing wallet updates the selected account', () => {
+    render(<ExpenseTransactionForm {...defaultProps} />)
+    fireEvent.change(screen.getByRole('combobox', { name: /wallet/i }), { target: { value: '2' } })
+
+    const accountSelect = screen.getByRole('combobox', { name: /account/i })
+    expect(accountSelect).toHaveValue('2')
+    expect(within(accountSelect).getByRole('option', { name: /EUR \(200[.,]00\)/ })).toBeInTheDocument()
+  })
+
+  it('submits the account selected through wallet and account selectors', async () => {
+    render(<ExpenseTransactionForm {...defaultProps} />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: /wallet/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '42' } })
+
+    const categoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'Food' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Food' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('option', { name: 'Food' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({ account_id: 2 })],
+        })
+      )
     })
   })
 
@@ -386,6 +487,30 @@ describe('ExpenseTransactionForm', () => {
             lines: expect.arrayContaining([
               expect.objectContaining({ tag_id: 10, sign: '-' }),
               expect.objectContaining({ tag_id: TIP_TAG_ID }),
+            ]),
+          })
+        )
+      })
+    })
+
+    it('submits discount common tag as income line and subtracts from total', async () => {
+      const discountTag: Tag = { id: SYSTEM_TAGS.DISCOUNT, name: 'Discount', sort_order: 1 }
+      render(<ExpenseTransactionForm {...defaultProps} commonTags={[discountTag]} />)
+      fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '100' } })
+      const categoryInput = screen.getByPlaceholderText('Select category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Food' } })
+      await waitFor(() => expect(screen.getByRole('option', { name: 'Food' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('option', { name: 'Food' }))
+      fireEvent.click(screen.getByRole('button', { name: '+ Discount' }))
+      await waitFor(() => expect(screen.getByTitle('Switch to percentage')).toBeInTheDocument())
+      fireEvent.change(screen.getAllByPlaceholderText('0.00')[2], { target: { value: '5' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+      await waitFor(() => {
+        expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            lines: expect.arrayContaining([
+              expect.objectContaining({ tag_id: SYSTEM_TAGS.DISCOUNT, sign: '+' }),
             ]),
           })
         )

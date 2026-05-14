@@ -249,6 +249,7 @@ interface TrxLineRow {
   trx_id: string
   account: number
   tag: number
+  tag_context: number | null
   sign: '+' | '-'
   amount_int: number
   amount_frac: number
@@ -282,12 +283,14 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
       hex(tb.trx_id) as trx_id,
       tb.account_id as account,
       tb.tag_id as tag,
+      ctx.tag_id as tag_context,
       tb.sign,
       tb.amount_int,
       tb.amount_frac,
       tb.rate_int,
       tb.rate_frac
     FROM trx_base tb
+    LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
     WHERE hex(tb.trx_id) IN (${placeholders})`,
     trxIds
   )
@@ -300,6 +303,7 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
       id: line.id,
       account: line.account,
       tag: line.tag,
+      tag_context: line.tag_context,
       sign: line.sign,
       amount_int: line.amount_int,
       amount_frac: line.amount_frac,
@@ -326,6 +330,7 @@ async function exportBudgets(since: number): Promise<SyncBudget[]> {
       b.start,
       b.end,
       b.tag_id AS tag,
+      b.type,
       b.amount_int,
       b.amount_frac,
       b.updated_at

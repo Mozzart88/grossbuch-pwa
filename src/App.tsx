@@ -10,6 +10,7 @@ import { useExchangeRateSync } from './hooks/useExchangeRateSync'
 import { useSyncPull } from './hooks/useSyncPull'
 import { useSyncInit } from './hooks/useSyncInit'
 import { SyncProvider, useSyncContext } from './contexts/SyncContext'
+import { TransactionListUiProvider } from './contexts/TransactionListUiContext'
 import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
 import { AppLayout } from './components/layout/AppLayout'
@@ -218,11 +219,13 @@ export default function App() {
               <AuthProvider>
                 <AuthGate>
                   <LayoutProvider>
-                    <SyncProvider>
-                      <SyncGate>
-                        <AppContent />
-                      </SyncGate>
-                    </SyncProvider>
+                    <TransactionListUiProvider>
+                      <SyncProvider>
+                        <SyncGate>
+                          <AppContent />
+                        </SyncGate>
+                      </SyncProvider>
+                    </TransactionListUiProvider>
                   </LayoutProvider>
                 </AuthGate>
               </AuthProvider>

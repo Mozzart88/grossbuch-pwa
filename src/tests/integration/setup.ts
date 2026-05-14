@@ -290,6 +290,7 @@ export function insertBudget(data: {
   tag_id: number
   amount_int: number
   amount_frac?: number
+  type?: 'income' | 'expense'
   start?: number
   end?: number
 }): Uint8Array {
@@ -303,8 +304,8 @@ export function insertBudget(data: {
   const end = data.end ?? (startOfMonth + 30 * 24 * 60 * 60) // End of month
 
   database.run(
-    'INSERT INTO budget (id, start, end, tag_id, amount_int, amount_frac) VALUES (?, ?, ?, ?, ?, ?)',
-    [budgetId, start, end, data.tag_id, data.amount_int, data.amount_frac ?? 0]
+    'INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [budgetId, start, end, data.tag_id, data.type ?? 'expense', data.amount_int, data.amount_frac ?? 0]
   )
 
   return budgetId

@@ -1,6 +1,13 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
-import type { Tag, TagInput, TagHierarchy, TagGraph, TagSummary } from '../../types'
+import type { Tag, TagInput, TagHierarchy, TagGraph, TagSummary, TagContextOption } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
+
+const ROOT_PARENT_IDS: number[] = [
+  SYSTEM_TAGS.SYSTEM,
+  SYSTEM_TAGS.DEFAULT,
+  SYSTEM_TAGS.INCOME,
+  SYSTEM_TAGS.EXPENSE,
+]
 
 export const tagRepository = {
   async findAll(): Promise<Tag[]> {
@@ -53,12 +60,12 @@ export const tagRepository = {
 
   // Find income category tags (children of 'income' tag, id=9)
   async findIncomeTags(): Promise<Tag[]> {
-    return this.getTagsByParentId(SYSTEM_TAGS.INCOME)
+    return this.getTagsByAncestorId(SYSTEM_TAGS.INCOME)
   },
 
   // Find expense category tags (children of 'expense' tag, id=10)
   async findExpenseTags(): Promise<Tag[]> {
-    return this.getTagsByParentId(SYSTEM_TAGS.EXPENSE)
+    return this.getTagsByAncestorId(SYSTEM_TAGS.EXPENSE)
   },
 
   // Find system tags (children of 'system' tag, id=1)
@@ -100,10 +107,7 @@ export const tagRepository = {
     // Add parent relationships
     if (input.parent_ids && input.parent_ids.length > 0) {
       for (const parentId of input.parent_ids) {
-        await execSQL(
-          'INSERT INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
-          [id, parentId]
-        )
+        await this.addRelation(id, parentId)
       }
     }
 
@@ -141,10 +145,7 @@ export const tagRepository = {
         [id, SYSTEM_TAGS.SYSTEM]
       )
       for (const parentId of input.parent_ids) {
-        await execSQL(
-          'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
-          [id, parentId]
-        )
+        await this.addRelation(id, parentId)
       }
     }
 
@@ -175,6 +176,14 @@ export const tagRepository = {
     )
     if (budgetCount && budgetCount.count > 0) {
       return { canDelete: false, reason: `${budgetCount.count} budgets use this tag` }
+    }
+
+    const contextCount = await queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM trx_base_tag_context WHERE tag_id = ?',
+      [id]
+    )
+    if (contextCount && contextCount.count > 0) {
+      return { canDelete: false, reason: `${contextCount.count} transactions use this tag as context` }
     }
 
     return { canDelete: true }
@@ -214,5 +223,203 @@ export const tagRepository = {
       JOIN tags_hierarchy th ON t.id = th.child_id
       WHERE th.parent_id = ?
     `, [id])
+  },
+
+  async getDirectParents(id: number): Promise<Tag[]> {
+    return querySQL<Tag>(`
+      SELECT t.*
+      FROM tag_to_tag ttt
+      JOIN tags t ON t.id = ttt.parent_id
+      WHERE ttt.child_id = ?
+      ORDER BY t.name ASC
+    `, [id])
+  },
+
+  async getDirectChildren(id: number): Promise<Tag[]> {
+    return querySQL<Tag>(`
+      SELECT t.*
+      FROM tag_to_tag ttt
+      JOIN tags t ON t.id = ttt.child_id
+      WHERE ttt.parent_id = ?
+      ORDER BY t.name ASC
+    `, [id])
+  },
+
+  async getAncestorIds(id: number): Promise<number[]> {
+    const rows = await querySQL<{ id: number }>(`
+      WITH RECURSIVE ancestors(id) AS (
+        SELECT parent_id FROM tag_to_tag WHERE child_id = ?
+        UNION
+        SELECT ttt.parent_id
+        FROM tag_to_tag ttt
+        JOIN ancestors a ON a.id = ttt.child_id
+      )
+      SELECT id FROM ancestors
+    `, [id])
+    return rows.map(r => r.id)
+  },
+
+  async getDescendantIds(id: number): Promise<number[]> {
+    const rows = await querySQL<{ id: number }>(`
+      WITH RECURSIVE descendants(id) AS (
+        SELECT child_id FROM tag_to_tag WHERE parent_id = ?
+        UNION
+        SELECT ttt.child_id
+        FROM tag_to_tag ttt
+        JOIN descendants d ON d.id = ttt.parent_id
+      )
+      SELECT id FROM descendants
+    `, [id])
+    return rows.map(r => r.id)
+  },
+
+  async getTagsByAncestorId(id: number): Promise<Tag[]> {
+    return querySQL<Tag>(`
+      WITH RECURSIVE descendants(id) AS (
+        SELECT child_id
+        FROM tag_to_tag rel
+        WHERE parent_id = ?
+          AND (
+            ? NOT IN (?, ?)
+            OR NOT EXISTS (
+              SELECT 1 FROM tag_to_tag direct_type
+              WHERE direct_type.child_id = rel.child_id
+                AND direct_type.parent_id IN (?, ?)
+            )
+            OR EXISTS (
+              SELECT 1 FROM tag_to_tag requested_type
+              WHERE requested_type.child_id = rel.child_id
+                AND requested_type.parent_id = ?
+            )
+          )
+        UNION
+        SELECT ttt.child_id
+        FROM tag_to_tag ttt
+        JOIN descendants d ON d.id = ttt.parent_id
+        WHERE (
+          ? NOT IN (?, ?)
+          OR NOT EXISTS (
+            SELECT 1 FROM tag_to_tag direct_type
+            WHERE direct_type.child_id = ttt.child_id
+              AND direct_type.parent_id IN (?, ?)
+          )
+          OR EXISTS (
+            SELECT 1 FROM tag_to_tag requested_type
+            WHERE requested_type.child_id = ttt.child_id
+              AND requested_type.parent_id = ?
+          )
+        )
+      )
+      SELECT DISTINCT t.*
+      FROM tags t
+      JOIN descendants d ON d.id = t.id
+      ORDER BY t.sort_order DESC, t.name ASC
+    `, [
+      id,
+      id, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE, id,
+      id, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE, id,
+    ])
+  },
+
+  async getTopLevelParents(id: number, type?: 'income' | 'expense'): Promise<Tag[]> {
+    const rootId = type === 'income'
+      ? SYSTEM_TAGS.INCOME
+      : type === 'expense'
+        ? SYSTEM_TAGS.EXPENSE
+        : null
+    const params: unknown[] = rootId ? [id, rootId] : [id]
+    return querySQL<Tag>(`
+      WITH RECURSIVE ancestors(id) AS (
+        SELECT ?
+        UNION
+        SELECT ttt.parent_id
+        FROM tag_to_tag ttt
+        JOIN ancestors a ON a.id = ttt.child_id
+      )
+      SELECT DISTINCT t.*
+      FROM tag_to_tag rel
+      JOIN ancestors a ON a.id = rel.child_id
+      JOIN tags t ON t.id = rel.child_id
+      WHERE rel.parent_id ${rootId ? '= ?' : 'IN (9, 10)'}
+        AND t.id NOT IN (?, ?)
+      ORDER BY t.name ASC
+    `, rootId ? [...params, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE] : [...params, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE])
+  },
+
+  async wouldCreateCycle(childId: number, parentId: number): Promise<boolean> {
+    if (childId === parentId) return true
+    const descendants = await this.getDescendantIds(childId)
+    return descendants.includes(parentId)
+  },
+
+  async addRelation(childId: number, parentId: number): Promise<void> {
+    if (await this.wouldCreateCycle(childId, parentId)) {
+      throw new Error('Tag relationship would create a cycle')
+    }
+
+    await execSQL(
+      'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+      [childId, parentId]
+    )
+  },
+
+  async removeRelation(childId: number, parentId: number): Promise<void> {
+    const ancestorIds = await this.getAncestorIds(parentId)
+    const inheritedRootIds = [parentId, ...ancestorIds].filter(id =>
+      id === SYSTEM_TAGS.INCOME || id === SYSTEM_TAGS.EXPENSE
+    )
+
+    await execSQL(
+      'DELETE FROM tag_to_tag WHERE child_id = ? AND parent_id = ?',
+      [childId, parentId]
+    )
+
+    const remainingParents = await this.getDirectParents(childId)
+    const hasNestedParent = remainingParents.some(parent => !ROOT_PARENT_IDS.includes(parent.id))
+    if (!hasNestedParent) {
+      for (const rootId of inheritedRootIds) {
+        await this.addRelation(childId, rootId)
+      }
+    }
+  },
+
+  async getContextOptions(type: 'income' | 'expense'): Promise<TagContextOption[]> {
+    const rootId = type === 'income' ? SYSTEM_TAGS.INCOME : SYSTEM_TAGS.EXPENSE
+    return querySQL<TagContextOption>(`
+      WITH RECURSIVE
+      descendants(tag_id, tag_name, context_id, context_name) AS (
+        SELECT t.id, t.name, t.id, t.name
+        FROM tag_to_tag rel
+        JOIN tag t ON t.id = rel.child_id
+        WHERE rel.parent_id = ?
+          AND t.id NOT IN (?, ?)
+        UNION
+        SELECT child.id, child.name, descendants.context_id, descendants.context_name
+        FROM descendants
+        JOIN tag_to_tag rel ON rel.parent_id = descendants.tag_id
+        JOIN tag child ON child.id = rel.child_id
+        WHERE (
+          NOT EXISTS (
+            SELECT 1 FROM tag_to_tag direct_type
+            WHERE direct_type.child_id = child.id
+              AND direct_type.parent_id IN (?, ?)
+          )
+          OR EXISTS (
+            SELECT 1 FROM tag_to_tag requested_type
+            WHERE requested_type.child_id = child.id
+              AND requested_type.parent_id = ?
+          )
+        )
+      )
+      SELECT DISTINCT
+        tag_id,
+        tag_name,
+        CASE WHEN tag_id = context_id THEN NULL ELSE context_id END as context_id,
+        CASE WHEN tag_id = context_id THEN NULL ELSE context_name END as context_name,
+        tag_name || CASE WHEN tag_id = context_id THEN '' ELSE ' ' || context_name END as label,
+        ? as type
+      FROM descendants
+      ORDER BY label ASC
+    `, [rootId, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE, rootId, type])
   }
 }

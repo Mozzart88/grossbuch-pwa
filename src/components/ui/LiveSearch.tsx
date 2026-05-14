@@ -21,6 +21,8 @@ interface LiveSearchProps {
   renderOption?: (option: LiveSearchOption) => React.ReactNode
   /** Function to get display value for input (defaults to label) */
   getDisplayValue?: (option: LiveSearchOption) => string
+  /** Function to render a badge inside the input for the selected option */
+  renderSelectedBadge?: (option: LiveSearchOption) => React.ReactNode
   /** When set, shows this value in the input with a "New" badge when value is empty */
   pendingNewValue?: string
 }
@@ -39,6 +41,7 @@ export function LiveSearch({
   dropdownClassName = '',
   renderOption,
   getDisplayValue,
+  renderSelectedBadge,
   pendingNewValue,
 }: LiveSearchProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -93,6 +96,9 @@ export function LiveSearch({
 
   // Show "New" badge when pending value matches current input
   const showNewBadge = !!pendingNewValue && inputValue === pendingNewValue
+  const selectedBadge = selectedOption && !showNewBadge && renderSelectedBadge
+    ? renderSelectedBadge(selectedOption)
+    : null
 
   // Reset highlighted index when filtered options change
   useEffect(() => {
@@ -260,7 +266,7 @@ export function LiveSearch({
             focus:outline-none
             disabled:bg-gray-100 disabled:dark:bg-gray-900 disabled:cursor-not-allowed
             ${error ? 'border-red-500 focus:ring-red-500' : ''}
-            ${showNewBadge ? 'pr-14' : ''}
+            ${showNewBadge || selectedBadge ? 'pr-20' : ''}
             ${className}
             ${inputClassName}
           `}
@@ -273,6 +279,11 @@ export function LiveSearch({
           >
             New
           </Badge>
+        )}
+        {selectedBadge && (
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none">
+            {selectedBadge}
+          </span>
         )}
 
         {/* Dropdown */}

@@ -12,12 +12,16 @@ import { SYSTEM_TAGS } from '../../../types'
 // Mock repositories
 vi.mock('../../../services/repositories', () => ({
     tagRepository: {
+        findUserTags: vi.fn(),
         findIncomeTags: vi.fn(),
         findExpenseTags: vi.fn(),
+        getHierarchy: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
         delete: vi.fn(),
         canDelete: vi.fn(),
+        addRelation: vi.fn(),
+        removeRelation: vi.fn(),
     },
 }))
 
@@ -37,9 +41,13 @@ const mockIncomeTags = [
 describe('TagsPage', () => {
     beforeEach(() => {
         vi.clearAllMocks()
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([])
         vi.mocked(tagRepository.findExpenseTags).mockResolvedValue(mockExpenseTags)
         vi.mocked(tagRepository.findIncomeTags).mockResolvedValue(mockIncomeTags)
         vi.mocked(tagRepository.canDelete).mockResolvedValue({ canDelete: true })
+        vi.mocked(tagRepository.addRelation).mockResolvedValue(undefined)
+        vi.mocked(tagRepository.removeRelation).mockResolvedValue(undefined)
         mockConfirm.mockReturnValue(true)
     })
 
@@ -164,6 +172,216 @@ describe('TagsPage', () => {
                 name: 'Healthy Food',
                 parent_ids: [SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE],
             })
+        })
+    })
+
+    it('renames a nested tag without replacing its parent relation', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        const gas = { id: 101, name: 'Gas', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto', depth: 1 },
+            { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Gas', depth: 1 },
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 101, child: 'Gas', depth: 2 },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+        const editButtons = screen.getAllByText('Edit')
+        fireEvent.click(editButtons[1])
+
+        expect(screen.getByText('Edit Tag')).toBeInTheDocument()
+        expect(screen.getByDisplayValue('Gas')).toBeInTheDocument()
+        expect(screen.getByText('Type')).toBeInTheDocument()
+
+        fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Fuel' } })
+        fireEvent.click(screen.getByRole('button', { name: /save/i }))
+
+        await waitFor(() => {
+            expect(tagRepository.update).toHaveBeenCalledWith(101, {
+                name: 'Fuel',
+                parent_ids: [100, SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE],
+            })
+        })
+    })
+
+    it('allows a nested tag to keep its parent and change type to both', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        const maintenance = { id: 101, name: 'Maintenance', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto, maintenance])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto, maintenance])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto', depth: 1 },
+            { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Maintenance', depth: 1 },
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 101, child: 'Maintenance', depth: 2 },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+        fireEvent.click(screen.getAllByText('Edit')[1])
+        fireEvent.click(screen.getByRole('button', { name: 'Both' }))
+        fireEvent.click(screen.getByRole('button', { name: /save/i }))
+
+        await waitFor(() => {
+            expect(tagRepository.update).toHaveBeenCalledWith(101, {
+                name: 'Maintenance',
+                parent_ids: [100, SYSTEM_TAGS.DEFAULT, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME],
+            })
+        })
+    })
+
+    it('shows a both-type tag as top-level in the unrelated root after adding it as a sub-tag', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        const gas = { id: 101, name: 'Gas', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([gas])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto' },
+            { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Gas' },
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 101, child: 'Gas' },
+            { parent_id: SYSTEM_TAGS.INCOME, parent: 'income', child_id: 101, child: 'Gas' },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+        expect(screen.getByText('Auto')).toBeInTheDocument()
+        expect(screen.getAllByText('Gas')).toHaveLength(2)
+        expect(screen.queryByText('No income tags')).not.toBeInTheDocument()
+    })
+
+    it('does not show an income-only sub-tag under the expense side of a both-type parent', async () => {
+        const work = { id: 100, name: 'Work', created_at: 1704067200, updated_at: 1704067200 }
+        const freelance = { id: 101, name: 'Freelance', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([work, freelance])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([work])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([work, freelance])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Work' },
+            { parent_id: SYSTEM_TAGS.INCOME, parent: 'income', child_id: 100, child: 'Work' },
+            { parent_id: 100, parent: 'Work', child_id: 101, child: 'Freelance' },
+            { parent_id: SYSTEM_TAGS.INCOME, parent: 'income', child_id: 101, child: 'Freelance' },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+        const sections = screen.getAllByText('Work').map(node => node.closest('section'))
+        const expenseSection = screen.getByText('Expense Tags').closest('section')
+        const incomeSection = screen.getByText('Income Tags').closest('section')
+
+        expect(sections.filter(section => section === expenseSection)).toHaveLength(1)
+        expect(sections.filter(section => section === incomeSection)).toHaveLength(1)
+        expect(expenseSection).not.toHaveTextContent('Freelance')
+        expect(incomeSection).toHaveTextContent('Freelance')
+    })
+
+    it('folds and unfolds nested tag rows', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        const gas = { id: 101, name: 'Gas', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto' },
+            { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Gas' },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.getByText('Gas')).toBeInTheDocument())
+
+        fireEvent.click(screen.getByText('Auto'))
+        expect(screen.queryByText('Gas')).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByText('Auto'))
+        expect(screen.getByText('Gas')).toBeInTheDocument()
+    })
+
+    it('adds an existing tag as a sub-tag', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        const fuel = { id: 101, name: 'Fuel', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto, fuel])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto, fuel])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto' },
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 101, child: 'Fuel' },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.getByText('Auto')).toBeInTheDocument())
+
+        fireEvent.click(screen.getAllByRole('button', { expanded: false })[0])
+        await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Add sub-tag' })).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Add sub-tag' }))
+        await waitFor(() => expect(screen.getByText('Add sub-tag to Auto')).toBeInTheDocument())
+
+        const subTagInput = screen.getByRole('combobox', { name: /sub-tag/i })
+        fireEvent.focus(subTagInput)
+        fireEvent.click(screen.getByRole('option', { name: 'Fuel' }))
+        fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[0])
+
+        await waitFor(() => {
+            expect(tagRepository.addRelation).toHaveBeenCalledWith(101, 100)
+        })
+    })
+
+    it('creates a new tag from the add sub-tag modal', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto' },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.getByText('Auto')).toBeInTheDocument())
+
+        fireEvent.click(screen.getByRole('button', { expanded: false }))
+        await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Add sub-tag' })).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Add sub-tag' }))
+        await waitFor(() => expect(screen.getByText('Add sub-tag to Auto')).toBeInTheDocument())
+
+        const subTagInput = screen.getByRole('combobox', { name: /sub-tag/i })
+        fireEvent.change(subTagInput, { target: { value: 'Fuel' } })
+        fireEvent.keyDown(subTagInput, { key: 'Enter' })
+        fireEvent.click(screen.getAllByRole('button', { name: 'Add' })[0])
+
+        await waitFor(() => {
+            expect(tagRepository.create).toHaveBeenCalledWith({
+                name: 'Fuel',
+                parent_ids: [100],
+            })
+        })
+    })
+
+    it('removes a child relation from a nested tag row', async () => {
+        const auto = { id: 100, name: 'Auto', created_at: 1704067200, updated_at: 1704067200 }
+        const gas = { id: 101, name: 'Gas', created_at: 1704067200, updated_at: 1704067200 }
+        vi.mocked(tagRepository.findUserTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findExpenseTags).mockResolvedValue([auto, gas])
+        vi.mocked(tagRepository.findIncomeTags).mockResolvedValue([])
+        vi.mocked(tagRepository.getHierarchy).mockResolvedValue([
+            { parent_id: SYSTEM_TAGS.EXPENSE, parent: 'expense', child_id: 100, child: 'Auto' },
+            { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Gas' },
+        ])
+
+        renderTagsPage()
+        await waitFor(() => expect(screen.getByText('Gas')).toBeInTheDocument())
+
+        fireEvent.click(screen.getAllByRole('button', { expanded: false })[1])
+        await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Remove relation' })).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Remove relation' }))
+
+        await waitFor(() => {
+            expect(tagRepository.removeRelation).toHaveBeenCalledWith(101, 100)
         })
     })
 

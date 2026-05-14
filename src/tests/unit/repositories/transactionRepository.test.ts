@@ -186,6 +186,29 @@ describe('transactionRepository', () => {
       )
     })
 
+    it('filters by tag context while keeping lines without context', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { tagId: 10, tagContextId: 20 })
+
+      const call = mockQuerySQL.mock.calls[0]
+      expect(call![0]).toContain('tb.tag_id = ? AND (ctx.tag_id = ? OR ctx.tag_id IS NULL)')
+      expect(call![1]).toContain(10)
+      expect(call![1]).toContain(20)
+    })
+
+    it('filters child tags by context while keeping parent and lines without context', async () => {
+      mockQuerySQL.mockResolvedValue([sampleTransactionLog])
+
+      await transactionRepository.findByMonthFiltered('2025-01', { tagId: 10, tagContextId: 10, includeChildren: true })
+
+      const call = mockQuerySQL.mock.calls[0]
+      expect(call![0]).toContain('tb.tag_id = ?')
+      expect(call![0]).toContain('AND (ctx.tag_id = ? OR ctx.tag_id IS NULL)')
+      expect(call![0]).not.toContain('ctx.tag_id = NULL')
+      expect(call![1]).toContain(10)
+    })
+
     it('filters by counterparty_id when provided', async () => {
       mockQuerySQL.mockResolvedValue([sampleTransactionLog])
 

@@ -235,6 +235,43 @@ describe('AddTransactionPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
+  it('keeps add form open and resets entry fields when Add another is checked', async () => {
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Account')).toBeInTheDocument()
+    })
+
+    const addAnother = screen.getByRole('checkbox', { name: /add another/i })
+    fireEvent.click(addAnother)
+
+    const amountInput = screen.getByPlaceholderText('0.00')
+    fireEvent.change(amountInput, { target: { value: '50' } })
+
+    const categoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'food' } })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'food' }))
+
+    fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'first entry' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalled()
+      expect(amountInput).toHaveValue(null)
+      expect(categoryInput).toHaveValue('')
+      expect(screen.getByPlaceholderText('Add notes...')).toHaveValue('')
+    })
+
+    expect(mockNavigate).not.toHaveBeenCalled()
+    expect(addAnother).toBeChecked()
+    expect(screen.getByRole('combobox', { name: /wallet/i })).toHaveValue('1')
+    expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('1')
+  })
+
   it('navigates back on cancel', async () => {
     renderPage()
 

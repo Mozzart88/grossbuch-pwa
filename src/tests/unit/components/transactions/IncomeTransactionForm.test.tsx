@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { IncomeTransactionForm } from '../../../../components/transactions/IncomeTransactionForm'
 import { LayoutProvider } from '../../../../store/LayoutContext'
 import type { Tag, Counterparty, Currency, Account, Transaction } from '../../../../types'
@@ -208,11 +208,75 @@ describe('IncomeTransactionForm', () => {
     expect(defaultProps.onCancel).toHaveBeenCalled()
   })
 
-  it('allows changing account', () => {
+  it('shows wallet names and scoped account labels', () => {
     render(<IncomeTransactionForm {...defaultProps} />)
+    const walletSelect = screen.getByRole('combobox', { name: /wallet/i })
     const accountSelect = screen.getByRole('combobox', { name: /account/i })
-    fireEvent.change(accountSelect, { target: { value: '2' } })
+
+    expect(within(walletSelect).getByRole('option', { name: 'Cash' })).toBeInTheDocument()
+    expect(within(walletSelect).getByRole('option', { name: 'Bank' })).toBeInTheDocument()
+    expect(within(accountSelect).getByRole('option', { name: /USD \(500[.,]00\)/ })).toBeInTheDocument()
+    expect(within(accountSelect).queryByRole('option', { name: /EUR \(200[.,]00\)/ })).not.toBeInTheDocument()
+  })
+
+  it('changing wallet updates the selected account', () => {
+    render(<IncomeTransactionForm {...defaultProps} />)
+    const walletSelect = screen.getByRole('combobox', { name: /wallet/i })
+    fireEvent.change(walletSelect, { target: { value: '2' } })
+
+    const accountSelect = screen.getByRole('combobox', { name: /account/i })
     expect(accountSelect).toHaveValue('2')
+    expect(within(accountSelect).getByRole('option', { name: /EUR \(200[.,]00\)/ })).toBeInTheDocument()
+  })
+
+  it('submits the account selected through wallet and account selectors', async () => {
+    render(<IncomeTransactionForm {...defaultProps} />)
+
+    fireEvent.change(screen.getByRole('combobox', { name: /wallet/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '1500' } })
+
+    const categoryInput = screen.getByLabelText(/category/i)
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'Salary' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Salary' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('option', { name: 'Salary' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: [expect.objectContaining({ account_id: 2 })],
+        })
+      )
+    })
+  })
+
+  it('add another preserves account and clears entry fields after submit', async () => {
+    render(<IncomeTransactionForm {...defaultProps} showAddAnother />)
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /add another/i }))
+    fireEvent.change(screen.getByRole('combobox', { name: /wallet/i }), { target: { value: '2' } })
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '1500' } })
+
+    const categoryInput = screen.getByLabelText(/category/i)
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'Salary' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Salary' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('option', { name: 'Salary' }))
+
+    fireEvent.change(screen.getByPlaceholderText('Add notes...'), { target: { value: 'bonus' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(defaultProps.onSubmit).toHaveBeenCalledWith({ addAnother: true })
+      expect(screen.getByLabelText(/^Amount/i)).toHaveValue(null)
+      expect(screen.getByLabelText(/category/i)).toHaveValue('')
+      expect(screen.getByPlaceholderText('Add notes...')).toHaveValue('')
+    })
+
+    expect(screen.getByRole('checkbox', { name: /add another/i })).toBeChecked()
+    expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('2')
   })
 
   it('allows changing note', () => {

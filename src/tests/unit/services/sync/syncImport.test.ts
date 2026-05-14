@@ -154,8 +154,8 @@ describe('syncImport', () => {
       await importSyncPackage(pkg)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'INSERT INTO budget (id, start, end, tag_id, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        ['blob:BB', 100, 200, 3, 1000, 0, 5000]
+        'INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ['blob:BB', 100, 200, 3, 'expense', 1000, 0, 5000]
       )
     })
   })
@@ -282,8 +282,8 @@ describe('syncImport', () => {
       await importSyncPackage(pkg)
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'UPDATE budget SET start = ?, end = ?, tag_id = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?',
-        [100, 200, 3, 1000, 0, 5000, 'BB']
+        'UPDATE budget SET start = ?, end = ?, tag_id = ?, type = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?',
+        [100, 200, 3, 'expense', 1000, 0, 5000, 'BB']
       )
     })
   })

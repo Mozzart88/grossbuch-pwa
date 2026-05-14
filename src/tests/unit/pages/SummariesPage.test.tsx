@@ -122,8 +122,13 @@ describe('SummariesPage', () => {
     })
     mockBudgetRepository.delete.mockResolvedValue(undefined)
     mockBudgetRepository.findByTagId.mockResolvedValue([])
+    mockTagRepository.findIncomeTags.mockResolvedValue([
+      { id: 24, name: 'Consulting', sort_order: 10 },
+      { id: 25, name: 'Mixed', sort_order: 10 },
+    ])
     mockTagRepository.findExpenseTags.mockResolvedValue([
       { id: 12, name: 'Food', sort_order: 10 },
+      { id: 25, name: 'Mixed', sort_order: 10 },
       { id: 13, name: 'Transport', sort_order: 10 },
     ])
   })
@@ -161,7 +166,7 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('By Tags')).toBeInTheDocument()
         expect(screen.getByText('By Counterparties')).toBeInTheDocument()
-        expect(screen.getByText('Income/Expense')).toBeInTheDocument()
+        expect(screen.getByText('Budgets')).toBeInTheDocument()
       })
     })
   })
@@ -190,6 +195,138 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('Food')).toBeInTheDocument()
         expect(screen.getByText('Salary')).toBeInTheDocument()
+      })
+    })
+
+    it('keeps shared child tag totals separated by transaction context', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 150,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 30, tag: 'Central Park', income: 0, expense: 100, net: -100, tag_context_id: null, tag_context: null },
+        { tag_id: 31, tag: 'Briton Beach', income: 0, expense: 50, net: -50, tag_context_id: null, tag_context: null },
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 100, net: -100, tag_context_id: 30, tag_context: 'Central Park' },
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 50, net: -50, tag_context_id: 31, tag_context: 'Briton Beach' },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 30, tag: 'Central Park', amount: 100, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 31, tag: 'Briton Beach', amount: 50, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 40, tag: 'Maintenance', amount: 100, type: 'expense', tag_context_id: 30, tag_context: 'Central Park' },
+        { tag_id: 40, tag: 'Maintenance', amount: 50, type: 'expense', tag_context_id: 31, tag_context: 'Briton Beach' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 30, name: 'Central Park', sort_order: 10 },
+        { id: 31, name: 'Briton Beach', sort_order: 10 },
+        { id: 40, name: 'Maintenance', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue([
+        { parent_id: 10, parent: 'expense', child_id: 30, child: 'Central Park' },
+        { parent_id: 10, parent: 'expense', child_id: 31, child: 'Briton Beach' },
+        { parent_id: 30, parent: 'Central Park', child_id: 40, child: 'Maintenance' },
+        { parent_id: 31, parent: 'Briton Beach', child_id: 40, child: 'Maintenance' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('By Tags')).toBeInTheDocument())
+      fireEvent.click(screen.getByText('By Tags'))
+
+      await waitFor(() => {
+        expect(screen.getByText('Central Park')).toBeInTheDocument()
+        expect(screen.getByText('Briton Beach')).toBeInTheDocument()
+      })
+
+      expect(screen.getAllByText('Maintenance')).toHaveLength(2)
+      expect(screen.getAllByText(formatCurrencyValue(-100, '$'), { exact: false }).length).toBeGreaterThanOrEqual(2)
+      expect(screen.getAllByText(formatCurrencyValue(-50, '$'), { exact: false }).length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('aggregates deeply nested tags and preserves separate row and title clicks', async () => {
+      const navigate = vi.fn()
+      vi.mocked(useNavigate).mockReturnValue(navigate)
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 21,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 100, tag: 'Food', income: 0, expense: 21, net: -21, tag_context_id: null, tag_context: null },
+        { tag_id: 101, tag: 'Meat', income: 0, expense: 12, net: -12, tag_context_id: 100, tag_context: 'Food' },
+        { tag_id: 102, tag: 'Chicken', income: 0, expense: 2, net: -2, tag_context_id: 100, tag_context: 'Food' },
+        { tag_id: 103, tag: 'Water', income: 0, expense: 2, net: -2, tag_context_id: 100, tag_context: 'Food' },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 100, tag: 'Food', amount: 21, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 101, tag: 'Meat', amount: 12, type: 'expense', tag_context_id: 100, tag_context: 'Food' },
+        { tag_id: 102, tag: 'Chicken', amount: 2, type: 'expense', tag_context_id: 100, tag_context: 'Food' },
+        { tag_id: 103, tag: 'Water', amount: 2, type: 'expense', tag_context_id: 100, tag_context: 'Food' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 100, name: 'Food', sort_order: 10 },
+        { id: 101, name: 'Meat', sort_order: 10 },
+        { id: 102, name: 'Chicken', sort_order: 10 },
+        { id: 103, name: 'Water', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue([
+        { parent_id: 10, parent: 'expense', child_id: 100, child: 'Food' },
+        { parent_id: 100, parent: 'Food', child_id: 101, child: 'Meat' },
+        { parent_id: 101, parent: 'Meat', child_id: 102, child: 'Chicken' },
+        { parent_id: 100, parent: 'Food', child_id: 103, child: 'Water' },
+      ])
+
+      renderWithRouter(['/summaries?tab=tags'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+        expect(screen.getByText('Meat')).toBeInTheDocument()
+        expect(screen.getByText('Chicken')).toBeInTheDocument()
+        expect(screen.getAllByText(formatCurrencyValue(-21, '$'), { exact: false }).length).toBeGreaterThan(0)
+        expect(screen.getAllByText(formatCurrencyValue(-14, '$'), { exact: false }).length).toBeGreaterThan(0)
+      })
+
+      fireEvent.click(screen.getByText('Meat').closest('div[class*="cursor-pointer"]')!)
+      expect(screen.queryByText('Chicken')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByText('Meat').closest('div[class*="cursor-pointer"]')!)
+      expect(screen.getByText('Chicken')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByText('Food'))
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&tag=100&includeChildren=1&tagContext=100')
+    })
+
+    it('renders intermediate descendants for contextual leaf transactions', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 10,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', income: 0, expense: 10, net: -10, tag_context_id: null, tag_context: null },
+        { tag_id: 102, tag: 'Gasoline', income: 0, expense: 10, net: -10, tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', amount: 10, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 102, tag: 'Gasoline', amount: 10, type: 'expense', tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 100, name: 'Auto', sort_order: 10 },
+        { id: 101, name: 'Fuel', sort_order: 10 },
+        { id: 102, name: 'Gasoline', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue([
+        { parent_id: 10, parent: 'expense', child_id: 100, child: 'Auto' },
+        { parent_id: 10, parent: 'expense', child_id: 101, child: 'Fuel' },
+        { parent_id: 10, parent: 'expense', child_id: 102, child: 'Gasoline' },
+        { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Fuel' },
+        { parent_id: 101, parent: 'Fuel', child_id: 102, child: 'Gasoline' },
+      ])
+
+      renderWithRouter(['/summaries?tab=tags'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Auto')).toBeInTheDocument()
+        expect(screen.getByText('Fuel')).toBeInTheDocument()
+        expect(screen.getByText('Gasoline')).toBeInTheDocument()
+        expect(screen.getAllByText(formatCurrencyValue(-10, '$'), { exact: false }).length).toBeGreaterThanOrEqual(3)
       })
     })
 
@@ -455,8 +592,8 @@ describe('SummariesPage', () => {
       })
 
       // Card should have cursor-pointer class
-      const foodCard = screen.getByText(`Expenses (${formatCurrencyValue(500, '$')})`)
-      expect(foodCard).toBeInTheDocument
+      const foodCard = screen.getByText(`Expenses ${formatCurrencyValue(300, '$')}/${formatCurrencyValue(0, '$')}`)
+      expect(foodCard).toBeInTheDocument()
     })
 
     it('category section is navigate to correct route', async () => {
@@ -468,9 +605,9 @@ describe('SummariesPage', () => {
       })
 
       // Card should have cursor-pointer class
-      const foodCard = screen.getByText(/Expenses \(/)
+      const foodCard = screen.getByText('Food')
       fireEvent.click(foodCard)
-      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=expense')
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=expense&tag=1')
     })
 
     it('cards have hover styles when clickable', async () => {
@@ -512,6 +649,148 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+      })
+    })
+
+    it('opens "Set budget" option in dropdown for income budget categories', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 1000, type: 'income' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Consulting')).toBeInTheDocument()
+      })
+
+      const dropdownButton = screen.getByRole('button', { expanded: false })
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => {
+        expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument()
+      })
+    })
+
+    it('creates separate income and expense budgets for a dual-purpose tag', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 25, tag: 'Mixed', amount: 1000, type: 'income' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Mixed')).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('button', { expanded: false }))
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '1200.00' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({ tag_id: 25, type: 'income', amount_int: 1200 })
+        )
+      })
+    })
+
+    it('folds and unfolds budget sections', async () => {
+      renderWithRouter()
+
+      await waitFor(() => expect(screen.getByText('Food')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByText(`Expenses ${formatCurrencyValue(300, '$')}/${formatCurrencyValue(0, '$')}`))
+      expect(screen.queryByText('Food')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByText(`Expenses ${formatCurrencyValue(300, '$')}/${formatCurrencyValue(0, '$')}`))
+      expect(screen.getByText('Food')).toBeInTheDocument()
+    })
+
+    it('renders deeply nested budget categories and opens child-inclusive filters from titles', async () => {
+      const navigate = vi.fn()
+      vi.mocked(useNavigate).mockReturnValue(navigate)
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 21,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 100, tag: 'Food', amount: 21, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 101, tag: 'Meat', amount: 12, type: 'expense', tag_context_id: 100, tag_context: 'Food' },
+        { tag_id: 102, tag: 'Chicken', amount: 2, type: 'expense', tag_context_id: 100, tag_context: 'Food' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 100,
+          type: 'expense',
+          amount_int: 30,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Food',
+          actual: 21,
+        },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 100, name: 'Food', sort_order: 10 },
+        { id: 101, name: 'Meat', sort_order: 10 },
+        { id: 102, name: 'Chicken', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue([
+        { parent_id: 10, parent: 'expense', child_id: 100, child: 'Food' },
+        { parent_id: 100, parent: 'Food', child_id: 101, child: 'Meat' },
+        { parent_id: 101, parent: 'Meat', child_id: 102, child: 'Chicken' },
+      ])
+
+      renderWithRouter(['/summaries'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+        expect(screen.getByText('Meat')).toBeInTheDocument()
+        expect(screen.getByText('Chicken')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Meat'))
+      expect(navigate).toHaveBeenCalledWith('/?month=2025-01&type=expense&tag=101&includeChildren=1&tagContext=100')
+
+      fireEvent.click(screen.getByText('Food').closest('div[class*="cursor-pointer"]')!)
+      expect(screen.queryByText('Meat')).not.toBeInTheDocument()
+    })
+
+    it('renders intermediate budget descendants for contextual leaf transactions', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 10,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', income: 0, expense: 10, net: -10, tag_context_id: null, tag_context: null },
+        { tag_id: 102, tag: 'Gasoline', income: 0, expense: 10, net: -10, tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', amount: 10, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 102, tag: 'Gasoline', amount: 10, type: 'expense', tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 100, name: 'Auto', sort_order: 10 },
+        { id: 101, name: 'Fuel', sort_order: 10 },
+        { id: 102, name: 'Gasoline', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue([
+        { parent_id: 10, parent: 'expense', child_id: 100, child: 'Auto' },
+        { parent_id: 10, parent: 'expense', child_id: 101, child: 'Fuel' },
+        { parent_id: 10, parent: 'expense', child_id: 102, child: 'Gasoline' },
+        { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Fuel' },
+        { parent_id: 101, parent: 'Fuel', child_id: 102, child: 'Gasoline' },
+      ])
+
+      renderWithRouter(['/summaries'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Auto')).toBeInTheDocument()
+        expect(screen.getByText('Fuel')).toBeInTheDocument()
+        expect(screen.getByText('Gasoline')).toBeInTheDocument()
+        expect(screen.getAllByText(formatCurrencyValue(10, '$'), { exact: false }).length).toBeGreaterThanOrEqual(3)
       })
     })
 
@@ -737,6 +1016,84 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         const progressBar = container.querySelector('.bg-red-500')
         expect(progressBar).toBeInTheDocument()
+      })
+    })
+
+    it('shows red progress bar when income is below 80% of budget', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 300, type: 'income' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 24,
+          type: 'income',
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Consulting',
+          actual: 300,
+        },
+      ])
+
+      const { container } = renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText(`${formatCurrencyValue(300, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(container.querySelector('.bg-red-500')).toBeInTheDocument()
+      })
+    })
+
+    it('shows yellow progress bar when income is between 80-100% of budget', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 450, type: 'income' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 24,
+          type: 'income',
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Consulting',
+          actual: 450,
+        },
+      ])
+
+      const { container } = renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText(`${formatCurrencyValue(450, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(container.querySelector('.bg-yellow-500')).toBeInTheDocument()
+      })
+    })
+
+    it('shows green progress bar when income reaches budget', async () => {
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 24, tag: 'Consulting', amount: 600, type: 'income' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+          tag_id: 24,
+          type: 'income',
+          amount_int: 500,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Consulting',
+          actual: 600,
+        },
+      ])
+
+      const { container } = renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText(`${formatCurrencyValue(600, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
+        expect(container.querySelector('.bg-green-500')).toBeInTheDocument()
       })
     })
 
@@ -966,7 +1323,7 @@ describe('SummariesPage', () => {
         // 0/50000 = 0%
         expect(screen.getByText('0%')).toBeInTheDocument()
         expect(screen.getByText(`${formatCurrencyValue(0, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
-        expect(screen.getByText(`Expenses (${formatCurrencyValue(500, '$')}/${formatCurrencyValue(500, '$')})`)).toBeInTheDocument()
+        expect(screen.getByText(`Expenses ${formatCurrencyValue(0, '$')}/${formatCurrencyValue(500, '$')}`)).toBeInTheDocument()
       })
     })
 
@@ -1130,7 +1487,7 @@ describe('SummariesPage', () => {
       await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
       fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
 
-      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1))
+      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1, 'expense'))
 
       // Submit and verify start timestamp is January 2025
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())

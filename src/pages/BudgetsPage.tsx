@@ -106,6 +106,7 @@ export function BudgetsPage() {
       const { int: amount_int, frac: amount_frac } = parseAmountToIntFrac(amount)
       const data: BudgetInput = {
         tag_id: tagId as number,
+        type: 'expense',
         amount_int,
         amount_frac,
         start: Math.floor(startDate.getTime() / 1000),
