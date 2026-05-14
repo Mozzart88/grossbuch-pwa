@@ -142,6 +142,20 @@ describe('SummariesPage', () => {
       })
     })
 
+    it('switches between nested and flat summary views from the header', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Switch to flat view' })).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to flat view' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Switch to nested view' })).toBeInTheDocument()
+      })
+    })
+
     it('renders month navigator', async () => {
       renderWithRouter()
 
@@ -240,6 +254,28 @@ describe('SummariesPage', () => {
       expect(screen.getAllByText('Maintenance')).toHaveLength(2)
       expect(screen.getAllByText(formatCurrencyValue(-100, '$'), { exact: false }).length).toBeGreaterThanOrEqual(2)
       expect(screen.getAllByText(formatCurrencyValue(-50, '$'), { exact: false }).length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('flat view groups shared child tag totals into one row', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 150,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 30, tag: 'Auto', income: 0, expense: 100, net: -100, tag_context_id: null, tag_context: null },
+        { tag_id: 31, tag: 'Boat', income: 0, expense: 50, net: -50, tag_context_id: null, tag_context: null },
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 100, net: -100, tag_context_id: 30, tag_context: 'Auto' },
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 50, net: -50, tag_context_id: 31, tag_context: 'Boat' },
+      ])
+
+      renderWithRouter(['/summaries?tab=tags&view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Maintenance')).toBeInTheDocument()
+      })
+
+      expect(screen.getAllByText('Maintenance')).toHaveLength(1)
+      expect(screen.getAllByText(formatCurrencyValue(-150, '$'), { exact: false }).length).toBeGreaterThan(0)
     })
 
     it('aggregates deeply nested tags and preserves separate row and title clicks', async () => {
@@ -415,6 +451,15 @@ describe('SummariesPage', () => {
         expect(screen.getByText('No transactions this month')).toBeInTheDocument()
       })
     })
+
+    it('keeps counterparties unchanged in flat view', async () => {
+      renderWithRouter(['/summaries?tab=counterparties&view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Employer')).toBeInTheDocument()
+        expect(screen.getByText('Grocery Store')).toBeInTheDocument()
+      })
+    })
   })
 
   describe('Income/Expense tab', () => {
@@ -473,6 +518,65 @@ describe('SummariesPage', () => {
         expect(screen.getByText('No income this month')).toBeInTheDocument()
       })
     })
+
+    it('flat view groups contextual budget actuals and planned amounts by tag', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 65,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 40, tag: 'Diesel', amount: 25, type: 'expense', tag_context_id: 30, tag_context: 'Auto' },
+        { tag_id: 40, tag: 'Diesel', amount: 40, type: 'expense', tag_context_id: 31, tag_context: 'Boat' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 1, 1, 1, 1, 1, 1, 1]),
+          tag_id: 40,
+          tag_context_id: 30,
+          tag_context: 'Auto',
+          type: 'expense',
+          amount_int: 100,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Diesel',
+          actual: 25,
+        },
+        {
+          id: new Uint8Array([2, 2, 2, 2, 2, 2, 2, 2]),
+          tag_id: 40,
+          tag_context_id: 31,
+          tag_context: 'Boat',
+          type: 'expense',
+          amount_int: 200,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Diesel',
+          actual: 40,
+        },
+      ])
+
+      renderWithRouter(['/summaries?view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Diesel')).toBeInTheDocument()
+      })
+
+      expect(screen.getAllByText('Diesel')).toHaveLength(1)
+      expect(screen.getByText(`${formatCurrencyValue(65, '$')}/${formatCurrencyValue(300, '$')}`)).toBeInTheDocument()
+      expect(screen.getByText('22%')).toBeInTheDocument()
+    })
+
+    it('flat view keeps budget progress bars for rows without budgets', async () => {
+      renderWithRouter(['/summaries?view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      expect(screen.getByText('60%')).toBeInTheDocument()
+    })
   })
 
   describe('Month navigation', () => {
@@ -500,6 +604,14 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Employer')).toBeInTheDocument()
+      })
+    })
+
+    it('uses flat view from URL parameter', async () => {
+      renderWithRouter(['/summaries?month=2025-01&tab=tags&view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Switch to nested view' })).toBeInTheDocument()
       })
     })
   })
@@ -1752,9 +1864,9 @@ describe('SummariesPage', () => {
         expect(screen.getByText('January 2025')).toBeInTheDocument()
       })
 
-      // buttons[1] is the prev-month button in MonthNavigator (buttons[0] is PageHeader back)
+      // buttons[2] is the prev-month button in MonthNavigator (before it: PageHeader back, summary view toggle)
       const buttons = screen.getAllByRole('button')
-      fireEvent.click(buttons[1])
+      fireEvent.click(buttons[2])
 
       await waitFor(() => {
         expect(mockTransactionRepository.getMonthSummary).toHaveBeenCalledWith('2024-12')

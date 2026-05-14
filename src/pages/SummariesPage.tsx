@@ -35,6 +35,8 @@ type SummaryTreeItem = {
   tag_context_id?: number | null
 }
 
+type SummaryView = 'nested' | 'flat'
+
 export function SummariesPage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
@@ -43,10 +45,12 @@ export function SummariesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tabParam = searchParams.get('tab') || 'income-expense'
+  const viewParam: SummaryView = searchParams.get('view') === 'flat' ? 'flat' : 'nested'
 
   const todayMonth = getCurrentMonth()
   const [month, setMonth] = useState(monthParam)
   const [activeTab, setActiveTab] = useState(tabParam)
+  const [summaryView, setSummaryView] = useState<SummaryView>(viewParam)
   const [loading, setLoading] = useState(true)
   const [decimalPlaces, setDecimalPlaces] = useState(2)
   const [currencySymbol, setCurrencySymbol] = useState('$')
@@ -82,13 +86,14 @@ export function SummariesPage() {
 
   const isCurrentMonth = month === todayMonth
 
-  // Update URL when month or tab changes
+  // Update URL when month, tab, or summary view changes
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('month', month)
     params.set('tab', activeTab)
+    params.set('view', summaryView)
     setSearchParams(params, { replace: true })
-  }, [month, activeTab, setSearchParams])
+  }, [month, activeTab, summaryView, setSearchParams])
 
   // Override FAB to open Set Budget modal
   useEffect(() => {
@@ -168,6 +173,10 @@ export function SummariesPage() {
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId)
+  }
+
+  const toggleSummaryView = () => {
+    setSummaryView(prev => prev === 'nested' ? 'flat' : 'nested')
   }
 
   // Navigation handlers for clicking cards
@@ -450,6 +459,8 @@ export function SummariesPage() {
   const tagsSummaryWithAncestors = withSummaryAncestors(tagsSummary)
   const incomeCategories = withCategoryAncestors(buildBudgetCategories('income'), 'income')
   const expenseCategories = withCategoryAncestors(buildBudgetCategories('expense'), 'expense')
+  const rawIncomeCategories = buildBudgetCategories('income')
+  const rawExpenseCategories = buildBudgetCategories('expense')
   const incomeBudgets = budgets.filter(b => budgetType(b) === 'income')
   const expenseBudgets = budgets.filter(b => budgetType(b) === 'expense')
   const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
@@ -462,6 +473,97 @@ export function SummariesPage() {
   const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
   const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
   const typeTagOptions = selectedBudgetType === 'income' ? incomeTagOptions : expenseTagOptions
+
+  const buildFlatTagSummaryRows = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
+    const byTagId = new Map<number, MonthlyTagSummary>()
+    for (const item of items) {
+      const existing = byTagId.get(item.tag_id)
+      if (existing) {
+        existing.income += item.income
+        existing.expense += item.expense
+        existing.net += item.net
+      } else {
+        byTagId.set(item.tag_id, {
+          tag_id: item.tag_id,
+          tag: item.tag || getHierarchyTagName(item.tag_id),
+          tag_context_id: null,
+          tag_context: null,
+          income: item.income,
+          expense: item.expense,
+          net: item.net,
+        })
+      }
+    }
+    return Array.from(byTagId.values()).filter(item => item.income !== 0 || item.expense !== 0 || item.net !== 0)
+  }
+
+  const buildFlatBudgetCategories = (items: MonthlyCategoryBreakdown[], type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
+    const byTagId = new Map<number, MonthlyCategoryBreakdown>()
+    for (const item of items) {
+      const existing = byTagId.get(item.tag_id)
+      if (existing) {
+        existing.amount += item.amount
+      } else {
+        byTagId.set(item.tag_id, {
+          tag_id: item.tag_id,
+          tag: item.tag || getHierarchyTagName(item.tag_id),
+          tag_context_id: null,
+          tag_context: null,
+          amount: item.amount,
+          type,
+        })
+      }
+    }
+
+    for (const budget of budgets.filter(b => budgetType(b) === type)) {
+      if (byTagId.has(budget.tag_id)) continue
+      byTagId.set(budget.tag_id, {
+        tag_id: budget.tag_id,
+        tag: budget.tag || getHierarchyTagName(budget.tag_id),
+        tag_context_id: null,
+        tag_context: null,
+        amount: 0,
+        type,
+      })
+    }
+
+    return Array.from(byTagId.values()).filter(item =>
+      item.amount !== 0 ||
+      budgets.some(b => budgetType(b) === type && b.tag_id === item.tag_id && getBudgetAmount(b) > 0)
+    )
+  }
+
+  const getGroupedBudgetForFlatCategory = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): Budget | undefined => {
+    const matchingBudgets = budgets.filter(b => budgetType(b) === type && b.tag_id === category.tag_id)
+    const budgetTotal = matchingBudgets.reduce((sum, b) => sum + getBudgetAmount(b), 0)
+    if (budgetTotal <= 0) return undefined
+    const directBudget = matchingBudgets.length === 1 ? matchingBudgets[0] : undefined
+    const amountParts = toIntFrac(budgetTotal)
+    return {
+      id: directBudget?.id ?? new Uint8Array(),
+      start: directBudget?.start ?? 0,
+      end: directBudget?.end ?? 0,
+      tag_id: category.tag_id,
+      tag_context_id: null,
+      tag_context: null,
+      type,
+      amount_int: amountParts.int,
+      amount_frac: amountParts.frac,
+      tag: category.tag,
+      actual: category.amount,
+    }
+  }
+
+  const getSingleBudgetForFlatCategory = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): Budget | undefined => {
+    const matchingBudgets = budgets.filter(b => budgetType(b) === type && b.tag_id === category.tag_id)
+    return matchingBudgets.length === 1 ? matchingBudgets[0] : undefined
+  }
+
+  const flatTagsSummary = buildFlatTagSummaryRows(tagsSummary)
+  const flatIncomeCategories = buildFlatBudgetCategories(rawIncomeCategories, 'income')
+  const flatExpenseCategories = buildFlatBudgetCategories(rawExpenseCategories, 'expense')
+  const flatIncomeActualTotal = flatIncomeCategories.reduce((acc, c) => acc + c.amount, 0)
+  const flatExpenseActualTotal = flatExpenseCategories.reduce((acc, c) => acc + c.amount, 0)
 
   const toggleSummaryTag = (key: string, fallbackKey?: string) => {
     setExpandedSummaryTagIds(prev => {
@@ -604,6 +706,64 @@ export function SummariesPage() {
     )
   }
 
+  const renderFlatBudgetSection = (
+    type: 'income' | 'expense',
+    title: string,
+    categories: MonthlyCategoryBreakdown[],
+    actualTotal: number,
+    budgetTotal: number,
+    expanded: boolean,
+    setExpanded: (value: boolean) => void
+  ) => {
+    const progress = sectionProgress(actualTotal, budgetTotal)
+    return (
+      <div className="mb-4">
+        <button type="button" className="w-full text-left px-1 mb-2" onClick={() => setExpanded(!expanded)}>
+          <div className="flex items-center justify-between text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <span>
+              {title} {formatCurrencyValue(actualTotal, currencySymbol, decimalPlaces)}/{formatCurrencyValue(budgetTotal, currencySymbol, decimalPlaces)}
+            </span>
+            <span className="text-xs">{expanded ? 'Hide' : 'Show'}</span>
+          </div>
+          <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div className={`h-full ${sectionBarColor(type, progress)} rounded-full transition-all duration-300`} style={{ width: `${progress}%` }} />
+          </div>
+        </button>
+        {expanded && (
+          categories.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No {title.toLowerCase()} this month</p>
+          ) : (
+            <Card className="divide-y divide-gray-200 dark:divide-gray-700">
+              {categories.map(cat => {
+                const budget = getGroupedBudgetForFlatCategory(cat, type)
+                const directBudget = getSingleBudgetForFlatCategory(cat, type)
+                const sectionTags = type === 'income' ? incomeTags : expenseTags
+                const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
+                return (
+                  <CategoryCard
+                    key={`flat-${type}-${cat.tag_id}`}
+                    asRow
+                    title={cat.tag}
+                    amount={cat.amount}
+                    total={type === 'income' ? summary.income : summary.expenses}
+                    currencySymbol={currencySymbol}
+                    decimalPlaces={decimalPlaces}
+                    type={type}
+                    onClick={() => handleCategoryClick(type, cat.tag_id)}
+                    budget={budget}
+                    onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount, null) : undefined}
+                    onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, directBudget, directBudget.tag_context_id ?? null) : undefined}
+                    onDeleteBudget={directBudget ? () => handleBudgetDelete(directBudget) : undefined}
+                  />
+                )
+              })}
+            </Card>
+          )
+        )}
+      </div>
+    )
+  }
+
   const renderTagsSummaryTree = (items: MonthlyTagSummary[], allItems = tagsSummaryWithAncestors, depth = 0, branchContextId: number | null = null): React.ReactNode => {
     return items.flatMap(tag => {
       const currentBranchContextId = depth === 0 ? getBranchContextId(tag) : branchContextId
@@ -637,6 +797,24 @@ export function SummariesPage() {
   const renderTagSummaryCard = (root: MonthlyTagSummary): React.ReactNode => (
     <Card key={`tag-root-${summaryItemKey(root)}`} className="divide-y divide-gray-200 dark:divide-gray-700">
       {renderTagsSummaryTree([root], tagsSummaryWithAncestors)}
+    </Card>
+  )
+
+  const renderFlatTagsSummary = (): React.ReactNode => (
+    <Card className="divide-y divide-gray-200 dark:divide-gray-700">
+      {flatTagsSummary.map(tag => (
+        <SummaryCard
+          key={`flat-tag-${tag.tag_id}`}
+          asRow
+          title={tag.tag}
+          income={tag.income}
+          expense={tag.expense}
+          net={tag.net}
+          currencySymbol={currencySymbol}
+          decimalPlaces={decimalPlaces}
+          onClick={() => handleTagClick(tag.tag_id)}
+        />
+      ))}
     </Card>
   )
 
@@ -689,7 +867,21 @@ export function SummariesPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <PageHeader title="Summaries" showBack />
+      <PageHeader
+        title="Summaries"
+        showBack
+        rightAction={
+          <button
+            type="button"
+            onClick={toggleSummaryView}
+            aria-label={summaryView === 'nested' ? 'Switch to flat view' : 'Switch to nested view'}
+            title={summaryView === 'nested' ? 'Nested view' : 'Flat view'}
+            className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors"
+          >
+            {summaryView === 'nested' ? <NestedViewIcon /> : <FlatViewIcon />}
+          </button>
+        }
+      />
       <MonthNavigator month={month} onChange={handleMonthChange} />
       <MonthSummary {...summary} decimalPlaces={decimalPlaces} />
       <PageTabs tabs={TABS} activeTab={activeTab} onChange={handleTabChange} />
@@ -702,12 +894,16 @@ export function SummariesPage() {
         <div className="flex-1 overflow-visible p-4 space-y-3">
           {activeTab === 'tags' && (
             <>
-              {tagsSummary.length === 0 ? (
+              {(summaryView === 'flat' ? flatTagsSummary.length === 0 : tagsSummary.length === 0) ? (
                 <EmptyState message="No transactions this month" />
               ) : (
-                <div className="space-y-4">
-                  {getTopLevelSummaryItems(tagsSummaryWithAncestors).map(renderTagSummaryCard)}
-                </div>
+                summaryView === 'flat' ? (
+                  renderFlatTagsSummary()
+                ) : (
+                  <div className="space-y-4">
+                    {getTopLevelSummaryItems(tagsSummaryWithAncestors).map(renderTagSummaryCard)}
+                  </div>
+                )
               )}
             </>
           )}
@@ -735,13 +931,23 @@ export function SummariesPage() {
 
           {activeTab === 'income-expense' && (
             <>
-              {incomeCategories.length === 0 && expenseCategories.length === 0 ? (
+              {(summaryView === 'flat'
+                ? flatIncomeCategories.length === 0 && flatExpenseCategories.length === 0
+                : incomeCategories.length === 0 && expenseCategories.length === 0
+              ) ? (
                 <EmptyState message="No transactions this month" />
               ) : (
-                <>
-                  {renderBudgetSection('income', 'Income', incomeCategories, incomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
-                  {renderBudgetSection('expense', 'Expenses', expenseCategories, expenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
-                </>
+                summaryView === 'flat' ? (
+                  <>
+                    {renderFlatBudgetSection('income', 'Income', flatIncomeCategories, flatIncomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
+                    {renderFlatBudgetSection('expense', 'Expenses', flatExpenseCategories, flatExpenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
+                  </>
+                ) : (
+                  <>
+                    {renderBudgetSection('income', 'Income', incomeCategories, incomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
+                    {renderBudgetSection('expense', 'Expenses', expenseCategories, expenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
+                  </>
+                )
               )}
             </>
           )}
@@ -819,6 +1025,24 @@ function EmptyState({ message }: { message: string }) {
       </svg>
       <p className="text-sm">{message}</p>
     </div>
+  )
+}
+
+function NestedViewIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5h5v5H5zM14 5h5v5h-5zM14 14h5v5h-5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 7.5h4M16.5 10v4" />
+    </svg>
+  )
+}
+
+function FlatViewIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12M6 12h12M6 17h12" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.5 7h.01M3.5 12h.01M3.5 17h.01" />
+    </svg>
   )
 }
 
