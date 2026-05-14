@@ -253,6 +253,7 @@ export function insertTransaction(data: {
   rate_int?: number
   rate_frac?: number
   counterparty_id?: number
+  tag_context_id?: number | null
   note?: string
   timestamp?: number
 }): Uint8Array {
@@ -271,6 +272,12 @@ export function insertTransaction(data: {
     'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [trxBaseId, trxId, data.account_id, data.tag_id, data.sign, data.amount_int, data.amount_frac ?? 0, data.rate_int ?? 0, data.rate_frac ?? 0]
   )
+  if (data.tag_context_id !== null && data.tag_context_id !== undefined) {
+    database.run(
+      'INSERT INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
+      [trxBaseId, data.tag_context_id]
+    )
+  }
 
   if (data.counterparty_id) {
     database.run('INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)', [
@@ -291,6 +298,7 @@ export function insertBudget(data: {
   amount_int: number
   amount_frac?: number
   type?: 'income' | 'expense'
+  tag_context_id?: number | null
   start?: number
   end?: number
 }): Uint8Array {
@@ -307,6 +315,12 @@ export function insertBudget(data: {
     'INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [budgetId, start, end, data.tag_id, data.type ?? 'expense', data.amount_int, data.amount_frac ?? 0]
   )
+  if (data.tag_context_id !== null && data.tag_context_id !== undefined) {
+    database.run(
+      'INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)',
+      [budgetId, data.tag_context_id]
+    )
+  }
 
   return budgetId
 }

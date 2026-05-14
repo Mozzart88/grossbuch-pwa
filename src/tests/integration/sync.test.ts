@@ -150,6 +150,19 @@ describe('Sync Integration', () => {
       expect(pkg.budgets[0].amount_frac).toBe(0)
     })
 
+    it('exports budgets with tag context', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+
+      const autoId = insertTag({ name: 'Sync Export Auto', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const dieselId = insertTag({ name: 'Sync Export Diesel', parent_ids: [autoId] })
+      insertBudget({ tag_id: dieselId, tag_context_id: autoId, amount_int: 500 })
+
+      const pkg = await exportSyncPackage(0, 'sender-1')
+      const budget = pkg.budgets.find(b => b.tag === dieselId)
+
+      expect(budget?.tag_context).toBe(autoId)
+    })
+
     it('exports deletions since timestamp', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
@@ -722,6 +735,45 @@ describe('Sync Integration', () => {
       expect(budget[0]?.values[0]?.[0]).toBe('expense')
       expect(budget[0]?.values[0]?.[1]).toBe(1000)
       expect(budget[0]?.values[0]?.[2]).toBe(0)
+    })
+
+    it('imports budget tag context', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const budgetId = 'BB00BB00BB00BB01'
+      const autoId = insertTag({ name: 'Sync Import Auto', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const dieselId = insertTag({ name: 'Sync Import Diesel', parent_ids: [autoId] })
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [{
+          id: budgetId,
+          start: 1000,
+          end: 2000,
+          tag: dieselId,
+          tag_context: autoId,
+          amount_int: 1000,
+          amount_frac: 0,
+          updated_at: 1000,
+        }],
+        deletions: [],
+      })
+
+      expect(result.imported.budgets).toBe(1)
+
+      const db = getTestDatabase()
+      const context = db.exec(`SELECT tag_id FROM budget_tag_context WHERE hex(budget_id) = '${budgetId}'`)
+      expect(context[0]?.values[0]?.[0]).toBe(autoId)
     })
 
     it('applies deletions with delete-vs-modify conflict', async () => {

@@ -207,6 +207,8 @@ export interface Budget {
   type: 'income' | 'expense'
   amount_int: number
   amount_frac: number
+  tag_context_id?: number | null
+  tag_context?: string | null
   // Joined fields
   tag?: string
   actual: number // computed, stays as single float for display
@@ -216,6 +218,7 @@ export interface BudgetInput {
   start?: number
   end?: number
   tag_id: number
+  tag_context_id?: number | null
   type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number

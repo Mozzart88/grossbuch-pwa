@@ -330,11 +330,13 @@ async function exportBudgets(since: number): Promise<SyncBudget[]> {
       b.start,
       b.end,
       b.tag_id AS tag,
+      bctx.tag_id AS tag_context,
       b.type,
       b.amount_int,
       b.amount_frac,
       b.updated_at
     FROM budget b
+    LEFT JOIN budget_tag_context bctx ON bctx.budget_id = b.id
     WHERE b.updated_at >= ?`,
     [since]
   )

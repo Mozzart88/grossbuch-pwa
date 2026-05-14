@@ -227,7 +227,7 @@ describe('migrations', () => {
 
     it('parses db_version correctly', async () => {
       // Already at current version
-      mockQueryOne.mockResolvedValue({ value: '19' })
+      mockQueryOne.mockResolvedValue({ value: '20' })
 
       await runMigrations()
 
@@ -240,9 +240,9 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      // Full migration (v1-v19): each migration joins statements into one execSQL call
-      // v1 = 1 call, v2-v19 = 2 calls each (migration + version update) = 1 + 18*2 = 37
-      expect(mockExecSQL.mock.calls.length).toEqual(37)
+      // Full migration (v1-v20): each migration joins statements into one execSQL call
+      // v1 = 1 call, v2-v20 = 2 calls each (migration + version update) = 1 + 19*2 = 39
+      expect(mockExecSQL.mock.calls.length).toEqual(39)
     })
 
     it('updates db_version to 4 after migration', async () => {
@@ -276,6 +276,19 @@ describe('migrations', () => {
       // Budget table should have randomblob(16) default for id
       expect(mockExecSQL).toHaveBeenCalledWith(
         expect.stringMatching(/CREATE TABLE IF NOT EXISTS budget.*id BLOB.*PRIMARY KEY.*DEFAULT.*randomblob/s)
+      )
+    })
+
+    it('creates budget tag context table in migration v20', async () => {
+      mockQueryOne.mockResolvedValue({ value: '19' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS budget_tag_context')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TRIGGER IF NOT EXISTS trg_budget_tag_context_insert')
       )
     })
 

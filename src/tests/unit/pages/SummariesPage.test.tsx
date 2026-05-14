@@ -1487,7 +1487,7 @@ describe('SummariesPage', () => {
       await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
       fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
 
-      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1, 'expense'))
+      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1, 'expense', null))
 
       // Submit and verify start timestamp is January 2025
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())

@@ -74,6 +74,7 @@ export interface SyncBudget {
   start: number
   end: number
   tag: number
+  tag_context?: number | null
   type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number

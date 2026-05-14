@@ -52,6 +52,8 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_trx_base_tag_context_delete',
   // Budget
   'trg_budget_update',
+  'trg_budget_tag_context_insert',
+  'trg_budget_tag_context_delete',
 ] as const
 
 /**
@@ -397,5 +399,21 @@ FOR EACH ROW
 BEGIN
   UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
   WHERE budget.id = NEW.id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_budget_tag_context_insert
+AFTER INSERT ON budget_tag_context
+FOR EACH ROW
+BEGIN
+  UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.budget_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_budget_tag_context_delete
+AFTER DELETE ON budget_tag_context
+FOR EACH ROW
+BEGIN
+  UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = OLD.budget_id;
 END`)
 }

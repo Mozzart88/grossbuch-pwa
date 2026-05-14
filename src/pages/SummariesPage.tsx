@@ -9,6 +9,7 @@ import { transactionRepository, currencyRepository, accountRepository, budgetRep
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrencyValue } from '../utils/formatters'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
+import { encodeTagSelection, parseTagSelection } from '../components/transactions/transactionFormShared'
 import type {
   MonthSummary as MonthSummaryType,
   MonthlyTagSummary,
@@ -17,6 +18,7 @@ import type {
   Budget,
   BudgetInput,
   Tag,
+  TagContextOption,
   TagHierarchy,
 } from '../types'
 import { SYSTEM_TAGS } from '../types'
@@ -64,12 +66,14 @@ export function SummariesPage() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
+  const [incomeTagOptions, setIncomeTagOptions] = useState<TagContextOption[]>([])
+  const [expenseTagOptions, setExpenseTagOptions] = useState<TagContextOption[]>([])
   const [tagHierarchy, setTagHierarchy] = useState<TagHierarchy[]>([])
-  const [expandedSummaryTagIds, setExpandedSummaryTagIds] = useState<Set<number>>(new Set())
+  const [expandedSummaryTagIds, setExpandedSummaryTagIds] = useState<Set<string>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [selectedBudgetType, setSelectedBudgetType] = useState<'income' | 'expense'>('expense')
-  const [selectedTagId, setSelectedTagId] = useState<number | ''>('')
+  const [selectedTagSelection, setSelectedTagSelection] = useState('')
   const [budgetAmount, setBudgetAmount] = useState('')
   const [budgetPeriod, setBudgetPeriod] = useState(getCurrentMonth()) // defaults to current month
   const [submitting, setSubmitting] = useState(false)
@@ -90,7 +94,7 @@ export function SummariesPage() {
   useEffect(() => {
     setPlusButtonConfig({
       onClick: () => {
-        setSelectedTagId('')
+        setSelectedTagSelection('')
         setEditingBudget(null)
         setSelectedBudgetType('expense')
         setBudgetAmount('')
@@ -116,7 +120,7 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, hierarchy] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
         transactionRepository.getMonthSummary(month),
         accountRepository.getTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
@@ -125,6 +129,8 @@ export function SummariesPage() {
         budgetRepository.findByMonth(month),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
+        tagRepository.getContextOptions('income') ?? Promise.resolve([]),
+        tagRepository.getContextOptions('expense') ?? Promise.resolve([]),
         tagRepository.getHierarchy?.() ?? Promise.resolve([]),
       ])
 
@@ -142,10 +148,12 @@ export function SummariesPage() {
       setBudgets(monthBudgets)
       setIncomeTags((allIncomeTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
       setExpenseTags((allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setIncomeTagOptions(incomeOptions)
+      setExpenseTagOptions(expenseOptions)
       setTagHierarchy(hierarchy)
       setExpandedSummaryTagIds(prev => {
         if (prev.size > 0) return prev
-        return new Set(hierarchy.map(h => h.parent_id))
+        return new Set(hierarchy.map(h => h.parent_id.toString()))
       })
     } catch (error) {
       console.error('Failed to load summaries:', error)
@@ -192,9 +200,17 @@ export function SummariesPage() {
   // Budget helpers
   const budgetType = (budget: Budget): 'income' | 'expense' => budget.type ?? 'expense'
 
-  const getBudgetForTag = useCallback((tagId: number, type: 'income' | 'expense'): Budget | undefined => {
-    return budgets.find(b => b.tag_id === tagId && budgetType(b) === type)
+  const getBudgetForTag = useCallback((tagId: number, type: 'income' | 'expense', contextId?: number | null): Budget | undefined => {
+    return budgets.find(b =>
+      b.tag_id === tagId &&
+      budgetType(b) === type &&
+      (b.tag_context_id ?? null) === (contextId ?? null)
+    )
   }, [budgets])
+
+  const getBudgetAmount = useCallback((budget?: Budget): number =>
+    budget ? fromIntFrac(budget.amount_int, budget.amount_frac) : 0,
+  [])
 
   const generateMonthOptions = (): { value: string; label: string }[] => {
     const options: { value: string; label: string }[] = []
@@ -215,8 +231,8 @@ export function SummariesPage() {
     return toIntFrac(Math.abs(parsed))
   }
 
-  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget) => {
-    setSelectedTagId(tagId)
+  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget, contextId?: number | null) => {
+    setSelectedTagSelection(encodeTagSelection(tagId, existingBudget?.tag_context_id ?? contextId ?? null))
     setSelectedBudgetType(type)
     if (existingBudget) {
       setEditingBudget(existingBudget)
@@ -233,13 +249,13 @@ export function SummariesPage() {
     setModalOpen(true)
   }
 
-  const openSetBudgetModal = async (type: 'income' | 'expense', tagId: number, suggestedAmount: number) => {
-    setSelectedTagId(tagId)
+  const openSetBudgetModal = async (type: 'income' | 'expense', tagId: number, suggestedAmount: number, contextId?: number | null) => {
+    setSelectedTagSelection(encodeTagSelection(tagId, contextId ?? null))
     setSelectedBudgetType(type)
     setEditingBudget(null)
     setBudgetAmount(suggestedAmount.toFixed(decimalPlaces))
     try {
-      const allForTag = await budgetRepository.findByTagId(tagId, type)
+      const allForTag = await budgetRepository.findByTagId(tagId, type, contextId ?? null)
       const occupied = new Set(
         allForTag.map(b => {
           const d = new Date(b.start * 1000)
@@ -264,7 +280,7 @@ export function SummariesPage() {
   const closeBudgetModal = () => {
     setModalOpen(false)
     setEditingBudget(null)
-    setSelectedTagId('')
+    setSelectedTagSelection('')
     setSelectedBudgetType('expense')
     setBudgetAmount('')
     setBudgetPeriod(getCurrentMonth())
@@ -272,7 +288,7 @@ export function SummariesPage() {
 
   const handleBudgetSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (selectedTagId === '' || !budgetAmount.trim()) return
+    if (!selectedTagSelection || !budgetAmount.trim()) return
 
     setSubmitting(true)
     try {
@@ -281,8 +297,10 @@ export function SummariesPage() {
       const endDate = new Date(year, mo, 1)
 
       const { int: amount_int, frac: amount_frac } = parseAmountToIntFrac(budgetAmount)
+      const selectedTag = parseTagSelection(selectedTagSelection)
       const data: BudgetInput = {
-        tag_id: selectedTagId as number,
+        tag_id: selectedTag.tagId,
+        tag_context_id: selectedTag.contextId,
         type: selectedBudgetType,
         amount_int,
         amount_frac,
@@ -323,14 +341,14 @@ export function SummariesPage() {
 
   const buildBudgetCategories = (type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
     const categoriesFromBreakdown = categoryBreakdown.filter(c => c.type === type)
-    const tagIds = new Set(categoriesFromBreakdown.map(c => c.tag_id))
+    const categoryKeys = new Set(categoriesFromBreakdown.map(summaryItemKey))
     const budgetOnlyCategories: MonthlyCategoryBreakdown[] = budgets
-      .filter(b => budgetType(b) === type && !tagIds.has(b.tag_id))
+      .filter(b => budgetType(b) === type && !categoryKeys.has(summaryItemKey(b)))
       .map(b => ({
         tag_id: b.tag_id,
         tag: b.tag || '',
-        tag_context_id: null,
-        tag_context: null,
+        tag_context_id: b.tag_context_id ?? null,
+        tag_context: b.tag_context ?? null,
         amount: 0,
         type,
       }))
@@ -345,11 +363,12 @@ export function SummariesPage() {
     || expenseTags.find(t => t.id === tagId)?.name
     || ''
 
-  const isTopLevelCategoryTag = (tagId: number): boolean =>
+  const isTopLevelCategoryTag = useCallback((tagId: number): boolean =>
     tagHierarchy.some(h =>
       h.child_id === tagId &&
       (h.parent_id === SYSTEM_TAGS.INCOME || h.parent_id === SYSTEM_TAGS.EXPENSE)
-    )
+    ),
+  [tagHierarchy])
 
   const getAncestorIdsForTree = (tagId: number, validIds?: Set<number>, contextId?: number | null): number[] => {
     const result: number[] = []
@@ -373,7 +392,10 @@ export function SummariesPage() {
     return result
   }
 
-  const summaryItemKey = (item: SummaryTreeItem): string => `${item.tag_id}:${item.tag_context_id ?? ''}`
+  const summaryItemKey = (item: SummaryTreeItem): string =>
+    item.tag_context_id === null || item.tag_context_id === undefined
+      ? item.tag_id.toString()
+      : `${item.tag_id}:${item.tag_context_id}`
 
   const withSummaryAncestors = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
     const byId = new Map(items.map(item => [summaryItemKey(item), { ...item }]))
@@ -433,19 +455,23 @@ export function SummariesPage() {
   const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
   const expenseBudgetTotal = expenseBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
   const getCategoryActual = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): number => {
-    const budget = getBudgetForTag(category.tag_id, type)
+    const budget = getBudgetForTag(category.tag_id, type, category.tag_context_id ?? null)
     if (!budget || fromIntFrac(budget.amount_int, budget.amount_frac) <= 0) return category.amount
     return budget.actual ?? category.amount
   }
   const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
   const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
-  const typeTags = selectedBudgetType === 'income' ? incomeTags : expenseTags
+  const typeTagOptions = selectedBudgetType === 'income' ? incomeTagOptions : expenseTagOptions
 
-  const toggleSummaryTag = (tagId: number) => {
+  const toggleSummaryTag = (key: string, fallbackKey?: string) => {
     setExpandedSummaryTagIds(prev => {
       const next = new Set(prev)
-      if (next.has(tagId)) next.delete(tagId)
-      else next.add(tagId)
+      if (next.has(key) || (fallbackKey && next.has(fallbackKey))) {
+        next.delete(key)
+        if (fallbackKey) next.delete(fallbackKey)
+      } else {
+        next.add(key)
+      }
       return next
     })
   }
@@ -455,6 +481,55 @@ export function SummariesPage() {
       .filter(h => h.parent_id === tagId)
       .map(h => h.child_id),
   [tagHierarchy])
+
+  const getAggregateBudgetForCategory = useCallback((
+    category: MonthlyCategoryBreakdown,
+    type: 'income' | 'expense',
+    allCategories: MonthlyCategoryBreakdown[]
+  ): Budget | undefined => {
+    const branchContextId = category.tag_context_id ?? (isTopLevelCategoryTag(category.tag_id) ? category.tag_id : null)
+    const descendantIds = new Set<number>()
+    const visit = (parentId: number) => {
+      getChildIds(parentId).forEach(childId => {
+        descendantIds.add(childId)
+        visit(childId)
+      })
+    }
+    visit(category.tag_id)
+
+    const direct = getBudgetForTag(category.tag_id, type, category.tag_context_id ?? null)
+    const descendantTotal = budgets
+      .filter(b =>
+        budgetType(b) === type &&
+        descendantIds.has(b.tag_id) &&
+        allCategories.some(item =>
+          item.tag_id === b.tag_id &&
+          (item.tag_context_id ?? null) === (b.tag_context_id ?? null) &&
+          (branchContextId === null
+            ? (item.tag_context_id ?? null) === null
+            : item.tag_context_id === branchContextId)
+        )
+      )
+      .reduce((sum, b) => sum + getBudgetAmount(b), 0)
+    const totalAmount = getBudgetAmount(direct) + descendantTotal
+    if (totalAmount <= 0) return direct
+    if (direct && descendantTotal <= 0) return direct
+
+    const amountParts = toIntFrac(totalAmount)
+    return {
+      id: direct?.id ?? new Uint8Array(),
+      start: direct?.start ?? 0,
+      end: direct?.end ?? 0,
+      tag_id: category.tag_id,
+      tag_context_id: category.tag_context_id ?? null,
+      tag_context: category.tag_context ?? null,
+      type,
+      amount_int: amountParts.int,
+      amount_frac: amountParts.frac,
+      tag: category.tag,
+      actual: category.amount,
+    }
+  }, [budgets, getBudgetForTag, getChildIds, getBudgetAmount, isTopLevelCategoryTag])
 
   const getBranchContextId = (root: SummaryTreeItem): number | null =>
     root.tag_context_id ?? (isTopLevelCategoryTag(root.tag_id) ? root.tag_id : null)
@@ -534,7 +609,8 @@ export function SummariesPage() {
       const currentBranchContextId = depth === 0 ? getBranchContextId(tag) : branchContextId
       const children = getChildItems(tag, allItems, currentBranchContextId)
       const hasVisibleChildren = children.length > 0
-      const expanded = expandedSummaryTagIds.has(tag.tag_id)
+      const itemKey = summaryItemKey(tag)
+      const expanded = expandedSummaryTagIds.has(itemKey) || expandedSummaryTagIds.has(tag.tag_id.toString())
       const row = (
           <SummaryCard
             key={`tag-${summaryItemKey(tag)}`}
@@ -548,7 +624,7 @@ export function SummariesPage() {
             depth={depth}
             hasChildren={hasVisibleChildren}
             expanded={expanded}
-            onClick={() => hasVisibleChildren ? toggleSummaryTag(tag.tag_id) : handleTagClick(tag.tag_id, false, tag.tag_context_id)}
+            onClick={() => hasVisibleChildren ? toggleSummaryTag(itemKey, tag.tag_id.toString()) : handleTagClick(tag.tag_id, false, tag.tag_context_id)}
             onTitleClick={hasVisibleChildren ? () => handleTagClick(tag.tag_id, true, currentBranchContextId) : undefined}
           />
       )
@@ -578,8 +654,10 @@ export function SummariesPage() {
       const currentBranchContextId = depth === 0 ? getBranchContextId(cat) : branchContextId
       const children = getChildItems(cat, allCategories, currentBranchContextId)
       const hasVisibleChildren = children.length > 0
-      const expanded = expandedSummaryTagIds.has(cat.tag_id)
-      const budget = getBudgetForTag(cat.tag_id, type)
+      const itemKey = summaryItemKey(cat)
+      const expanded = expandedSummaryTagIds.has(itemKey) || expandedSummaryTagIds.has(cat.tag_id.toString())
+      const budget = getAggregateBudgetForCategory(cat, type, allCategories)
+      const directBudget = getBudgetForTag(cat.tag_id, type, cat.tag_context_id ?? null)
       const sectionTags = type === 'income' ? incomeTags : expenseTags
       const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
       const row = (
@@ -595,12 +673,12 @@ export function SummariesPage() {
             depth={depth}
             hasChildren={hasVisibleChildren}
             expanded={expanded}
-            onClick={() => hasVisibleChildren ? toggleSummaryTag(cat.tag_id) : handleCategoryClick(type, cat.tag_id, false, cat.tag_context_id)}
+            onClick={() => hasVisibleChildren ? toggleSummaryTag(itemKey, cat.tag_id.toString()) : handleCategoryClick(type, cat.tag_id, false, cat.tag_context_id)}
             onTitleClick={hasVisibleChildren ? () => handleCategoryClick(type, cat.tag_id, true, currentBranchContextId) : undefined}
             budget={budget}
-            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount) : undefined}
-            onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, budget) : undefined}
-            onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
+            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount, cat.tag_context_id ?? null) : undefined}
+            onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, directBudget, cat.tag_context_id ?? null) : undefined}
+            onDeleteBudget={directBudget ? () => handleBudgetDelete(directBudget) : undefined}
           />
       )
       return hasVisibleChildren && expanded
@@ -678,7 +756,7 @@ export function SummariesPage() {
             value={selectedBudgetType}
             onChange={(e) => {
               setSelectedBudgetType(e.target.value as 'income' | 'expense')
-              setSelectedTagId('')
+              setSelectedTagSelection('')
             }}
             required
             disabled={!!editingBudget}
@@ -690,14 +768,14 @@ export function SummariesPage() {
 
           <Select
             label="Category"
-            value={selectedTagId.toString()}
-            onChange={(e) => setSelectedTagId(e.target.value ? parseInt(e.target.value) : '')}
+            value={selectedTagSelection}
+            onChange={(e) => setSelectedTagSelection(e.target.value)}
             required
-            disabled={!!editingBudget || selectedTagId !== ''}
+            disabled={!!editingBudget || selectedTagSelection !== ''}
             placeholder="Select a category"
-            options={typeTags.map((tag) => ({
-              value: tag.id,
-              label: tag.name,
+            options={typeTagOptions.map((tag) => ({
+              value: encodeTagSelection(tag.tag_id, tag.context_id),
+              label: tag.label,
             }))}
           />
 

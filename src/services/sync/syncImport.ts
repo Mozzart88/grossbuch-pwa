@@ -234,6 +234,7 @@ async function resolveTagIdConflict(oldId: number, newId: number): Promise<void>
   await execSQL(`UPDATE trx_base SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE trx_base_tag_context SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE budget SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE budget_tag_context SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`DELETE FROM tag WHERE id = ?`, [oldId])
 }
 
@@ -514,12 +515,25 @@ async function importBudgets(budgets: SyncBudget[]): Promise<number> {
         `INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [hexToBlob(b.id), b.start, b.end, b.tag, type, b.amount_int, b.amount_frac, b.updated_at]
       )
+      if (b.tag_context) {
+        await execSQL(
+          `INSERT OR IGNORE INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
+          [hexToBlob(b.id), b.tag_context]
+        )
+      }
       count++
     } else if (b.updated_at > local.updated_at) {
       await execSQL(
         `UPDATE budget SET start = ?, end = ?, tag_id = ?, type = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?`,
         [b.start, b.end, b.tag, type, b.amount_int, b.amount_frac, b.updated_at, b.id]
       )
+      await execSQL(`DELETE FROM budget_tag_context WHERE hex(budget_id) = ?`, [b.id])
+      if (b.tag_context) {
+        await execSQL(
+          `INSERT OR IGNORE INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
+          [hexToBlob(b.id), b.tag_context]
+        )
+      }
       count++
     }
   }

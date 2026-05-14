@@ -10,57 +10,17 @@ function toHex(bytes: Uint8Array): string {
         .toUpperCase()
 }
 
-export const budgetRepository = {
-    /**
-     * Find all budgets with tag name and actual spending
-     */
-    async findAll(): Promise<Budget[]> {
-        return querySQL<Budget>(`
-      SELECT
-        b.*,
-        t.name as tag
-      FROM budget b
-      JOIN tag t ON b.tag_id = t.id
-      ORDER BY b.start DESC, t.name ASC
-    `)
-    },
-
-    /**
-     * Find budget by ID
-     */
-    async findById(id: Uint8Array): Promise<Budget | null> {
-        return queryOne<Budget>(
-            `
-      SELECT
-        b.*,
-        t.name as tag
-      FROM budget b
-      JOIN tag t ON b.tag_id = t.id
-      WHERE hex(b.id) = ?
-    `,
-            [toHex(id)]
-        )
-    },
-
-    /**
-     * Find budgets for a specific month
-     */
-    async findByMonth(month: string): Promise<Budget[]> {
-        // month format: 'YYYY-MM'
-        const startOfMonth = new Date(`${month}-01T00:00:00`)
-        const startTimestamp = Math.floor(startOfMonth.getTime() / 1000)
-
-        const endOfMonth = new Date(startOfMonth)
-        endOfMonth.setMonth(endOfMonth.getMonth() + 1)
-        const endTimestamp = Math.floor(endOfMonth.getTime() / 1000)
-
-        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
-
-        return querySQL<Budget>(
-            `
-      SELECT
+const budgetSelectFields = `
         b.*,
         t.name as tag,
+        bctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context`
+
+const budgetContextJoins = `
+      LEFT JOIN budget_tag_context bctx ON bctx.budget_id = b.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = bctx.tag_id`
+
+const actualSpendSubquery = `
         (
           SELECT COALESCE(SUM(
             CASE WHEN a.currency_id = ?
@@ -73,7 +33,13 @@ export const budgetRepository = {
           JOIN account a ON a.id = tb.account_id
           LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
           WHERE (
-            tb.tag_id = b.tag_id
+            (
+              tb.tag_id = b.tag_id
+              AND (
+                (bctx.tag_id IS NULL AND ctx.tag_id IS NULL)
+                OR ctx.tag_id = bctx.tag_id
+              )
+            )
             OR (
               tb.tag_id IN (
                 WITH RECURSIVE descendants(id) AS (
@@ -84,9 +50,14 @@ export const budgetRepository = {
                 SELECT id FROM descendants
               )
               AND (
-                ctx.tag_id = b.tag_id
+                ctx.tag_id = bctx.tag_id
                 OR (
-                  ctx.tag_id IS NULL
+                  bctx.tag_id IS NULL
+                  AND ctx.tag_id = b.tag_id
+                )
+                OR (
+                  bctx.tag_id IS NULL
+                  AND ctx.tag_id IS NULL
                   AND 1 = (
                     SELECT COUNT(DISTINCT rel.child_id)
                     FROM tag_to_tag rel
@@ -121,9 +92,62 @@ export const budgetRepository = {
             AND trx.timestamp >= b.start
             AND trx.timestamp < b.end
             AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        ) as actual
+        ) as actual`
+
+export const budgetRepository = {
+    /**
+     * Find all budgets with tag name and actual spending
+     */
+    async findAll(): Promise<Budget[]> {
+        return querySQL<Budget>(`
+      SELECT
+${budgetSelectFields}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
+${budgetContextJoins}
+      ORDER BY b.start DESC, t.name ASC
+    `)
+    },
+
+    /**
+     * Find budget by ID
+     */
+    async findById(id: Uint8Array): Promise<Budget | null> {
+        return queryOne<Budget>(
+            `
+      SELECT
+${budgetSelectFields}
+      FROM budget b
+      JOIN tag t ON b.tag_id = t.id
+${budgetContextJoins}
+      WHERE hex(b.id) = ?
+    `,
+            [toHex(id)]
+        )
+    },
+
+    /**
+     * Find budgets for a specific month
+     */
+    async findByMonth(month: string): Promise<Budget[]> {
+        // month format: 'YYYY-MM'
+        const startOfMonth = new Date(`${month}-01T00:00:00`)
+        const startTimestamp = Math.floor(startOfMonth.getTime() / 1000)
+
+        const endOfMonth = new Date(startOfMonth)
+        endOfMonth.setMonth(endOfMonth.getMonth() + 1)
+        const endTimestamp = Math.floor(endOfMonth.getTime() / 1000)
+
+        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
+        return querySQL<Budget>(
+            `
+      SELECT
+${budgetSelectFields},
+${actualSpendSubquery}
+      FROM budget b
+      JOIN tag t ON b.tag_id = t.id
+${budgetContextJoins}
       WHERE b.start >= ? AND b.start < ?
       ORDER BY t.name ASC
     `,
@@ -134,17 +158,18 @@ export const budgetRepository = {
     /**
      * Find all budgets for a specific tag
      */
-    async findByTagId(tagId: number, type?: 'income' | 'expense'): Promise<Budget[]> {
+    async findByTagId(tagId: number, type?: 'income' | 'expense', tagContextId?: number | null): Promise<Budget[]> {
         const params: unknown[] = [tagId]
         if (type) params.push(type)
+        if (tagContextId !== undefined) params.push(tagContextId)
         return querySQL<Budget>(
             `
       SELECT
-        b.*,
-        t.name as tag
+${budgetSelectFields}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
-      WHERE b.tag_id = ?${type ? ' AND b.type = ?' : ''}
+${budgetContextJoins}
+      WHERE b.tag_id = ?${type ? ' AND b.type = ?' : ''}${tagContextId !== undefined ? ' AND COALESCE(bctx.tag_id, -1) = COALESCE(?, -1)' : ''}
       ORDER BY b.start DESC
     `,
             params
@@ -167,40 +192,11 @@ export const budgetRepository = {
         return queryOne<Budget>(
             `
       SELECT
-        b.*,
-        t.name as tag,
-        (
-          SELECT COALESCE(SUM(
-            CASE WHEN a.currency_id = ?
-                THEN (tb.amount_int + tb.amount_frac * 1e-18)
-                ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
-              END
-          ), 0)
-          FROM trx_base tb
-          JOIN trx ON trx.id = tb.trx_id
-          JOIN account a ON a.id = tb.account_id
-          LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
-          WHERE (
-            tb.tag_id = b.tag_id
-            OR (
-              tb.tag_id IN (
-                WITH RECURSIVE descendants(id) AS (
-                  SELECT child_id FROM tag_to_tag WHERE parent_id = b.tag_id
-                  UNION
-                  SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
-                )
-                SELECT id FROM descendants
-              )
-              AND ctx.tag_id = b.tag_id
-            )
-          )
-            AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
-            AND trx.timestamp >= b.start
-            AND trx.timestamp < b.end
-            AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        ) as actual
+${budgetSelectFields},
+${actualSpendSubquery}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
+${budgetContextJoins}
       WHERE hex(b.id) = ?
     `,
             [sysCurrencyId, sysRate, toHex(id)]
@@ -226,9 +222,11 @@ export const budgetRepository = {
       SELECT b.*, t.name as tag
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
+      LEFT JOIN budget_tag_context bctx ON bctx.budget_id = b.id
       WHERE b.tag_id = ? AND b.start = ? AND b.end = ? AND b.type = ?
+        AND COALESCE(bctx.tag_id, -1) = COALESCE(?, -1)
     `,
-            [input.tag_id, start, end, type]
+            [input.tag_id, start, end, type, input.tag_context_id ?? null]
         )
 
         if (existing) {
@@ -244,10 +242,10 @@ export const budgetRepository = {
         const budget = await queryOne<Budget>(
             `
       SELECT
-        b.*,
-        t.name as tag
+${budgetSelectFields}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
+${budgetContextJoins}
       WHERE b.tag_id = ? AND b.start = ? AND b.end = ? AND b.type = ?
       ORDER BY b.rowid DESC
       LIMIT 1
@@ -256,6 +254,13 @@ export const budgetRepository = {
         )
 
         if (!budget) throw new Error('Failed to create budget')
+        if (input.tag_context_id !== null && input.tag_context_id !== undefined) {
+            await execSQL(
+                `INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
+                [budget.id, input.tag_context_id]
+            )
+            return this.findById(budget.id) as Promise<Budget>
+        }
         return budget
     },
 
@@ -295,6 +300,15 @@ export const budgetRepository = {
             values.push(toHex(id))
             await execSQL(`UPDATE budget SET ${fields.join(', ')} WHERE hex(id) = ?`, values)
         }
+        if (input.tag_context_id !== undefined) {
+            await execSQL(`DELETE FROM budget_tag_context WHERE hex(budget_id) = ?`, [toHex(id)])
+            if (input.tag_context_id !== null) {
+                await execSQL(
+                    `INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
+                    [id, input.tag_context_id]
+                )
+            }
+        }
 
         const budget = await this.findWithActual(id)
         if (!budget) throw new Error('Budget not found')
@@ -329,26 +343,11 @@ export const budgetRepository = {
         return querySQL<Budget>(
             `
       SELECT
-        b.*,
-        t.name as tag,
-        (
-          SELECT COALESCE(SUM(
-            CASE WHEN a.currency_id = ?
-                THEN (tb.amount_int + tb.amount_frac * 1e-18)
-                ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
-              END
-          ), 0)
-          FROM trx_base tb
-          JOIN trx ON trx.id = tb.trx_id
-          JOIN account a ON a.id = tb.account_id
-          WHERE tb.tag_id = b.tag_id
-            AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
-            AND trx.timestamp >= b.start
-            AND trx.timestamp < b.end
-            AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        ) as actual
+${budgetSelectFields},
+${actualSpendSubquery}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
+${budgetContextJoins}
       WHERE b.start <= ? AND b.end > ?
       ORDER BY t.name ASC
     `,
