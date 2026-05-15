@@ -32,6 +32,7 @@ interface IncomeTransactionFormProps {
   counterparties: Counterparty[]
   defaultAccountId: string
   initialData?: Transaction
+  createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
@@ -45,6 +46,7 @@ export function IncomeTransactionForm({
   counterparties,
   defaultAccountId,
   initialData,
+  createFromInitialData = false,
   onSubmit,
   onCancel,
   useActionBar = false,
@@ -66,6 +68,7 @@ export function IncomeTransactionForm({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [addAnother, setAddAnother] = useState(false)
+  const isEditing = !!initialData && !createFromInitialData
 
   // Populate from initial data
   useEffect(() => {
@@ -87,14 +90,14 @@ export function IncomeTransactionForm({
     const setActionBarConfig = layoutContext?.setActionBarConfig
     if (!useActionBar || !setActionBarConfig) return
     setActionBarConfig({
-      primaryLabel: initialData ? 'Update' : 'Submit',
+      primaryLabel: isEditing ? 'Update' : 'Submit',
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
       disabled: submitting,
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const walletOptions = getWalletOptions(accounts)
@@ -221,12 +224,12 @@ export function IncomeTransactionForm({
         }],
       }
 
-      if (initialData) {
+      if (isEditing && initialData) {
         await transactionRepository.update(initialData.id, payload)
       } else {
         await transactionRepository.create(payload)
       }
-      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      const shouldAddAnother = showAddAnother && addAnother && !isEditing
       onSubmit({ addAnother: shouldAddAnother })
       if (shouldAddAnother) resetEntryFields()
     } catch (error) {
@@ -251,7 +254,7 @@ export function IncomeTransactionForm({
       />
 
       {/* Account */}
-      {!initialData ? (
+      {!isEditing ? (
         <div className="grid grid-cols-2 gap-2">
           <Select
             label="Wallet"
@@ -359,7 +362,7 @@ export function IncomeTransactionForm({
       </div>
 
       {/* Actions */}
-      {showAddAnother && !initialData && (
+      {showAddAnother && !isEditing && (
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
@@ -377,7 +380,7 @@ export function IncomeTransactionForm({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting} className="flex-1">
-            {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
+            {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>
       )}

@@ -78,9 +78,11 @@ export async function hasUnpushedChanges(installationId: string): Promise<boolea
       UNION ALL
       SELECT 1 FROM ( SELECT * FROM budget WHERE updated_at >= ? LIMIT 1 )
       UNION ALL
+      SELECT 1 FROM ( SELECT * FROM notification WHERE updated_at >= ? LIMIT 1 )
+      UNION ALL
       SELECT 1 FROM ( SELECT * FROM sync_deletions WHERE deleted_at >= ? LIMIT 1 )
     )
-  `, [since, since, since, since, since, since, since, since, since])
+  `, [since, since, since, since, since, since, since, since, since, since])
 
   return (result?.cnt ?? 0) > 0
 }

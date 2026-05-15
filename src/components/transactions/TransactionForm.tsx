@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import type { Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionLine } from '../../types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionInput, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, currencyRepository } from '../../services/repositories'
 import type { TransactionMode, AccountOption, SubmitOptions } from './transactionFormShared'
@@ -10,6 +10,7 @@ import { ExchangeTransactionForm } from './ExchangeTransactionForm'
 
 interface TransactionFormProps {
   initialData?: Transaction
+  initialDraft?: TransactionInput
   initialMode?: TransactionMode
   onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
@@ -28,7 +29,27 @@ const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
   return exchangeLines.length === 2 && expenseLines.length >= 1
 }
 
-export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false }: TransactionFormProps) {
+function draftToTransaction(draft: TransactionInput): Transaction {
+  const trxId = new Uint8Array(8)
+  return {
+    id: trxId,
+    timestamp: draft.timestamp ?? Math.floor(Date.now() / 1000),
+    counterparty_id: draft.counterparty_id ?? null,
+    note: draft.note ?? null,
+    lines: draft.lines.map((line, index) => ({
+      id: new Uint8Array([index + 1, 0, 0, 0, 0, 0, 0, 0]),
+      trx_id: trxId,
+      ...line,
+    })),
+  }
+}
+
+export function TransactionForm({ initialData, initialDraft, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false }: TransactionFormProps) {
+  const prefillData = useMemo(
+    () => initialData ?? (initialDraft ? draftToTransaction(initialDraft) : undefined),
+    [initialData, initialDraft]
+  )
+  const createFromInitialData = !initialData && !!initialDraft
   const [mode, setMode] = useState<TransactionMode>(initialMode || 'expense')
   const [loading, setLoading] = useState(true)
 
@@ -46,8 +67,8 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
 
   // Detect mode from initialData (does not need accounts/currencies)
   useEffect(() => {
-    if (!initialData || !initialData.lines || initialData.lines.length === 0) return
-    const lines = initialData.lines as TransactionLine[]
+    if (!prefillData || !prefillData.lines || prefillData.lines.length === 0) return
+    const lines = prefillData.lines as TransactionLine[]
     if (isMultiCurrencyExpense(lines)) {
       setMode('expense')
     } else if (lines.some(l => l.tag_id === SYSTEM_TAGS.TRANSFER)) {
@@ -59,13 +80,9 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     } else {
       setMode('expense')
     }
-  }, [initialData])
+  }, [prefillData])
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [wallets, incomeTagList, expenseTagList, incomeContextOptions, expenseContextOptions, cps, currencyList, usedCurrencies, commonTagList] = await Promise.all([
         walletRepository.findActive(),
@@ -107,7 +124,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setAccounts(accountOptions)
 
       // Compute defaults for sub-forms (only when not editing)
-      if (!initialData) {
+      if (!initialData && !initialDraft) {
         if (accountOptions.length > 0) {
           const defaultAcc = accountOptions.find(a => a.walletIsDefault && a.is_default)
             || accountOptions.find(a => a.is_default)
@@ -122,7 +139,11 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     } finally {
       setLoading(false)
     }
-  }
+  }, [initialData, initialDraft])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
 
   if (loading) {
     return (
@@ -132,7 +153,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     )
   }
 
-  const sharedProps = { initialData, onSubmit, onCancel, useActionBar, showAddAnother }
+  const sharedProps = { initialData: prefillData, createFromInitialData, onSubmit, onCancel, useActionBar, showAddAnother }
   const incomeAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') === 'plain')
   const expenseAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') !== 'savings')
   const getDefaultFor = (list: AccountOption[]) => {

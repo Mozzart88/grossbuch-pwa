@@ -7,6 +7,7 @@ import App from '../../App'
 vi.mock('../../pages', () => ({
   TransactionsPage: () => <div data-testid="transactions-page">Transactions</div>,
   AddTransactionPage: () => <div data-testid="add-transaction-page">Add Transaction</div>,
+  NotificationDetailPage: () => <div data-testid="notification-detail-page">Notification</div>,
   EditTransactionPage: () => <div data-testid="edit-transaction-page">Edit Transaction</div>,
   SettingsPage: () => <div data-testid="settings-page">Settings</div>,
   AccountsPage: () => <div data-testid="accounts-page">Accounts</div>,
@@ -47,6 +48,10 @@ vi.mock('../../components/auth', async () => {
     ),
   }
 })
+
+vi.mock('../../components/layout/NotificationDrawer', () => ({
+  NotificationDrawer: () => <div data-testid="notification-drawer" />,
+}))
 
 // Mock TabBar
 vi.mock('../../components/ui', async () => {

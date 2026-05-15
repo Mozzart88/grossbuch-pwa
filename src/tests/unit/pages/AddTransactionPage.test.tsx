@@ -25,6 +25,11 @@ vi.mock('../../../services/repositories', () => ({
     create: vi.fn(),
     update: vi.fn(),
   },
+  notificationRepository: {
+    findByHexId: vi.fn(),
+    markReaded: vi.fn(),
+    deleteByHexId: vi.fn(),
+  },
   walletRepository: {
     findActive: vi.fn(),
     findOrCreateAccountForCurrency: vi.fn(),
@@ -71,7 +76,7 @@ vi.mock('../../../utils/dateUtils', () => ({
   toLocalISOString: vi.fn(() => '2025-01-10T12:00:00.000Z'),
 }))
 
-import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository, settingsRepository } from '../../../services/repositories'
+import { transactionRepository, walletRepository, tagRepository, counterpartyRepository, currencyRepository, settingsRepository, notificationRepository } from '../../../services/repositories'
 
 const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockWalletRepository = vi.mocked(walletRepository)
@@ -79,6 +84,7 @@ const mockTagRepository = vi.mocked(tagRepository)
 const mockCounterpartyRepository = vi.mocked(counterpartyRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockSettingsRepository = vi.mocked(settingsRepository)
+const mockNotificationRepository = vi.mocked(notificationRepository)
 
 describe('AddTransactionPage', () => {
   beforeEach(() => {
@@ -157,6 +163,9 @@ describe('AddTransactionPage', () => {
       },
     ])
     mockSettingsRepository.get.mockResolvedValue(null)
+    mockNotificationRepository.findByHexId.mockResolvedValue(null)
+    mockNotificationRepository.markReaded.mockResolvedValue(undefined)
+    mockNotificationRepository.deleteByHexId.mockResolvedValue(undefined)
   })
 
   const renderPage = () => {
@@ -302,5 +311,54 @@ describe('AddTransactionPage', () => {
 
     const exchangeButton = screen.getByRole('button', { name: 'Exchange' })
     expect(exchangeButton.className).toContain('bg-white')
+  })
+
+  it('loads transaction notification draft and deletes it after submit', async () => {
+    const notificationId = '0102030405060708'
+    mockNotificationRepository.findByHexId.mockResolvedValue({
+      id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+      type: 'transaction',
+      status: 'new',
+      timestamp: 1700000000,
+      readed_at: null,
+      updated_at: 1700000000,
+      payload: {
+        title: 'Draft expense',
+        mode: 'expense',
+        draft: {
+          timestamp: 1700000000,
+          lines: [{
+            account_id: 1,
+            tag_id: 12,
+            sign: '-',
+            amount_int: 25,
+            amount_frac: 0,
+            rate_int: 1,
+            rate_frac: 0,
+          }],
+        },
+      },
+    })
+
+    render(
+      <MemoryRouter initialEntries={[`/add?notification=${notificationId}`]}>
+        <LayoutProvider>
+          <AddTransactionPage />
+          <ActionBar />
+        </LayoutProvider>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText<HTMLInputElement>('0.00').value).toMatch(/^25[,.]00$/)
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalled()
+      expect(mockNotificationRepository.markReaded).toHaveBeenCalled()
+      expect(mockNotificationRepository.deleteByHexId).toHaveBeenCalledWith(notificationId)
+    })
   })
 })

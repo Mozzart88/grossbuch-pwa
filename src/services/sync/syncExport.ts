@@ -11,6 +11,7 @@ import type {
   SyncTransaction,
   SyncTransactionLine,
   SyncBudget,
+  SyncNotification,
 } from './syncTypes'
 
 const TRX_BATCH_SIZE = 100
@@ -24,7 +25,7 @@ export async function exportChunkedSyncPackages(
   senderId: string,
   batchSize = TRX_BATCH_SIZE
 ): Promise<SyncPackage[]> {
-  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, deletions] =
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, deletions] =
     await Promise.all([
       exportIcons(0),
       exportTags(0),
@@ -34,6 +35,7 @@ export async function exportChunkedSyncPackages(
       exportCurrencies(0),
       exportTransactions(0),
       exportBudgets(0),
+      exportNotifications(0),
       getDeletionsSince(0),
     ])
 
@@ -50,6 +52,7 @@ export async function exportChunkedSyncPackages(
     currencies,
     transactions: trxSlice,
     budgets,
+    notifications,
     deletions,
   })
 
@@ -72,7 +75,7 @@ export async function exportSyncPackage(
   sinceTimestamp: number,
   senderId: string
 ): Promise<SyncPackage> {
-  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, deletions] =
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, deletions] =
     await Promise.all([
       exportIcons(sinceTimestamp),
       exportTags(sinceTimestamp),
@@ -82,6 +85,7 @@ export async function exportSyncPackage(
       exportCurrencies(sinceTimestamp),
       exportTransactions(sinceTimestamp),
       exportBudgets(sinceTimestamp),
+      exportNotifications(sinceTimestamp),
       getDeletionsSince(sinceTimestamp),
     ])
 
@@ -98,6 +102,7 @@ export async function exportSyncPackage(
     currencies,
     transactions,
     budgets,
+    notifications,
     deletions,
   }
 }
@@ -342,6 +347,22 @@ async function exportBudgets(since: number): Promise<SyncBudget[]> {
     FROM budget b
     LEFT JOIN budget_tag_context bctx ON bctx.budget_id = b.id
     WHERE b.updated_at >= ?`,
+    [since]
+  )
+}
+
+async function exportNotifications(since: number): Promise<SyncNotification[]> {
+  return querySQL<SyncNotification>(
+    `SELECT
+      hex(id) as id,
+      type,
+      status,
+      timestamp,
+      readed_at,
+      updated_at,
+      payload
+    FROM notification
+    WHERE updated_at >= ?`,
     [since]
   )
 }

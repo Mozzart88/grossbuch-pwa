@@ -11,6 +11,7 @@ import type {
   SyncCurrency,
   SyncTransaction,
   SyncBudget,
+  SyncNotification,
   SyncDeletion,
   SyncUnlinkCommand,
   SyncUnlinkConfirmCommand,
@@ -20,14 +21,14 @@ import type {
 
 /**
  * Import a SyncPackage with last-write-wins conflict resolution.
- * Process in dependency order: icons -> tags -> wallets -> accounts -> counterparties -> currencies -> transactions -> budgets -> deletions
+ * Process in dependency order: icons -> tags -> wallets -> accounts -> counterparties -> currencies -> transactions -> budgets -> notifications -> deletions
  *
  * IMPORTANT: Caller must wrap in dropUpdatedAtTriggers/restoreUpdatedAtTriggers
  * and setSuppressWriteNotifications to prevent echo loops.
  */
 export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult> {
   const result: ImportResult = {
-    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, deletions: 0 },
+    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, notifications: 0, deletions: 0 },
     newAccountCurrencyIds: [],
     conflicts: 0,
     errors: [],
@@ -49,6 +50,7 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     result.imported.currencies = await importCurrencies(pkg.currencies)
     result.imported.transactions = await importTransactions(pkg.transactions)
     result.imported.budgets = await importBudgets(pkg.budgets)
+    result.imported.notifications = await importNotifications(pkg.notifications ?? [])
     result.imported.deletions = await importDeletions(pkg.deletions)
 
     await execSQL('COMMIT')
@@ -553,6 +555,36 @@ async function importBudgets(budgets: SyncBudget[]): Promise<number> {
   return count
 }
 
+// ======= Notifications =======
+
+async function importNotifications(notifications: SyncNotification[]): Promise<number> {
+  let count = 0
+  for (const n of notifications) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM notification WHERE hex(id) = ?`,
+      [n.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT INTO notification (id, type, status, timestamp, readed_at, updated_at, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(n.id), n.type, n.status, n.timestamp, n.readed_at, n.updated_at, n.payload]
+      )
+      count++
+    } else if (n.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE notification
+         SET type = ?, status = ?, timestamp = ?, readed_at = ?, updated_at = ?, payload = ?
+         WHERE hex(id) = ?`,
+        [n.type, n.status, n.timestamp, n.readed_at, n.updated_at, n.payload, n.id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
 // ======= Deletions =======
 
 async function importDeletions(deletions: SyncDeletion[]): Promise<number> {
@@ -667,6 +699,17 @@ async function applyDeletion(del: SyncDeletion): Promise<boolean> {
       )
       if (local && del.deleted_at > local.updated_at) {
         await execSQL(`DELETE FROM budget WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'notification': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM notification WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM notification WHERE hex(id) = ?`, [del.entity_id])
         return true
       }
       return false

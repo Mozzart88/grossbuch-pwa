@@ -80,6 +80,8 @@ export function resetTestDatabase(): void {
     db.run('DELETE FROM trx')
     // Clear budget data
     db.run('DELETE FROM budget')
+    // Clear notification data
+    db.run('DELETE FROM notification')
     // Clear counterparty data
     db.run('DELETE FROM counterparty_to_tags')
     db.run('DELETE FROM counterparty_note')

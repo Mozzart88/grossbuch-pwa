@@ -181,6 +181,33 @@ export interface TransactionInput {
   note?: string
 }
 
+export type NotificationType = 'plain' | 'transaction'
+export type NotificationStatus = 'new' | 'readed'
+export type NotificationTransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
+
+export interface PlainNotificationPayload {
+  title: string
+  body: string
+}
+
+export interface TransactionNotificationPayload {
+  title: string
+  mode: NotificationTransactionMode
+  draft: TransactionInput
+}
+
+export type NotificationPayload = PlainNotificationPayload | TransactionNotificationPayload
+
+export interface Notification {
+  id: Uint8Array
+  type: NotificationType
+  status: NotificationStatus
+  timestamp: number
+  readed_at: number | null
+  updated_at: number
+  payload: NotificationPayload
+}
+
 // Transaction line item (trx_base) - amount/rate as (int, frac) pairs
 export interface TransactionLine {
   id: Uint8Array // 8-byte BLOB

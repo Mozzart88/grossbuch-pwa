@@ -136,6 +136,40 @@ describe('Sync Integration', () => {
       expect(trx.lines[0].amount_frac).toBe(0)
     })
 
+    it('exports full history as transaction chunks', async () => {
+      const { exportChunkedSyncPackages } = await import('../../services/sync/syncExport')
+
+      const walletId = insertWallet({ name: 'Chunk Wallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.EXPENSE,
+        sign: '-',
+        amount_int: 10,
+        rate_int: 1,
+      })
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.INCOME,
+        sign: '+',
+        amount_int: 20,
+        rate_int: 1,
+      })
+
+      const packages = await exportChunkedSyncPackages('sender-1', 1)
+
+      expect(packages).toHaveLength(2)
+      expect(packages.every(pkg => pkg.sender_id === 'sender-1')).toBe(true)
+      expect(packages.every(pkg => pkg.since === 0)).toBe(true)
+      expect(packages.map(pkg => pkg.transactions)).toEqual([
+        [expect.objectContaining({ lines: [expect.objectContaining({ amount_int: 10 })] })],
+        [expect.objectContaining({ lines: [expect.objectContaining({ amount_int: 20 })] })],
+      ])
+      expect(packages[0].notifications).toEqual(packages[1].notifications)
+    })
+
     it('exports budgets with tag id and type', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 

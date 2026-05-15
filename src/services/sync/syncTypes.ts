@@ -84,6 +84,16 @@ export interface SyncBudget {
   updated_at: number
 }
 
+export interface SyncNotification {
+  id: string // hex
+  type: string
+  status: string
+  timestamp: number
+  readed_at: number | null
+  updated_at: number
+  payload: string
+}
+
 export interface SyncDeletion {
   entity: string // aka table_name
   entity_id: string
@@ -105,6 +115,7 @@ export interface SyncPackage {
   currencies: SyncCurrency[]
   transactions: SyncTransaction[]
   budgets: SyncBudget[]
+  notifications?: SyncNotification[]
   deletions: SyncDeletion[]
   commands?: SyncCommand[]
 }
@@ -178,6 +189,7 @@ export interface ImportResult {
     currencies: number
     transactions: number
     budgets: number
+    notifications: number
     deletions: number
   }
   newAccountCurrencyIds: number[]

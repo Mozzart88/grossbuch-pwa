@@ -19,6 +19,7 @@ import { AUTH_STORAGE_KEYS } from './types/auth'
 import {
   TransactionsPage,
   AddTransactionPage,
+  NotificationDetailPage,
   EditTransactionPage,
   SettingsPage,
   AccountsPage,
@@ -187,6 +188,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<TransactionsPage />} />
         <Route path="/add" element={<AddTransactionPage />} />
+        <Route path="/notifications/:id" element={<NotificationDetailPage />} />
         <Route path="/transaction/:id" element={<EditTransactionPage />} />
         <Route path="/summaries" element={<SummariesPage />} />
         <Route path="/settings" element={<SettingsPage />} />

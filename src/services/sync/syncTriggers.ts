@@ -57,6 +57,8 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_budget_update',
   'trg_budget_tag_context_insert',
   'trg_budget_tag_context_delete',
+  // Notification
+  'trg_notification_update',
 ] as const
 
 /**
@@ -446,5 +448,14 @@ FOR EACH ROW
 BEGIN
   UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
   WHERE id = OLD.budget_id;
+END`)
+
+  // Notification
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_notification_update
+AFTER UPDATE OF type, status, timestamp, readed_at, payload ON notification
+FOR EACH ROW
+BEGIN
+  UPDATE notification SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.id;
 END`)
 }
