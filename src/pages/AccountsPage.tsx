@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu } from '../components/ui';
+import { Button, Card, Modal, Input, AmountInput, LiveSearch, Spinner, useToast, DropdownMenu, Select } from '../components/ui';
 import type { DropdownMenuItem } from '../components/ui';
 import { walletRepository, currencyRepository, accountRepository, transactionRepository } from '../services/repositories';
 import { syncSingleRate } from '../services/exchangeRate/exchangeRateSync';
-import type { Wallet, WalletInput, Currency, Account } from '../types';
+import type { Wallet, WalletInput, Currency, Account, AccountType } from '../types';
 import { fromIntFrac, toIntFrac } from '../utils/amount';
 import { formatAmountValue, formatCurrency } from '../utils/formatters';
 import { Badge } from '../components/ui/Badge';
@@ -28,12 +28,21 @@ export function AccountsPage() {
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null)
   const [walletName, setWalletName] = useState('')
   const [walletColor, setWalletColor] = useState('')
+  const [walletType, setWalletType] = useState<AccountType>('plain')
 
   // Add currency modal state
   const [currencyModalOpen, setCurrencyModalOpen] = useState(false)
   const [targetWallet, setTargetWallet] = useState<Wallet | null>(null)
   const [selectedCurrencyId, setSelectedCurrencyId] = useState('')
+  const [selectedAccountType, setSelectedAccountType] = useState<AccountType>('plain')
   const [initialBalance, setInitialBalance] = useState('')
+
+  const [accountDataModalOpen, setAccountDataModalOpen] = useState(false)
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
+  const [accountType, setAccountType] = useState<AccountType>('plain')
+  const [accountNote, setAccountNote] = useState('')
+  const [accountDueDate, setAccountDueDate] = useState('')
+  const [accountRate, setAccountRate] = useState('')
 
   // Adjust balance modal state
   const [adjustBalanceModalOpen, setAdjustBalanceModalOpen] = useState(false)
@@ -49,6 +58,15 @@ export function AccountsPage() {
   const [submitting, setSubmitting] = useState(false)
 
   const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6', '#06B6D4', '#84CC16']
+  const ACCOUNT_TYPE_OPTIONS: Array<{ value: AccountType; label: string }> = [
+    { value: 'plain', label: 'Plain' },
+    { value: 'savings', label: 'Savings' },
+    { value: 'credits', label: 'Credit' },
+  ]
+  const accountTypeButtonClass = (active: boolean) => `rounded-lg border px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${active
+    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+  }`
 
   useEffect(() => {
     loadData()
@@ -79,10 +97,12 @@ export function AccountsPage() {
       setEditingWallet(wallet)
       setWalletName(wallet.name)
       setWalletColor(wallet.color || '')
+      setWalletType(wallet.account_type ?? 'plain')
     } else {
       setEditingWallet(null)
       setWalletName('')
       setWalletColor('')
+      setWalletType('plain')
     }
     setWalletModalOpen(true)
   }, [])
@@ -115,6 +135,7 @@ export function AccountsPage() {
       const data: WalletInput = {
         name: walletName.trim(),
         color: walletColor || undefined,
+        account_type: walletType,
       }
 
       if (editingWallet) {
@@ -151,9 +172,10 @@ export function AccountsPage() {
   // Currency modal handlers
   const openCurrencyModal = (wallet: Wallet) => {
     setTargetWallet(wallet)
-    // Find first currency not already in this wallet
-    const existingCurrencyIds = new Set(wallet.accounts?.map(a => a.currency_id) || [])
-    const availableCurrency = currencies.find(c => !existingCurrencyIds.has(c.id))
+    // Find first currency not already present for this account type.
+    const type = wallet.account_type ?? 'plain'
+    setSelectedAccountType(type)
+    const availableCurrency = currencies.find(c => !wallet.accounts?.some(a => a.currency_id === c.id && (a.account_type ?? 'plain') === type))
     setSelectedCurrencyId(availableCurrency?.id.toString() || '')
     setCurrencyModalOpen(true)
   }
@@ -162,6 +184,7 @@ export function AccountsPage() {
     setCurrencyModalOpen(false)
     setTargetWallet(null)
     setInitialBalance('')
+    setSelectedAccountType('plain')
   }
 
   const handleAddCurrency = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -176,7 +199,11 @@ export function AccountsPage() {
       const currencyId = parseInt(selectedCurrencyId)
       const selectedCurrency = currencies.find(c => c.id === currencyId)
 
-      await walletRepository.addAccount(targetWallet.id, currencyId, balanceValue > 0 ? balanceValue : undefined)
+      if (selectedAccountType === 'plain') {
+        await walletRepository.addAccount(targetWallet.id, currencyId, balanceValue !== 0 ? balanceValue : undefined)
+      } else {
+        await walletRepository.addAccount(targetWallet.id, currencyId, balanceValue !== 0 ? balanceValue : undefined, selectedAccountType)
+      }
       showToast('Currency added to wallet', 'success')
       closeCurrencyModal()
       loadData()
@@ -238,6 +265,74 @@ export function AccountsPage() {
       showToast(error instanceof Error ? error.message : 'Failed to set default', 'error')
     }
   }
+
+  const openAccountDataModal = (account: Account) => {
+    setEditingAccount(account)
+    setAccountType(account.account_type ?? 'plain')
+    setAccountNote(account.note ?? '')
+    setAccountDueDate(account.due_date ?? '')
+    setAccountRate(account.rate != null ? String(account.rate) : '')
+    setAccountDataModalOpen(true)
+  }
+
+  const closeAccountDataModal = () => {
+    setAccountDataModalOpen(false)
+    setEditingAccount(null)
+    setAccountType('plain')
+    setAccountNote('')
+    setAccountDueDate('')
+    setAccountRate('')
+  }
+
+  const handleAccountDataSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!editingAccount) return
+
+    setSubmitting(true)
+    try {
+      await accountRepository.updateData(editingAccount.id, {
+        account_type: accountType,
+        note: accountType === 'plain' ? null : accountNote.trim() || null,
+        due_date: accountType === 'plain' ? null : accountDueDate || null,
+        rate: accountType === 'plain' ? null : accountRate.trim() ? parseFloat(accountRate) : null,
+      })
+      showToast('Account details updated', 'success')
+      closeAccountDataModal()
+      loadData()
+    } catch (error) {
+      console.error('Failed to save account details:', error)
+      showToast(error instanceof Error ? error.message : 'Failed to save account details', 'error')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const typeLabel = (type?: AccountType) => type === 'savings' ? 'Savings' : type === 'credits' ? 'Credit' : 'Plain'
+
+  const AccountTypeSelector = ({
+    value,
+    onChange,
+  }: {
+    value: AccountType
+    onChange: (value: AccountType) => void
+  }) => (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+      <div className="grid grid-cols-3 gap-2" role="group" aria-label="Type">
+        {ACCOUNT_TYPE_OPTIONS.map(({ value: typeValue, label }) => (
+          <button
+            key={typeValue}
+            type="button"
+            aria-pressed={value === typeValue}
+            onClick={() => onChange(typeValue)}
+            className={accountTypeButtonClass(value === typeValue)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 
   // Adjust balance handlers
   const openAdjustBalanceModal = (account: Account) => {
@@ -370,6 +465,7 @@ export function AccountsPage() {
                           Default
                         </Badge>
                       ) : ''}
+                      {wallet.account_type && wallet.account_type !== 'plain' ? <Badge variant="secondary">{typeLabel(wallet.account_type)}</Badge> : ''}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {wallet.accounts?.length || 0} account(s)
@@ -418,8 +514,14 @@ export function AccountsPage() {
                           <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
                             {account.currency}
                             {account.is_default ? <Badge>Default</Badge> : ''}
+                            {account.account_type && account.account_type !== 'plain' ? <Badge variant="secondary">{typeLabel(account.account_type)}</Badge> : ''}
                             {getCurrency(account.currency_id)?.is_crypto ? <Badge variant="secondary">crypto</Badge> : ''}
                           </p>
+                          {(account.note || account.due_date || account.rate != null) && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {[account.note, account.due_date ? `Due ${account.due_date}` : '', account.rate != null ? `${account.rate}%` : ''].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           <p className={`text-sm ${fromIntFrac(account.balance_int, account.balance_frac) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -429,6 +531,7 @@ export function AccountsPage() {
                             <DropdownMenu
                               items={[
                                 { label: 'Adjust Balance', onClick: () => openAdjustBalanceModal(account) },
+                                { label: 'Details', onClick: () => openAccountDataModal(account) },
                                 ...(!account.is_default ? [{ label: 'Set Default', onClick: () => handleSetAccountDefault(account) }] : []),
                                 { label: 'Remove', onClick: () => handleDeleteAccount(account, wallet.name), variant: 'danger' as const },
                               ] as DropdownMenuItem[]}
@@ -472,6 +575,7 @@ export function AccountsPage() {
               ))}
             </div>
           </div>
+          <AccountTypeSelector value={walletType} onChange={setWalletType} />
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={closeWalletModal} className="flex-1">
               Cancel
@@ -489,18 +593,29 @@ export function AccountsPage() {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             Add a new currency account to <strong>{targetWallet?.name}</strong>
           </p>
+          <Select
+            label="Type"
+            value={selectedAccountType}
+            onChange={(e) => {
+              const nextType = e.target.value as AccountType
+              setSelectedAccountType(nextType)
+              const availableCurrency = currencies.find(c => !targetWallet?.accounts?.some(a => a.currency_id === c.id && (a.account_type ?? 'plain') === nextType))
+              setSelectedCurrencyId(availableCurrency?.id.toString() || '')
+            }}
+            options={ACCOUNT_TYPE_OPTIONS}
+          />
           <LiveSearch
             label="Currency"
             value={selectedCurrencyId}
             onChange={(value) => setSelectedCurrencyId(String(value))}
             options={currencies
-              .filter(c => !targetWallet?.accounts?.some(a => a.currency_id === c.id))
+              .filter(c => !targetWallet?.accounts?.some(a => a.currency_id === c.id && (a.account_type ?? 'plain') === selectedAccountType))
               .map(c => ({ value: c.id, label: `${c.code} - ${c.name}` }))}
             placeholder="Search currencies"
           />
           <AmountInput
             label="Initial Balance"
-            isPositive
+            isPositive={selectedAccountType !== 'credits'}
             placeholder="0.00"
             value={initialBalance}
             onChange={setInitialBalance}
@@ -511,6 +626,42 @@ export function AccountsPage() {
             </Button>
             <Button type="submit" disabled={submitting || !selectedCurrencyId} className="flex-1">
               {submitting ? 'Adding...' : 'Add'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal isOpen={accountDataModalOpen} onClose={closeAccountDataModal} title="Account Details">
+        <form onSubmit={handleAccountDataSubmit} className="space-y-4">
+          <AccountTypeSelector value={accountType} onChange={setAccountType} />
+          {accountType !== 'plain' && (
+            <>
+              <Input
+                label="Note"
+                value={accountNote}
+                onChange={(e) => setAccountNote(e.target.value)}
+                placeholder="Optional note"
+              />
+              <Input
+                label="Due Date"
+                type="date"
+                value={accountDueDate}
+                onChange={(e) => setAccountDueDate(e.target.value)}
+              />
+              <AmountInput
+                label={accountType === 'credits' ? 'Loan Rate' : 'Profitability'}
+                placeholder="0.00"
+                value={accountRate}
+                onChange={setAccountRate}
+              />
+            </>
+          )}
+          <div className="flex gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={closeAccountDataModal} className="flex-1">
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting} className="flex-1">
+              {submitting ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </form>

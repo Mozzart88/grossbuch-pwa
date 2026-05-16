@@ -238,6 +238,34 @@ describe('tagRepository', () => {
 
       await expect(tagRepository.create(input)).rejects.toThrow('Tag with this name already exists')
     })
+
+    it('creates a tag without parent relationships', async () => {
+      const input: TagInput = { name: 'Loose' }
+
+      mockQueryOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...sampleTag, id: 26, name: 'Loose' })
+      mockQuerySQL.mockResolvedValue([])
+      mockGetLastInsertId.mockResolvedValue(26)
+
+      const result = await tagRepository.create(input)
+
+      expect(mockExecSQL).toHaveBeenCalledWith('INSERT INTO tag (name) VALUES (?)', ['Loose'])
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)',
+        expect.anything()
+      )
+      expect(result.name).toBe('Loose')
+    })
+
+    it('throws when created tag cannot be loaded', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+      mockGetLastInsertId.mockResolvedValue(26)
+
+      await expect(tagRepository.create({ name: 'Missing' })).rejects.toThrow('Failed to create tag')
+    })
   })
 
   describe('update', () => {
@@ -292,6 +320,26 @@ describe('tagRepository', () => {
         [23, SYSTEM_TAGS.INCOME]
       )
     })
+
+    it('allows updating to the same existing name', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ is_system: 0 })
+        .mockResolvedValueOnce({ ...sampleTag, id: 23 })
+        .mockResolvedValueOnce({ ...sampleTag, name: 'Groceries' })
+      mockQuerySQL.mockResolvedValue([])
+
+      const result = await tagRepository.update(23, { name: 'Groceries' })
+
+      expect(result.name).toBe('Groceries')
+    })
+
+    it('throws when updated tag cannot be loaded', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ is_system: 0 })
+        .mockResolvedValueOnce(null)
+
+      await expect(tagRepository.update(23, {})).rejects.toThrow('Tag not found')
+    })
   })
 
   describe('canDelete', () => {
@@ -329,10 +377,37 @@ describe('tagRepository', () => {
         .mockResolvedValueOnce({ is_system: 0 })
         .mockResolvedValueOnce({ count: 0 })
         .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 0 })
 
       const result = await tagRepository.canDelete(23)
 
       expect(result).toEqual({ canDelete: true })
+    })
+
+    it('returns false when tag is used as transaction context', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ is_system: 0 })
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 4 })
+
+      const result = await tagRepository.canDelete(23)
+
+      expect(result).toEqual({ canDelete: false, reason: '4 transactions use this tag as context' })
+    })
+
+    it('returns false when tag is used as budget context', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ is_system: 0 })
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce({ count: 3 })
+
+      const result = await tagRepository.canDelete(23)
+
+      expect(result).toEqual({ canDelete: false, reason: '3 budgets use this tag as context' })
     })
   })
 
@@ -449,6 +524,71 @@ describe('tagRepository', () => {
       expect(mockExecSQL).not.toHaveBeenCalledWith(
         'DELETE FROM tag_to_tag WHERE child_id = ? AND parent_id IN (?, ?)',
         [101, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE]
+      )
+    })
+
+    it('throws when a relation would create a cycle', async () => {
+      await expect(tagRepository.addRelation(101, 101)).rejects.toThrow('Tag relationship would create a cycle')
+      expect(mockExecSQL).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('getTopLevelParents', () => {
+    it('uses income root filter when type is income', async () => {
+      mockQuerySQL.mockResolvedValue([{ id: SYSTEM_TAGS.INCOME, name: 'income' }])
+
+      const result = await tagRepository.getTopLevelParents(23, 'income')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE rel.parent_id = ?'),
+        [23, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE]
+      )
+      expect(result[0].id).toBe(SYSTEM_TAGS.INCOME)
+    })
+
+    it('uses expense root filter when type is expense', async () => {
+      mockQuerySQL.mockResolvedValue([{ id: SYSTEM_TAGS.EXPENSE, name: 'expense' }])
+
+      await tagRepository.getTopLevelParents(23, 'expense')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE rel.parent_id = ?'),
+        [23, SYSTEM_TAGS.EXPENSE, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE]
+      )
+    })
+
+    it('uses both roots when type is omitted', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await tagRepository.getTopLevelParents(23)
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('WHERE rel.parent_id IN (9, 10)'),
+        [23, SYSTEM_TAGS.INCOME, SYSTEM_TAGS.EXPENSE]
+      )
+    })
+  })
+
+  describe('getContextOptions', () => {
+    it('uses income root for income context options', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await tagRepository.getContextOptions('income')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('? as type'),
+        expect.arrayContaining([SYSTEM_TAGS.INCOME, 'income'])
+      )
+    })
+
+    it('uses expense root for expense context options', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await tagRepository.getContextOptions('expense')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('? as type'),
+        expect.arrayContaining([SYSTEM_TAGS.EXPENSE, 'expense'])
       )
     })
   })

@@ -2,32 +2,50 @@ import { useState, useEffect, useRef } from 'react'
 import type { Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository, transactionRepository } from '../../services/repositories'
-import { Button, Select, DateTimeUI, ChevronIcon, AmountInput } from '../ui'
+import { Button, SelectUI, DateTimeUI, ChevronIcon, AmountInput, Badge } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, SubmitOptions } from './transactionFormShared'
-import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast } from './transactionFormShared'
+import type { AccountOption, AccountSelectUIOption, SubmitOptions, TransactionSubmitInterceptor } from './transactionFormShared'
+import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast, toAccountSelectUIOptions } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
 interface TransferTransactionFormProps {
   accounts: AccountOption[]
   defaultAccountId: string
   initialData?: Transaction
+  createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  addAnother?: boolean
+  onAddAnotherChange?: (checked: boolean) => void
+  onBeforeCreate?: TransactionSubmitInterceptor
 }
+
+const renderAccountOption = (option: AccountSelectUIOption) => (
+  <span className="inline-flex items-center">
+    <span>{option.label}</span>
+    {option.accountTypeLabel && <Badge variant="secondary">{option.accountTypeLabel}</Badge>}
+  </span>
+)
+
+const renderAccountSelectedBadge = (option: AccountSelectUIOption) =>
+  option.accountTypeLabel ? <Badge variant="secondary" className="ml-0">{option.accountTypeLabel}</Badge> : null
 
 export function TransferTransactionForm({
   accounts,
   defaultAccountId,
   initialData,
+  createFromInitialData = false,
   onSubmit,
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  addAnother: controlledAddAnother,
+  onAddAnotherChange,
+  onBeforeCreate,
 }: TransferTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -41,7 +59,10 @@ export function TransferTransactionForm({
   const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [addAnother, setAddAnother] = useState(false)
+  const [localAddAnother, setLocalAddAnother] = useState(false)
+  const isEditing = !!initialData && !createFromInitialData
+  const addAnother = controlledAddAnother ?? localAddAnother
+  const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
 
   // Populate from initial data
   useEffect(() => {
@@ -66,17 +87,21 @@ export function TransferTransactionForm({
     const setActionBarConfig = layoutContext?.setActionBarConfig
     if (!useActionBar || !setActionBarConfig) return
     setActionBarConfig({
-      primaryLabel: initialData ? 'Update' : 'Submit',
+      primaryLabel: isEditing ? 'Update' : 'Submit',
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
       disabled: submitting,
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
+  const accountOptions = toAccountSelectUIOptions(accounts)
+  const toAccountOptions = toAccountSelectUIOptions(accounts
+    .filter(a => a.id !== selectedAccount?.id)
+    .filter(a => a.currency_id === selectedAccount?.currency_id))
 
   const resetEntryFields = () => {
     setAmount('')
@@ -161,12 +186,16 @@ export function TransferTransactionForm({
         lines,
       }
 
-      if (initialData) {
+      if (!isEditing && onBeforeCreate && await onBeforeCreate(payload, 'transfer')) {
+        return
+      }
+
+      if (isEditing && initialData) {
         await transactionRepository.update(initialData.id, payload)
       } else {
         await transactionRepository.create(payload)
       }
-      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      const shouldAddAnother = showAddAnother && addAnother && !isEditing
       onSubmit({ addAnother: shouldAddAnother })
       if (shouldAddAnother) resetEntryFields()
     } catch (error) {
@@ -193,13 +222,12 @@ export function TransferTransactionForm({
       {/* From > To account row */}
       <div className="flex justify-between gap-2">
         <div className="grow">
-          <Select
+          <SelectUI
             value={accountId}
-            onChange={(e) => setAccountId(e.target.value)}
-            options={accounts.map((a) => ({
-              value: a.id,
-              label: `${a.walletName}:${a.currencyCode}`,
-            }))}
+            onChange={(value) => setAccountId(`${value}`)}
+            options={accountOptions}
+            renderOption={(option) => renderAccountOption(option as AccountSelectUIOption)}
+            renderSelectedBadge={(option) => renderAccountSelectedBadge(option as AccountSelectUIOption)}
             placeholder="From"
             error={errors.accountId}
           />
@@ -210,16 +238,12 @@ export function TransferTransactionForm({
         <div
           className="grow"
         >
-          <Select
+          <SelectUI
             value={toAccountId}
-            onChange={(e) => setToAccountId(e.target.value)}
-            options={accounts
-              .filter(a => a.id !== selectedAccount?.id)
-              .filter(a => a.currency_id === selectedAccount?.currency_id)
-              .map((a) => ({
-                value: a.id,
-                label: `${a.walletName}:${a.currencyCode}`,
-              }))}
+            onChange={(value) => setToAccountId(`${value}`)}
+            options={toAccountOptions}
+            renderOption={(option) => renderAccountOption(option as AccountSelectUIOption)}
+            renderSelectedBadge={(option) => renderAccountSelectedBadge(option as AccountSelectUIOption)}
             placeholder="To"
             error={errors.toAccountId}
           />
@@ -264,7 +288,7 @@ export function TransferTransactionForm({
       </div>
 
       {/* Actions */}
-      {showAddAnother && !initialData && (
+      {showAddAnother && !isEditing && !onAddAnotherChange && (
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
@@ -282,7 +306,7 @@ export function TransferTransactionForm({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting} className="flex-1">
-            {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
+            {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>
       )}

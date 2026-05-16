@@ -8,6 +8,7 @@ interface NavDrawerProps {
 const navItems = [
   { to: '/settings/tags', label: 'Tags', icon: '🏷️' },
   { to: '/settings/counterparties', label: 'Counterparties', icon: '👥' },
+  { to: '/settings/recurring', label: 'Recurring Transactions', icon: '∞' },
   { to: '/settings/exchange-rates', label: 'Exchanges', icon: '📈' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ]

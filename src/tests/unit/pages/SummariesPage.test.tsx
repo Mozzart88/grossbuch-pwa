@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { SummariesPage } from '../../../pages/SummariesPage'
 import { LayoutProvider, useLayoutContext } from '../../../store/LayoutContext'
@@ -85,7 +85,7 @@ describe('SummariesPage', () => {
       income: 1000,
       expenses: 500,
     })
-    mockAccountRepository.getTotalBalance.mockResolvedValue(1500)
+    mockAccountRepository.getPlainTotalBalance.mockResolvedValue(1500)
     mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
       { tag_id: 1, tag: 'Food', income: 0, expense: 300, net: -300 },
       { tag_id: 2, tag: 'Salary', income: 1000, expense: 0, net: 1000 },
@@ -131,6 +131,21 @@ describe('SummariesPage', () => {
       { id: 25, name: 'Mixed', sort_order: 10 },
       { id: 13, name: 'Transport', sort_order: 10 },
     ])
+    mockTagRepository.findSystemTags?.mockResolvedValue([
+      { id: 21, name: 'savings', sort_order: 0 },
+      { id: 22, name: 'credits', sort_order: 0 },
+      { id: 3, name: 'archived', sort_order: 0 },
+    ])
+    mockTagRepository.getContextOptions?.mockImplementation((type: 'income' | 'expense') => Promise.resolve(
+      type === 'expense'
+        ? [
+            { tag_id: 12, tag_name: 'Food', context_id: null, context_name: null, label: 'Food', type: 'expense' },
+          ]
+        : [
+            { tag_id: 24, tag_name: 'Consulting', context_id: null, context_name: null, label: 'Consulting', type: 'income' },
+          ]
+    ))
+    mockTagRepository.getHierarchy?.mockResolvedValue([])
   })
 
   describe('Page structure', () => {
@@ -139,6 +154,20 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Summaries')).toBeInTheDocument()
+      })
+    })
+
+    it('switches between nested and flat summary views from the header', async () => {
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Switch to flat view' })).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: 'Switch to flat view' }))
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Switch to nested view' })).toBeInTheDocument()
       })
     })
 
@@ -240,6 +269,28 @@ describe('SummariesPage', () => {
       expect(screen.getAllByText('Maintenance')).toHaveLength(2)
       expect(screen.getAllByText(formatCurrencyValue(-100, '$'), { exact: false }).length).toBeGreaterThanOrEqual(2)
       expect(screen.getAllByText(formatCurrencyValue(-50, '$'), { exact: false }).length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('flat view groups shared child tag totals into one row', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 150,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 30, tag: 'Auto', income: 0, expense: 100, net: -100, tag_context_id: null, tag_context: null },
+        { tag_id: 31, tag: 'Boat', income: 0, expense: 50, net: -50, tag_context_id: null, tag_context: null },
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 100, net: -100, tag_context_id: 30, tag_context: 'Auto' },
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 50, net: -50, tag_context_id: 31, tag_context: 'Boat' },
+      ])
+
+      renderWithRouter(['/summaries?tab=tags&view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Maintenance')).toBeInTheDocument()
+      })
+
+      expect(screen.getAllByText('Maintenance')).toHaveLength(1)
+      expect(screen.getAllByText(formatCurrencyValue(-150, '$'), { exact: false }).length).toBeGreaterThan(0)
     })
 
     it('aggregates deeply nested tags and preserves separate row and title clicks', async () => {
@@ -415,6 +466,15 @@ describe('SummariesPage', () => {
         expect(screen.getByText('No transactions this month')).toBeInTheDocument()
       })
     })
+
+    it('keeps counterparties unchanged in flat view', async () => {
+      renderWithRouter(['/summaries?tab=counterparties&view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Employer')).toBeInTheDocument()
+        expect(screen.getByText('Grocery Store')).toBeInTheDocument()
+      })
+    })
   })
 
   describe('Income/Expense tab', () => {
@@ -473,6 +533,65 @@ describe('SummariesPage', () => {
         expect(screen.getByText('No income this month')).toBeInTheDocument()
       })
     })
+
+    it('flat view groups contextual budget actuals and planned amounts by tag', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 65,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 40, tag: 'Diesel', amount: 25, type: 'expense', tag_context_id: 30, tag_context: 'Auto' },
+        { tag_id: 40, tag: 'Diesel', amount: 40, type: 'expense', tag_context_id: 31, tag_context: 'Boat' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([1, 1, 1, 1, 1, 1, 1, 1]),
+          tag_id: 40,
+          tag_context_id: 30,
+          tag_context: 'Auto',
+          type: 'expense',
+          amount_int: 100,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Diesel',
+          actual: 25,
+        },
+        {
+          id: new Uint8Array([2, 2, 2, 2, 2, 2, 2, 2]),
+          tag_id: 40,
+          tag_context_id: 31,
+          tag_context: 'Boat',
+          type: 'expense',
+          amount_int: 200,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'Diesel',
+          actual: 40,
+        },
+      ])
+
+      renderWithRouter(['/summaries?view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Diesel')).toBeInTheDocument()
+      })
+
+      expect(screen.getAllByText('Diesel')).toHaveLength(1)
+      expect(screen.getByText(`${formatCurrencyValue(65, '$')}/${formatCurrencyValue(300, '$')}`)).toBeInTheDocument()
+      expect(screen.getByText('22%')).toBeInTheDocument()
+    })
+
+    it('flat view keeps budget progress bars for rows without budgets', async () => {
+      renderWithRouter(['/summaries?view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      expect(screen.getByText('60%')).toBeInTheDocument()
+    })
   })
 
   describe('Month navigation', () => {
@@ -500,6 +619,14 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Employer')).toBeInTheDocument()
+      })
+    })
+
+    it('uses flat view from URL parameter', async () => {
+      renderWithRouter(['/summaries?month=2025-01&tab=tags&view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Switch to nested view' })).toBeInTheDocument()
       })
     })
   })
@@ -1487,7 +1614,7 @@ describe('SummariesPage', () => {
       await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
       fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
 
-      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1, 'expense'))
+      await waitFor(() => expect(mockBudgetRepository.findByTagId).toHaveBeenCalledWith(1, 'expense', null))
 
       // Submit and verify start timestamp is January 2025
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
@@ -1752,9 +1879,9 @@ describe('SummariesPage', () => {
         expect(screen.getByText('January 2025')).toBeInTheDocument()
       })
 
-      // buttons[1] is the prev-month button in MonthNavigator (buttons[0] is PageHeader back)
+      // buttons[2] is the prev-month button in MonthNavigator (before it: PageHeader back, summary view toggle)
       const buttons = screen.getAllByRole('button')
-      fireEvent.click(buttons[1])
+      fireEvent.click(buttons[2])
 
       await waitFor(() => {
         expect(mockTransactionRepository.getMonthSummary).toHaveBeenCalledWith('2024-12')
@@ -1777,14 +1904,142 @@ describe('SummariesPage', () => {
 
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
 
-      const categorySelect = screen.getByLabelText('Category')
-      // Truthy branch: value '12'
-      fireEvent.change(categorySelect, { target: { value: '12' } })
-      // Falsy branch: clear to ''
-      fireEvent.change(categorySelect, { target: { value: '' } })
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Food' } })
+      fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Food' }))
 
-      // Verify form renders without crashing
+      expect(categoryInput).toHaveValue('Food')
       expect(screen.getByText('Set Budget')).toBeInTheDocument()
+    })
+
+    it('offers savings and credit tags when setting an expense budget', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      const listbox = screen.getByRole('listbox')
+      expect(listbox).toHaveTextContent('Savings')
+      expect(listbox).toHaveTextContent('Credit')
+      expect(listbox).not.toHaveTextContent('archived')
+    })
+
+    it('creates a credit refund budget from the system credit tag', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Credit' } })
+      fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Credit' }))
+      fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '300' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tag_id: 22,
+            tag_context_id: null,
+            type: 'expense',
+            amount_int: 300,
+          })
+        )
+      })
+    })
+
+    it('switches budget type and does not offer category creation', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+
+      const listbox = screen.getByRole('listbox')
+      expect(listbox).toHaveTextContent('Consulting')
+      expect(listbox).not.toHaveTextContent('Food')
+
+      fireEvent.change(categoryInput, { target: { value: 'Not a category' } })
+      expect(screen.queryByText('Create "Not a category"')).not.toBeInTheDocument()
+    })
+
+    it('submits contextual category selections from the budget category search', async () => {
+      mockTagRepository.getContextOptions?.mockImplementation((type: 'income' | 'expense') => Promise.resolve(
+        type === 'expense'
+          ? [
+              { tag_id: 50, tag_name: 'Coffee', context_id: 12, context_name: 'Food', label: 'Coffee Food', type: 'expense' },
+            ]
+          : [
+              { tag_id: 24, tag_name: 'Consulting', context_id: null, context_name: null, label: 'Consulting', type: 'income' },
+            ]
+      ))
+
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Coffee' } })
+      fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'CoffeeFood' }))
+      fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '75' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tag_id: 50,
+            tag_context_id: 12,
+            type: 'expense',
+            amount_int: 75,
+          })
+        )
+      })
     })
 
     it('handles budget save Error instance', async () => {

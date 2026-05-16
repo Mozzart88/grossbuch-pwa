@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { ExchangeTransactionForm } from '../../../../components/transactions/ExchangeTransactionForm'
 import type { Transaction } from '../../../../types'
 import { SYSTEM_TAGS } from '../../../../types'
@@ -139,6 +139,52 @@ describe('ExchangeTransactionForm', () => {
           lines: expect.arrayContaining([
             expect.objectContaining({ account_id: 1, sign: '-', amount_int: 100, tag_id: SYSTEM_TAGS.EXCHANGE }),
             expect.objectContaining({ account_id: 2, sign: '+', amount_int: 90, tag_id: SYSTEM_TAGS.EXCHANGE }),
+          ]),
+        })
+      )
+    })
+  })
+
+  it('shows typed duplicate accounts with badges and submits selected account ids', async () => {
+    const typedAccounts = [
+      {
+        ...mockAccounts[0],
+        id: 1,
+        wallet_id: 1,
+        walletName: 'Cash',
+        currencyCode: 'USD',
+        account_type: 'plain',
+      },
+      {
+        ...mockAccounts[0],
+        id: 4,
+        wallet_id: 1,
+        walletName: 'Cash',
+        currencyCode: 'USD',
+        account_type: 'savings',
+        is_default: false,
+      },
+      mockAccounts[1],
+    ]
+
+    render(<ExchangeTransactionForm {...defaultProps} accounts={typedAccounts as any} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cash:USD' }))
+    expect(screen.getAllByText('Cash:USD').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Savings')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: /Cash:USD.*Savings/i }))
+
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+    fireEvent.change(document.getElementById('toAmount')!, { target: { value: '90' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: expect.arrayContaining([
+            expect.objectContaining({ account_id: 4, sign: '-' }),
+            expect.objectContaining({ account_id: 2, sign: '+' }),
           ]),
         })
       )

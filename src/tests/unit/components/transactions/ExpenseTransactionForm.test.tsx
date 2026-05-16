@@ -574,6 +574,45 @@ describe('ExpenseTransactionForm', () => {
       })
     })
 
+    it('infers payment currency from expense account when notification draft lines have no joined currency', async () => {
+      const draftData: Transaction = {
+        id: new Uint8Array(8),
+        timestamp: 1704803400,
+        lines: [
+          {
+            id: new Uint8Array(8), trx_id: new Uint8Array(8),
+            account_id: 1, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '-',
+            amount_int: 7, amount_frac: 0, rate_int: 1, rate_frac: 0,
+          },
+          {
+            id: new Uint8Array(8), trx_id: new Uint8Array(8),
+            account_id: 2, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '+',
+            amount_int: 10000, amount_frac: 0, rate_int: 1000, rate_frac: 0,
+          },
+          {
+            id: new Uint8Array(8), trx_id: new Uint8Array(8),
+            account_id: 2, tag_id: 10, sign: '-',
+            amount_int: 10000, amount_frac: 0, rate_int: 1000, rate_frac: 0,
+          },
+        ] as any,
+      }
+
+      render(
+        <ExpenseTransactionForm
+          {...defaultProps}
+          currencies={mockCurrencies}
+          initialData={draftData}
+          createFromInitialData
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getAllByLabelText(/^Amount/i)[0]).toHaveValue((10000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      })
+      expect(screen.getByLabelText(/^Amount from account/i)).toHaveValue((7).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      expect(screen.getByText('Rate: 1 USD = 1428.5714 EUR')).toBeInTheDocument()
+    })
+
     it('populates common lines with percentage from multi-currency initialData', async () => {
       const multiCurrencyWithCommon: Transaction = {
         id: new Uint8Array(8),

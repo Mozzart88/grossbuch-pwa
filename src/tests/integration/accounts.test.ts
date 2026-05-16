@@ -25,6 +25,75 @@ describe('Accounts Integration', () => {
   })
 
   describe('Account CRUD Operations', () => {
+    it('creates savings and credit system tags plus account_data metadata table', async () => {
+      const db = getTestDatabase()
+
+      const tags = db.exec(`
+        SELECT child.name, parent.name
+        FROM tag child
+        JOIN tag_to_tag rel ON rel.child_id = child.id
+        JOIN tag parent ON parent.id = rel.parent_id
+        WHERE child.name IN ('savings', 'credits')
+        ORDER BY child.name
+      `)
+      expect(tags[0].values).toEqual([
+        ['credits', 'system'],
+        ['savings', 'system'],
+      ])
+
+      const walletId = insertWallet({ name: 'Metadata Wallet' })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+      db.run('UPDATE account SET updated_at = 1 WHERE id = ?', [accountId])
+      db.run('INSERT INTO account_data (account_id, note, due_date, rate) VALUES (?, ?, ?, ?)', [accountId, 'Reserve', '2026-06-01', 4.5])
+
+      const updated = db.exec('SELECT updated_at FROM account WHERE id = ?', [accountId])
+      expect(Number(updated[0].values[0][0])).toBeGreaterThan(1)
+    })
+
+    it('allows same wallet and currency when account type differs', async () => {
+      const db = getTestDatabase()
+      const walletId = insertWallet({ name: 'Typed Wallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const plainId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const savingsId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const savingsTag = Number(db.exec("SELECT id FROM tag WHERE name = 'savings'")[0].values[0][0])
+
+      db.run('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [savingsId, savingsTag])
+
+      const result = db.exec(`
+        SELECT id, account_type FROM accounts
+        WHERE id IN (?, ?)
+        ORDER BY id
+      `, [plainId, savingsId])
+
+      expect(result[0].values).toEqual([
+        [plainId, 'plain'],
+        [savingsId, 'savings'],
+      ])
+    })
+
+    it('propagates wallet type to existing and new accounts', async () => {
+      const db = getTestDatabase()
+      const walletId = insertWallet({ name: 'Savings Wallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const firstAccount = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const savingsTag = Number(db.exec("SELECT id FROM tag WHERE name = 'savings'")[0].values[0][0])
+
+      db.run('INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [walletId, savingsTag])
+      const secondAccount = insertAccount({ wallet_id: walletId, currency_id: getCurrencyIdByCode('EUR') })
+
+      const result = db.exec(`
+        SELECT id, account_type FROM accounts
+        WHERE id IN (?, ?)
+        ORDER BY id
+      `, [firstAccount, secondAccount])
+
+      expect(result[0].values).toEqual([
+        [firstAccount, 'savings'],
+        [secondAccount, 'savings'],
+      ])
+    })
+
     it('creates account with default values', async () => {
       const db = getTestDatabase()
 

@@ -1,14 +1,83 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
-import type { Wallet, WalletInput, Account } from '../../types'
+import type { Wallet, WalletInput, Account, AccountType } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { transactionRepository } from './transactionRepository'
 import { toIntFrac } from '../../utils/amount'
+
+function accountTypeSelect(alias = 'a') {
+  return `CASE
+        WHEN EXISTS(SELECT 1 FROM account_to_tags a2t JOIN tag atag ON atag.id = a2t.tag_id WHERE a2t.account_id = ${alias}.id AND atag.name = 'savings') THEN 'savings'
+        WHEN EXISTS(SELECT 1 FROM account_to_tags a2t JOIN tag atag ON atag.id = a2t.tag_id WHERE a2t.account_id = ${alias}.id AND atag.name = 'credits') THEN 'credits'
+        ELSE 'plain'
+      END`
+}
+
+function walletTypeSelect(alias = 'w') {
+  return `CASE
+        WHEN EXISTS(SELECT 1 FROM wallet_to_tags w2t JOIN tag wtag ON wtag.id = w2t.tag_id WHERE w2t.wallet_id = ${alias}.id AND wtag.name = 'savings') THEN 'savings'
+        WHEN EXISTS(SELECT 1 FROM wallet_to_tags w2t JOIN tag wtag ON wtag.id = w2t.tag_id WHERE w2t.wallet_id = ${alias}.id AND wtag.name = 'credits') THEN 'credits'
+        ELSE 'plain'
+      END`
+}
+
+async function getAccountTypeTagId(accountType: AccountType): Promise<number | null> {
+  if (accountType === 'plain') return null
+  const row = await queryOne<{ id: number }>('SELECT id FROM tag WHERE name = ?', [accountType])
+  return row?.id ?? null
+}
+
+async function syncWalletType(walletId: number, accountType: AccountType): Promise<void> {
+  if (accountType !== 'plain') {
+    const duplicate = await queryOne<{ currency_id: number; count: number }>(`
+      SELECT currency_id, COUNT(*) as count
+      FROM account
+      WHERE wallet_id = ?
+      GROUP BY currency_id
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    `, [walletId])
+    if (duplicate) {
+      throw new Error('Cannot set wallet type when it has duplicate currency accounts')
+    }
+  }
+
+  await execSQL(`
+    DELETE FROM wallet_to_tags
+    WHERE wallet_id = ?
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [walletId])
+
+  const typeTagId = await getAccountTypeTagId(accountType)
+  if (typeTagId) {
+    await execSQL('INSERT OR IGNORE INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [walletId, typeTagId])
+  } else {
+    await execSQL(`
+      DELETE FROM account_to_tags
+      WHERE account_id IN (SELECT id FROM account WHERE wallet_id = ?)
+        AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+    `, [walletId])
+  }
+}
+
+async function syncAccountType(accountId: number, accountType: AccountType): Promise<void> {
+  await execSQL(`
+    DELETE FROM account_to_tags
+    WHERE account_id = ?
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [accountId])
+
+  const typeTagId = await getAccountTypeTagId(accountType)
+  if (typeTagId) {
+    await execSQL('INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [accountId, typeTagId])
+  }
+}
 
 export const walletRepository = {
   async findAll(): Promise<Wallet[]> {
     const wallets = await querySQL<Wallet>(`
       SELECT
         w.*,
+        ${walletTypeSelect('w')} as account_type,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_default,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_archived,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_virtual
@@ -22,9 +91,14 @@ export const walletRepository = {
         SELECT
           a.*,
           c.code as currency,
+          ${accountTypeSelect('a')} as account_type,
+          ad.note,
+          ad.due_date,
+          ad.rate,
           EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
         FROM account a
         JOIN currency c ON a.currency_id = c.id
+        LEFT JOIN account_data ad ON ad.account_id = a.id
         WHERE a.wallet_id = ?
         ORDER BY is_default DESC, c.code ASC
       `, [SYSTEM_TAGS.DEFAULT, wallet.id])
@@ -37,6 +111,7 @@ export const walletRepository = {
     const wallets = await querySQL<Wallet>(`
       SELECT
         w.*,
+        ${walletTypeSelect('w')} as account_type,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_default
       FROM wallet w
       WHERE NOT EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?)
@@ -49,9 +124,14 @@ export const walletRepository = {
         SELECT
           a.*,
           c.code as currency,
+          ${accountTypeSelect('a')} as account_type,
+          ad.note,
+          ad.due_date,
+          ad.rate,
           EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
         FROM account a
         JOIN currency c ON a.currency_id = c.id
+        LEFT JOIN account_data ad ON ad.account_id = a.id
         WHERE a.wallet_id = ?
           AND NOT EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?)
         ORDER BY is_default DESC, c.code ASC
@@ -65,6 +145,7 @@ export const walletRepository = {
     const wallet = await queryOne<Wallet>(`
       SELECT
         w.*,
+        ${walletTypeSelect('w')} as account_type,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_default,
         EXISTS(SELECT 1 FROM wallet_to_tags WHERE wallet_id = w.id AND tag_id = ?) as is_archived
       FROM wallet w
@@ -77,9 +158,14 @@ export const walletRepository = {
       SELECT
         a.*,
         c.code as currency,
+        ${accountTypeSelect('a')} as account_type,
+        ad.note,
+        ad.due_date,
+        ad.rate,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a
       JOIN currency c ON a.currency_id = c.id
+      LEFT JOIN account_data ad ON ad.account_id = a.id
       WHERE a.wallet_id = ?
       ORDER BY is_default DESC, c.code ASC
     `, [SYSTEM_TAGS.DEFAULT, id])
@@ -105,9 +191,14 @@ export const walletRepository = {
       SELECT
         a.*,
         c.code as currency,
+        ${accountTypeSelect('a')} as account_type,
+        ad.note,
+        ad.due_date,
+        ad.rate,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a
       JOIN currency c ON a.currency_id = c.id
+      LEFT JOIN account_data ad ON ad.account_id = a.id
       WHERE a.wallet_id = ?
       ORDER BY is_default DESC, c.code ASC
     `, [SYSTEM_TAGS.DEFAULT, wallet.id])
@@ -129,8 +220,9 @@ export const walletRepository = {
     const id = await getLastInsertId()
 
     const wallet = await this.findById(id)
+    await syncWalletType(id, input.account_type ?? 'plain')
     if (!wallet) throw new Error('Failed to create wallet')
-    return wallet
+    return (await this.findById(id)) ?? wallet
   },
 
   async update(id: number, input: Partial<WalletInput>): Promise<Wallet> {
@@ -157,6 +249,9 @@ export const walletRepository = {
     if (fields.length > 0) {
       values.push(id)
       await execSQL(`UPDATE wallet SET ${fields.join(', ')} WHERE id = ?`, values)
+    }
+    if (input.account_type !== undefined) {
+      await syncWalletType(id, input.account_type)
     }
 
     const wallet = await this.findById(id)
@@ -195,14 +290,14 @@ export const walletRepository = {
 
   // Add an account (currency) to the wallet
   // If initialBalance is provided (> 0), creates an INITIAL transaction
-  async addAccount(walletId: number, currencyId: number, initialBalance?: number): Promise<Account> {
-    // Check if this wallet already has an account with this currency
+  async addAccount(walletId: number, currencyId: number, initialBalance?: number, accountType?: AccountType): Promise<Account> {
+    const finalType = accountType ?? 'plain'
     const existing = await queryOne<Account>(
-      'SELECT * FROM account WHERE wallet_id = ? AND currency_id = ?',
-      [walletId, currencyId]
+      `SELECT * FROM account a WHERE wallet_id = ? AND currency_id = ? AND ${accountTypeSelect('a')} = ?`,
+      [walletId, currencyId, finalType]
     )
     if (existing) {
-      throw new Error('This wallet already has an account with this currency')
+      throw new Error('This wallet already has an account with this currency and type')
     }
 
     await execSQL(
@@ -210,11 +305,15 @@ export const walletRepository = {
       [walletId, currencyId]
     )
     const id = await getLastInsertId()
+    if (accountType !== undefined) {
+      await syncAccountType(id, finalType)
+    }
 
     const account = await queryOne<Account>(`
       SELECT
         a.*,
         c.code as currency,
+        ${accountTypeSelect('a')} as account_type,
         EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
       FROM account a
       JOIN currency c ON a.currency_id = c.id
@@ -224,13 +323,13 @@ export const walletRepository = {
     if (!account) throw new Error('Failed to create account')
 
     // Create INITIAL transaction if initialBalance > 0
-    if (initialBalance && initialBalance > 0) {
-      const { int: amount_int, frac: amount_frac } = toIntFrac(initialBalance)
+    if (initialBalance && (initialBalance > 0 || finalType === 'credits')) {
+      const { int: amount_int, frac: amount_frac } = toIntFrac(Math.abs(initialBalance))
       await transactionRepository.create({
         lines: [{
           account_id: account.id,
           tag_id: SYSTEM_TAGS.INITIAL,
-          sign: '+',
+          sign: initialBalance < 0 ? '-' : '+',
           amount_int,
           amount_frac,
           rate_int: 0,

@@ -4,11 +4,12 @@ import { useLayoutContext } from '../store/LayoutContext'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
-import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast, ChevronIcon } from '../components/ui'
+import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast, ChevronIcon, LiveSearch, Badge } from '../components/ui'
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrencyValue } from '../utils/formatters'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
+import { encodeTagSelection, parseTagSelection, toTagLiveSearchOptions, type TagLiveSearchOption } from '../components/transactions/transactionFormShared'
 import type {
   MonthSummary as MonthSummaryType,
   MonthlyTagSummary,
@@ -17,6 +18,7 @@ import type {
   Budget,
   BudgetInput,
   Tag,
+  TagContextOption,
   TagHierarchy,
 } from '../types'
 import { SYSTEM_TAGS } from '../types'
@@ -33,6 +35,17 @@ type SummaryTreeItem = {
   tag_context_id?: number | null
 }
 
+type SummaryView = 'nested' | 'flat'
+
+const isAccountBudgetTag = (tag: Pick<Tag, 'name'>): boolean =>
+  tag.name === 'savings' || tag.name === 'credits'
+
+const accountBudgetTagLabel = (tagName: string): string => {
+  if (tagName === 'savings') return 'Savings'
+  if (tagName === 'credits') return 'Credit'
+  return tagName
+}
+
 export function SummariesPage() {
   const navigate = useNavigate()
   const { showToast } = useToast()
@@ -41,10 +54,12 @@ export function SummariesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const monthParam = searchParams.get('month') || getCurrentMonth()
   const tabParam = searchParams.get('tab') || 'income-expense'
+  const viewParam: SummaryView = searchParams.get('view') === 'flat' ? 'flat' : 'nested'
 
   const todayMonth = getCurrentMonth()
   const [month, setMonth] = useState(monthParam)
   const [activeTab, setActiveTab] = useState(tabParam)
+  const [summaryView, setSummaryView] = useState<SummaryView>(viewParam)
   const [loading, setLoading] = useState(true)
   const [decimalPlaces, setDecimalPlaces] = useState(2)
   const [currencySymbol, setCurrencySymbol] = useState('$')
@@ -64,12 +79,14 @@ export function SummariesPage() {
   const [budgets, setBudgets] = useState<Budget[]>([])
   const [incomeTags, setIncomeTags] = useState<Tag[]>([])
   const [expenseTags, setExpenseTags] = useState<Tag[]>([])
+  const [incomeTagOptions, setIncomeTagOptions] = useState<TagContextOption[]>([])
+  const [expenseTagOptions, setExpenseTagOptions] = useState<TagContextOption[]>([])
   const [tagHierarchy, setTagHierarchy] = useState<TagHierarchy[]>([])
-  const [expandedSummaryTagIds, setExpandedSummaryTagIds] = useState<Set<number>>(new Set())
+  const [expandedSummaryTagIds, setExpandedSummaryTagIds] = useState<Set<string>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
   const [selectedBudgetType, setSelectedBudgetType] = useState<'income' | 'expense'>('expense')
-  const [selectedTagId, setSelectedTagId] = useState<number | ''>('')
+  const [selectedTagSelection, setSelectedTagSelection] = useState('')
   const [budgetAmount, setBudgetAmount] = useState('')
   const [budgetPeriod, setBudgetPeriod] = useState(getCurrentMonth()) // defaults to current month
   const [submitting, setSubmitting] = useState(false)
@@ -78,19 +95,20 @@ export function SummariesPage() {
 
   const isCurrentMonth = month === todayMonth
 
-  // Update URL when month or tab changes
+  // Update URL when month, tab, or summary view changes
   useEffect(() => {
     const params = new URLSearchParams()
     params.set('month', month)
     params.set('tab', activeTab)
+    params.set('view', summaryView)
     setSearchParams(params, { replace: true })
-  }, [month, activeTab, setSearchParams])
+  }, [month, activeTab, summaryView, setSearchParams])
 
   // Override FAB to open Set Budget modal
   useEffect(() => {
     setPlusButtonConfig({
       onClick: () => {
-        setSelectedTagId('')
+        setSelectedTagSelection('')
         setEditingBudget(null)
         setSelectedBudgetType('expense')
         setBudgetAmount('')
@@ -116,17 +134,29 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, hierarchy] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, systemTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
         transactionRepository.getMonthSummary(month),
-        accountRepository.getTotalBalance(),
+        accountRepository.getPlainTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
         transactionRepository.getMonthlyCounterpartiesSummary(month),
         transactionRepository.getMonthlyCategoryBreakdown(month),
         budgetRepository.findByMonth(month),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
+        tagRepository.findSystemTags?.() ?? Promise.resolve([]),
+        tagRepository.getContextOptions('income') ?? Promise.resolve([]),
+        tagRepository.getContextOptions('expense') ?? Promise.resolve([]),
         tagRepository.getHierarchy?.() ?? Promise.resolve([]),
       ])
+      const accountBudgetTags = (systemTags ?? []).filter(isAccountBudgetTag)
+      const accountBudgetOptions: TagContextOption[] = accountBudgetTags.map((tag) => ({
+        tag_id: tag.id,
+        tag_name: tag.name,
+        context_id: null,
+        context_name: null,
+        label: accountBudgetTagLabel(tag.name),
+        type: 'expense',
+      }))
 
       setSummary({
         income: monthSum.income,
@@ -141,11 +171,16 @@ export function SummariesPage() {
 
       setBudgets(monthBudgets)
       setIncomeTags((allIncomeTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
-      setExpenseTags((allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setExpenseTags([
+        ...(allExpenseTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED),
+        ...accountBudgetTags,
+      ])
+      setIncomeTagOptions(incomeOptions)
+      setExpenseTagOptions([...(expenseOptions ?? []), ...accountBudgetOptions])
       setTagHierarchy(hierarchy)
       setExpandedSummaryTagIds(prev => {
         if (prev.size > 0) return prev
-        return new Set(hierarchy.map(h => h.parent_id))
+        return new Set(hierarchy.map(h => h.parent_id.toString()))
       })
     } catch (error) {
       console.error('Failed to load summaries:', error)
@@ -160,6 +195,10 @@ export function SummariesPage() {
 
   const handleTabChange = (tabId: string) => {
     setActiveTab(tabId)
+  }
+
+  const toggleSummaryView = () => {
+    setSummaryView(prev => prev === 'nested' ? 'flat' : 'nested')
   }
 
   // Navigation handlers for clicking cards
@@ -192,9 +231,17 @@ export function SummariesPage() {
   // Budget helpers
   const budgetType = (budget: Budget): 'income' | 'expense' => budget.type ?? 'expense'
 
-  const getBudgetForTag = useCallback((tagId: number, type: 'income' | 'expense'): Budget | undefined => {
-    return budgets.find(b => b.tag_id === tagId && budgetType(b) === type)
+  const getBudgetForTag = useCallback((tagId: number, type: 'income' | 'expense', contextId?: number | null): Budget | undefined => {
+    return budgets.find(b =>
+      b.tag_id === tagId &&
+      budgetType(b) === type &&
+      (b.tag_context_id ?? null) === (contextId ?? null)
+    )
   }, [budgets])
+
+  const getBudgetAmount = useCallback((budget?: Budget): number =>
+    budget ? fromIntFrac(budget.amount_int, budget.amount_frac) : 0,
+  [])
 
   const generateMonthOptions = (): { value: string; label: string }[] => {
     const options: { value: string; label: string }[] = []
@@ -215,8 +262,8 @@ export function SummariesPage() {
     return toIntFrac(Math.abs(parsed))
   }
 
-  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget) => {
-    setSelectedTagId(tagId)
+  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget, contextId?: number | null) => {
+    setSelectedTagSelection(encodeTagSelection(tagId, existingBudget?.tag_context_id ?? contextId ?? null))
     setSelectedBudgetType(type)
     if (existingBudget) {
       setEditingBudget(existingBudget)
@@ -233,13 +280,13 @@ export function SummariesPage() {
     setModalOpen(true)
   }
 
-  const openSetBudgetModal = async (type: 'income' | 'expense', tagId: number, suggestedAmount: number) => {
-    setSelectedTagId(tagId)
+  const openSetBudgetModal = async (type: 'income' | 'expense', tagId: number, suggestedAmount: number, contextId?: number | null) => {
+    setSelectedTagSelection(encodeTagSelection(tagId, contextId ?? null))
     setSelectedBudgetType(type)
     setEditingBudget(null)
     setBudgetAmount(suggestedAmount.toFixed(decimalPlaces))
     try {
-      const allForTag = await budgetRepository.findByTagId(tagId, type)
+      const allForTag = await budgetRepository.findByTagId(tagId, type, contextId ?? null)
       const occupied = new Set(
         allForTag.map(b => {
           const d = new Date(b.start * 1000)
@@ -264,7 +311,7 @@ export function SummariesPage() {
   const closeBudgetModal = () => {
     setModalOpen(false)
     setEditingBudget(null)
-    setSelectedTagId('')
+    setSelectedTagSelection('')
     setSelectedBudgetType('expense')
     setBudgetAmount('')
     setBudgetPeriod(getCurrentMonth())
@@ -272,7 +319,7 @@ export function SummariesPage() {
 
   const handleBudgetSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (selectedTagId === '' || !budgetAmount.trim()) return
+    if (!selectedTagSelection || !budgetAmount.trim()) return
 
     setSubmitting(true)
     try {
@@ -281,8 +328,10 @@ export function SummariesPage() {
       const endDate = new Date(year, mo, 1)
 
       const { int: amount_int, frac: amount_frac } = parseAmountToIntFrac(budgetAmount)
+      const selectedTag = parseTagSelection(selectedTagSelection)
       const data: BudgetInput = {
-        tag_id: selectedTagId as number,
+        tag_id: selectedTag.tagId,
+        tag_context_id: selectedTag.contextId,
         type: selectedBudgetType,
         amount_int,
         amount_frac,
@@ -323,14 +372,14 @@ export function SummariesPage() {
 
   const buildBudgetCategories = (type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
     const categoriesFromBreakdown = categoryBreakdown.filter(c => c.type === type)
-    const tagIds = new Set(categoriesFromBreakdown.map(c => c.tag_id))
+    const categoryKeys = new Set(categoriesFromBreakdown.map(summaryItemKey))
     const budgetOnlyCategories: MonthlyCategoryBreakdown[] = budgets
-      .filter(b => budgetType(b) === type && !tagIds.has(b.tag_id))
+      .filter(b => budgetType(b) === type && !categoryKeys.has(summaryItemKey(b)))
       .map(b => ({
         tag_id: b.tag_id,
         tag: b.tag || '',
-        tag_context_id: null,
-        tag_context: null,
+        tag_context_id: b.tag_context_id ?? null,
+        tag_context: b.tag_context ?? null,
         amount: 0,
         type,
       }))
@@ -345,11 +394,12 @@ export function SummariesPage() {
     || expenseTags.find(t => t.id === tagId)?.name
     || ''
 
-  const isTopLevelCategoryTag = (tagId: number): boolean =>
+  const isTopLevelCategoryTag = useCallback((tagId: number): boolean =>
     tagHierarchy.some(h =>
       h.child_id === tagId &&
       (h.parent_id === SYSTEM_TAGS.INCOME || h.parent_id === SYSTEM_TAGS.EXPENSE)
-    )
+    ),
+  [tagHierarchy])
 
   const getAncestorIdsForTree = (tagId: number, validIds?: Set<number>, contextId?: number | null): number[] => {
     const result: number[] = []
@@ -373,7 +423,10 @@ export function SummariesPage() {
     return result
   }
 
-  const summaryItemKey = (item: SummaryTreeItem): string => `${item.tag_id}:${item.tag_context_id ?? ''}`
+  const summaryItemKey = (item: SummaryTreeItem): string =>
+    item.tag_context_id === null || item.tag_context_id === undefined
+      ? item.tag_id.toString()
+      : `${item.tag_id}:${item.tag_context_id}`
 
   const withSummaryAncestors = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
     const byId = new Map(items.map(item => [summaryItemKey(item), { ...item }]))
@@ -428,24 +481,134 @@ export function SummariesPage() {
   const tagsSummaryWithAncestors = withSummaryAncestors(tagsSummary)
   const incomeCategories = withCategoryAncestors(buildBudgetCategories('income'), 'income')
   const expenseCategories = withCategoryAncestors(buildBudgetCategories('expense'), 'expense')
+  const rawIncomeCategories = buildBudgetCategories('income')
+  const rawExpenseCategories = buildBudgetCategories('expense')
   const incomeBudgets = budgets.filter(b => budgetType(b) === 'income')
   const expenseBudgets = budgets.filter(b => budgetType(b) === 'expense')
   const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
   const expenseBudgetTotal = expenseBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
   const getCategoryActual = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): number => {
-    const budget = getBudgetForTag(category.tag_id, type)
+    const budget = getBudgetForTag(category.tag_id, type, category.tag_context_id ?? null)
     if (!budget || fromIntFrac(budget.amount_int, budget.amount_frac) <= 0) return category.amount
     return budget.actual ?? category.amount
   }
   const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
   const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
-  const typeTags = selectedBudgetType === 'income' ? incomeTags : expenseTags
+  const typeTagOptions = selectedBudgetType === 'income' ? incomeTagOptions : expenseTagOptions
+  const budgetCategoryOptions = toTagLiveSearchOptions(typeTagOptions).map(option => {
+    const source = typeTagOptions.find(tag => encodeTagSelection(tag.tag_id, tag.context_id) === String(option.value))
+    if (!source?.label || source.context_name) return option
+    return {
+      ...option,
+      label: source.label,
+      tagName: source.label,
+    }
+  })
+  const budgetTypeButtonClass = (active: boolean) => `rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${active
+    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+  }`
 
-  const toggleSummaryTag = (tagId: number) => {
+  const buildFlatTagSummaryRows = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
+    const byTagId = new Map<number, MonthlyTagSummary>()
+    for (const item of items) {
+      const existing = byTagId.get(item.tag_id)
+      if (existing) {
+        existing.income += item.income
+        existing.expense += item.expense
+        existing.net += item.net
+      } else {
+        byTagId.set(item.tag_id, {
+          tag_id: item.tag_id,
+          tag: item.tag || getHierarchyTagName(item.tag_id),
+          tag_context_id: null,
+          tag_context: null,
+          income: item.income,
+          expense: item.expense,
+          net: item.net,
+        })
+      }
+    }
+    return Array.from(byTagId.values()).filter(item => item.income !== 0 || item.expense !== 0 || item.net !== 0)
+  }
+
+  const buildFlatBudgetCategories = (items: MonthlyCategoryBreakdown[], type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
+    const byTagId = new Map<number, MonthlyCategoryBreakdown>()
+    for (const item of items) {
+      const existing = byTagId.get(item.tag_id)
+      if (existing) {
+        existing.amount += item.amount
+      } else {
+        byTagId.set(item.tag_id, {
+          tag_id: item.tag_id,
+          tag: item.tag || getHierarchyTagName(item.tag_id),
+          tag_context_id: null,
+          tag_context: null,
+          amount: item.amount,
+          type,
+        })
+      }
+    }
+
+    for (const budget of budgets.filter(b => budgetType(b) === type)) {
+      if (byTagId.has(budget.tag_id)) continue
+      byTagId.set(budget.tag_id, {
+        tag_id: budget.tag_id,
+        tag: budget.tag || getHierarchyTagName(budget.tag_id),
+        tag_context_id: null,
+        tag_context: null,
+        amount: 0,
+        type,
+      })
+    }
+
+    return Array.from(byTagId.values()).filter(item =>
+      item.amount !== 0 ||
+      budgets.some(b => budgetType(b) === type && b.tag_id === item.tag_id && getBudgetAmount(b) > 0)
+    )
+  }
+
+  const getGroupedBudgetForFlatCategory = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): Budget | undefined => {
+    const matchingBudgets = budgets.filter(b => budgetType(b) === type && b.tag_id === category.tag_id)
+    const budgetTotal = matchingBudgets.reduce((sum, b) => sum + getBudgetAmount(b), 0)
+    if (budgetTotal <= 0) return undefined
+    const directBudget = matchingBudgets.length === 1 ? matchingBudgets[0] : undefined
+    const amountParts = toIntFrac(budgetTotal)
+    return {
+      id: directBudget?.id ?? new Uint8Array(),
+      start: directBudget?.start ?? 0,
+      end: directBudget?.end ?? 0,
+      tag_id: category.tag_id,
+      tag_context_id: null,
+      tag_context: null,
+      type,
+      amount_int: amountParts.int,
+      amount_frac: amountParts.frac,
+      tag: category.tag,
+      actual: category.amount,
+    }
+  }
+
+  const getSingleBudgetForFlatCategory = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): Budget | undefined => {
+    const matchingBudgets = budgets.filter(b => budgetType(b) === type && b.tag_id === category.tag_id)
+    return matchingBudgets.length === 1 ? matchingBudgets[0] : undefined
+  }
+
+  const flatTagsSummary = buildFlatTagSummaryRows(tagsSummary)
+  const flatIncomeCategories = buildFlatBudgetCategories(rawIncomeCategories, 'income')
+  const flatExpenseCategories = buildFlatBudgetCategories(rawExpenseCategories, 'expense')
+  const flatIncomeActualTotal = flatIncomeCategories.reduce((acc, c) => acc + c.amount, 0)
+  const flatExpenseActualTotal = flatExpenseCategories.reduce((acc, c) => acc + c.amount, 0)
+
+  const toggleSummaryTag = (key: string, fallbackKey?: string) => {
     setExpandedSummaryTagIds(prev => {
       const next = new Set(prev)
-      if (next.has(tagId)) next.delete(tagId)
-      else next.add(tagId)
+      if (next.has(key) || (fallbackKey && next.has(fallbackKey))) {
+        next.delete(key)
+        if (fallbackKey) next.delete(fallbackKey)
+      } else {
+        next.add(key)
+      }
       return next
     })
   }
@@ -455,6 +618,55 @@ export function SummariesPage() {
       .filter(h => h.parent_id === tagId)
       .map(h => h.child_id),
   [tagHierarchy])
+
+  const getAggregateBudgetForCategory = useCallback((
+    category: MonthlyCategoryBreakdown,
+    type: 'income' | 'expense',
+    allCategories: MonthlyCategoryBreakdown[]
+  ): Budget | undefined => {
+    const branchContextId = category.tag_context_id ?? (isTopLevelCategoryTag(category.tag_id) ? category.tag_id : null)
+    const descendantIds = new Set<number>()
+    const visit = (parentId: number) => {
+      getChildIds(parentId).forEach(childId => {
+        descendantIds.add(childId)
+        visit(childId)
+      })
+    }
+    visit(category.tag_id)
+
+    const direct = getBudgetForTag(category.tag_id, type, category.tag_context_id ?? null)
+    const descendantTotal = budgets
+      .filter(b =>
+        budgetType(b) === type &&
+        descendantIds.has(b.tag_id) &&
+        allCategories.some(item =>
+          item.tag_id === b.tag_id &&
+          (item.tag_context_id ?? null) === (b.tag_context_id ?? null) &&
+          (branchContextId === null
+            ? (item.tag_context_id ?? null) === null
+            : item.tag_context_id === branchContextId)
+        )
+      )
+      .reduce((sum, b) => sum + getBudgetAmount(b), 0)
+    const totalAmount = getBudgetAmount(direct) + descendantTotal
+    if (totalAmount <= 0) return direct
+    if (direct && descendantTotal <= 0) return direct
+
+    const amountParts = toIntFrac(totalAmount)
+    return {
+      id: direct?.id ?? new Uint8Array(),
+      start: direct?.start ?? 0,
+      end: direct?.end ?? 0,
+      tag_id: category.tag_id,
+      tag_context_id: category.tag_context_id ?? null,
+      tag_context: category.tag_context ?? null,
+      type,
+      amount_int: amountParts.int,
+      amount_frac: amountParts.frac,
+      tag: category.tag,
+      actual: category.amount,
+    }
+  }, [budgets, getBudgetForTag, getChildIds, getBudgetAmount, isTopLevelCategoryTag])
 
   const getBranchContextId = (root: SummaryTreeItem): number | null =>
     root.tag_context_id ?? (isTopLevelCategoryTag(root.tag_id) ? root.tag_id : null)
@@ -529,12 +741,71 @@ export function SummariesPage() {
     )
   }
 
+  const renderFlatBudgetSection = (
+    type: 'income' | 'expense',
+    title: string,
+    categories: MonthlyCategoryBreakdown[],
+    actualTotal: number,
+    budgetTotal: number,
+    expanded: boolean,
+    setExpanded: (value: boolean) => void
+  ) => {
+    const progress = sectionProgress(actualTotal, budgetTotal)
+    return (
+      <div className="mb-4">
+        <button type="button" className="w-full text-left px-1 mb-2" onClick={() => setExpanded(!expanded)}>
+          <div className="flex items-center justify-between text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <span>
+              {title} {formatCurrencyValue(actualTotal, currencySymbol, decimalPlaces)}/{formatCurrencyValue(budgetTotal, currencySymbol, decimalPlaces)}
+            </span>
+            <span className="text-xs">{expanded ? 'Hide' : 'Show'}</span>
+          </div>
+          <div className="mt-2 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div className={`h-full ${sectionBarColor(type, progress)} rounded-full transition-all duration-300`} style={{ width: `${progress}%` }} />
+          </div>
+        </button>
+        {expanded && (
+          categories.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500 px-1">No {title.toLowerCase()} this month</p>
+          ) : (
+            <Card className="divide-y divide-gray-200 dark:divide-gray-700">
+              {categories.map(cat => {
+                const budget = getGroupedBudgetForFlatCategory(cat, type)
+                const directBudget = getSingleBudgetForFlatCategory(cat, type)
+                const sectionTags = type === 'income' ? incomeTags : expenseTags
+                const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
+                return (
+                  <CategoryCard
+                    key={`flat-${type}-${cat.tag_id}`}
+                    asRow
+                    title={cat.tag}
+                    amount={cat.amount}
+                    total={type === 'income' ? summary.income : summary.expenses}
+                    currencySymbol={currencySymbol}
+                    decimalPlaces={decimalPlaces}
+                    type={type}
+                    onClick={() => handleCategoryClick(type, cat.tag_id)}
+                    budget={budget}
+                    onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount, null) : undefined}
+                    onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, directBudget, directBudget.tag_context_id ?? null) : undefined}
+                    onDeleteBudget={directBudget ? () => handleBudgetDelete(directBudget) : undefined}
+                  />
+                )
+              })}
+            </Card>
+          )
+        )}
+      </div>
+    )
+  }
+
   const renderTagsSummaryTree = (items: MonthlyTagSummary[], allItems = tagsSummaryWithAncestors, depth = 0, branchContextId: number | null = null): React.ReactNode => {
     return items.flatMap(tag => {
       const currentBranchContextId = depth === 0 ? getBranchContextId(tag) : branchContextId
       const children = getChildItems(tag, allItems, currentBranchContextId)
       const hasVisibleChildren = children.length > 0
-      const expanded = expandedSummaryTagIds.has(tag.tag_id)
+      const itemKey = summaryItemKey(tag)
+      const expanded = expandedSummaryTagIds.has(itemKey) || expandedSummaryTagIds.has(tag.tag_id.toString())
       const row = (
           <SummaryCard
             key={`tag-${summaryItemKey(tag)}`}
@@ -548,7 +819,7 @@ export function SummariesPage() {
             depth={depth}
             hasChildren={hasVisibleChildren}
             expanded={expanded}
-            onClick={() => hasVisibleChildren ? toggleSummaryTag(tag.tag_id) : handleTagClick(tag.tag_id, false, tag.tag_context_id)}
+            onClick={() => hasVisibleChildren ? toggleSummaryTag(itemKey, tag.tag_id.toString()) : handleTagClick(tag.tag_id, false, tag.tag_context_id)}
             onTitleClick={hasVisibleChildren ? () => handleTagClick(tag.tag_id, true, currentBranchContextId) : undefined}
           />
       )
@@ -561,6 +832,24 @@ export function SummariesPage() {
   const renderTagSummaryCard = (root: MonthlyTagSummary): React.ReactNode => (
     <Card key={`tag-root-${summaryItemKey(root)}`} className="divide-y divide-gray-200 dark:divide-gray-700">
       {renderTagsSummaryTree([root], tagsSummaryWithAncestors)}
+    </Card>
+  )
+
+  const renderFlatTagsSummary = (): React.ReactNode => (
+    <Card className="divide-y divide-gray-200 dark:divide-gray-700">
+      {flatTagsSummary.map(tag => (
+        <SummaryCard
+          key={`flat-tag-${tag.tag_id}`}
+          asRow
+          title={tag.tag}
+          income={tag.income}
+          expense={tag.expense}
+          net={tag.net}
+          currencySymbol={currencySymbol}
+          decimalPlaces={decimalPlaces}
+          onClick={() => handleTagClick(tag.tag_id)}
+        />
+      ))}
     </Card>
   )
 
@@ -578,8 +867,10 @@ export function SummariesPage() {
       const currentBranchContextId = depth === 0 ? getBranchContextId(cat) : branchContextId
       const children = getChildItems(cat, allCategories, currentBranchContextId)
       const hasVisibleChildren = children.length > 0
-      const expanded = expandedSummaryTagIds.has(cat.tag_id)
-      const budget = getBudgetForTag(cat.tag_id, type)
+      const itemKey = summaryItemKey(cat)
+      const expanded = expandedSummaryTagIds.has(itemKey) || expandedSummaryTagIds.has(cat.tag_id.toString())
+      const budget = getAggregateBudgetForCategory(cat, type, allCategories)
+      const directBudget = getBudgetForTag(cat.tag_id, type, cat.tag_context_id ?? null)
       const sectionTags = type === 'income' ? incomeTags : expenseTags
       const canSetBudget = type === 'expense' || sectionTags.some(tag => tag.id === cat.tag_id)
       const row = (
@@ -595,12 +886,12 @@ export function SummariesPage() {
             depth={depth}
             hasChildren={hasVisibleChildren}
             expanded={expanded}
-            onClick={() => hasVisibleChildren ? toggleSummaryTag(cat.tag_id) : handleCategoryClick(type, cat.tag_id, false, cat.tag_context_id)}
+            onClick={() => hasVisibleChildren ? toggleSummaryTag(itemKey, cat.tag_id.toString()) : handleCategoryClick(type, cat.tag_id, false, cat.tag_context_id)}
             onTitleClick={hasVisibleChildren ? () => handleCategoryClick(type, cat.tag_id, true, currentBranchContextId) : undefined}
             budget={budget}
-            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount) : undefined}
-            onAdjustBudget={budget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, budget) : undefined}
-            onDeleteBudget={budget ? () => handleBudgetDelete(budget) : undefined}
+            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount, cat.tag_context_id ?? null) : undefined}
+            onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, directBudget, cat.tag_context_id ?? null) : undefined}
+            onDeleteBudget={directBudget ? () => handleBudgetDelete(directBudget) : undefined}
           />
       )
       return hasVisibleChildren && expanded
@@ -611,7 +902,21 @@ export function SummariesPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <PageHeader title="Summaries" showBack />
+      <PageHeader
+        title="Summaries"
+        showBack
+        rightAction={
+          <button
+            type="button"
+            onClick={toggleSummaryView}
+            aria-label={summaryView === 'nested' ? 'Switch to flat view' : 'Switch to nested view'}
+            title={summaryView === 'nested' ? 'Nested view' : 'Flat view'}
+            className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 transition-colors"
+          >
+            {summaryView === 'nested' ? <NestedViewIcon /> : <FlatViewIcon />}
+          </button>
+        }
+      />
       <MonthNavigator month={month} onChange={handleMonthChange} />
       <MonthSummary {...summary} decimalPlaces={decimalPlaces} />
       <PageTabs tabs={TABS} activeTab={activeTab} onChange={handleTabChange} />
@@ -624,12 +929,16 @@ export function SummariesPage() {
         <div className="flex-1 overflow-visible p-4 space-y-3">
           {activeTab === 'tags' && (
             <>
-              {tagsSummary.length === 0 ? (
+              {(summaryView === 'flat' ? flatTagsSummary.length === 0 : tagsSummary.length === 0) ? (
                 <EmptyState message="No transactions this month" />
               ) : (
-                <div className="space-y-4">
-                  {getTopLevelSummaryItems(tagsSummaryWithAncestors).map(renderTagSummaryCard)}
-                </div>
+                summaryView === 'flat' ? (
+                  renderFlatTagsSummary()
+                ) : (
+                  <div className="space-y-4">
+                    {getTopLevelSummaryItems(tagsSummaryWithAncestors).map(renderTagSummaryCard)}
+                  </div>
+                )
               )}
             </>
           )}
@@ -657,13 +966,23 @@ export function SummariesPage() {
 
           {activeTab === 'income-expense' && (
             <>
-              {incomeCategories.length === 0 && expenseCategories.length === 0 ? (
+              {(summaryView === 'flat'
+                ? flatIncomeCategories.length === 0 && flatExpenseCategories.length === 0
+                : incomeCategories.length === 0 && expenseCategories.length === 0
+              ) ? (
                 <EmptyState message="No transactions this month" />
               ) : (
-                <>
-                  {renderBudgetSection('income', 'Income', incomeCategories, incomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
-                  {renderBudgetSection('expense', 'Expenses', expenseCategories, expenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
-                </>
+                summaryView === 'flat' ? (
+                  <>
+                    {renderFlatBudgetSection('income', 'Income', flatIncomeCategories, flatIncomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
+                    {renderFlatBudgetSection('expense', 'Expenses', flatExpenseCategories, flatExpenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
+                  </>
+                ) : (
+                  <>
+                    {renderBudgetSection('income', 'Income', incomeCategories, incomeActualTotal, incomeBudgetTotal, incomeExpanded, setIncomeExpanded)}
+                    {renderBudgetSection('expense', 'Expenses', expenseCategories, expenseActualTotal, expenseBudgetTotal, expensesExpanded, setExpensesExpanded)}
+                  </>
+                )
               )}
             </>
           )}
@@ -673,32 +992,48 @@ export function SummariesPage() {
       {/* Budget Modal */}
       <Modal isOpen={modalOpen} onClose={closeBudgetModal} title={editingBudget ? 'Edit Budget' : 'Set Budget'}>
         <form onSubmit={handleBudgetSubmit} className="space-y-4">
-          <Select
-            label="Type"
-            value={selectedBudgetType}
-            onChange={(e) => {
-              setSelectedBudgetType(e.target.value as 'income' | 'expense')
-              setSelectedTagId('')
-            }}
-            required
-            disabled={!!editingBudget}
-            options={[
-              { value: 'income', label: 'Income' },
-              { value: 'expense', label: 'Expense' },
-            ]}
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['expense', 'income'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    if (editingBudget) return
+                    setSelectedBudgetType(type)
+                    setSelectedTagSelection('')
+                  }}
+                  disabled={!!editingBudget}
+                  className={budgetTypeButtonClass(selectedBudgetType === type)}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <Select
+          <LiveSearch
             label="Category"
-            value={selectedTagId.toString()}
-            onChange={(e) => setSelectedTagId(e.target.value ? parseInt(e.target.value) : '')}
-            required
-            disabled={!!editingBudget || selectedTagId !== ''}
+            value={selectedTagSelection}
+            onChange={(value) => setSelectedTagSelection(`${value}`)}
+            disabled={!!editingBudget || selectedTagSelection !== ''}
             placeholder="Select a category"
-            options={typeTags.map((tag) => ({
-              value: tag.id,
-              label: tag.name,
-            }))}
+            options={budgetCategoryOptions}
+            renderOption={(option) => {
+              const tagOption = option as TagLiveSearchOption
+              return (
+                <span className="inline-flex items-center">
+                  <span>{tagOption.tagName ?? option.label}</span>
+                  {tagOption.contextName && <Badge variant="secondary">{tagOption.contextName}</Badge>}
+                </span>
+              )
+            }}
+            getDisplayValue={(option) => (option as TagLiveSearchOption).tagName ?? option.label}
+            renderSelectedBadge={(option) => {
+              const contextName = (option as TagLiveSearchOption).contextName
+              return contextName ? <Badge variant="secondary" className="ml-0">{contextName}</Badge> : null
+            }}
           />
 
           <AmountInput
@@ -741,6 +1076,24 @@ function EmptyState({ message }: { message: string }) {
       </svg>
       <p className="text-sm">{message}</p>
     </div>
+  )
+}
+
+function NestedViewIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5h5v5H5zM14 5h5v5h-5zM14 14h5v5h-5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 7.5h4M16.5 10v4" />
+    </svg>
+  )
+}
+
+function FlatViewIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12M6 12h12M6 17h12" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.5 7h.01M3.5 12h.01M3.5 17h.01" />
+    </svg>
   )
 }
 

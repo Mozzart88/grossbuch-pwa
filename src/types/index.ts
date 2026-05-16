@@ -84,6 +84,7 @@ export interface Wallet {
   id: number
   name: string
   color: string | null
+  account_type?: AccountType
   // Joined fields
   tags?: string[]
   is_default?: boolean
@@ -95,6 +96,17 @@ export interface Wallet {
 export interface WalletInput {
   name: string
   color?: string
+  account_type?: AccountType
+}
+
+export type AccountType = 'plain' | 'savings' | 'credits'
+
+export interface AccountData {
+  account_id: number
+  note: string | null
+  due_date: string | null
+  rate: number | null
+  updated_at: number
 }
 
 // Account (wallet + currency combination) - balance as (int, frac), no created_at
@@ -111,12 +123,20 @@ export interface Account {
   symbol?: string
   decimal_places?: number
   tags?: string
+  account_type?: AccountType
+  note?: string | null
+  due_date?: string | null
+  rate?: number | null
   is_default?: boolean
 }
 
 export interface AccountInput {
   wallet_id: number
   currency_id: number
+  account_type?: AccountType
+  note?: string | null
+  due_date?: string | null
+  rate?: number | null
 }
 
 // Counterparty - no timestamps, note in separate table
@@ -159,6 +179,37 @@ export interface TransactionInput {
   counterparty_name?: string // Auto-creates if doesn't exist
   lines: TransactionLineInput[]
   note?: string
+}
+
+export type NotificationType = 'plain' | 'transaction'
+export type NotificationStatus = 'new' | 'readed'
+export type NotificationTransactionMode = 'expense' | 'income' | 'transfer' | 'exchange'
+
+export interface PlainNotificationPayload {
+  title: string
+  body: string
+}
+
+export interface TransactionNotificationPayload {
+  title: string
+  mode: NotificationTransactionMode
+  draft: TransactionInput
+  recurring?: {
+    plan_id: string
+    due_date: string
+  }
+}
+
+export type NotificationPayload = PlainNotificationPayload | TransactionNotificationPayload
+
+export interface Notification {
+  id: Uint8Array
+  type: NotificationType
+  status: NotificationStatus
+  timestamp: number
+  readed_at: number | null
+  updated_at: number
+  payload: NotificationPayload
 }
 
 // Transaction line item (trx_base) - amount/rate as (int, frac) pairs
@@ -207,6 +258,8 @@ export interface Budget {
   type: 'income' | 'expense'
   amount_int: number
   amount_frac: number
+  tag_context_id?: number | null
+  tag_context?: string | null
   // Joined fields
   tag?: string
   actual: number // computed, stays as single float for display
@@ -216,9 +269,61 @@ export interface BudgetInput {
   start?: number
   end?: number
   tag_id: number
+  tag_context_id?: number | null
   type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number
+}
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
+export type RecurringUntilType = 'never' | 'count' | 'date'
+export type RecurringPlanStatus = 'active' | 'paused' | 'deleted'
+
+export interface RecurringSchedule {
+  frequency: RecurringFrequency
+  interval: number
+  weekdays?: number[]
+  monthDays?: number[]
+  months?: number[]
+}
+
+export interface RecurringUntilPolicy {
+  type: RecurringUntilType
+  count?: number
+  date?: string
+}
+
+export interface RecurringPlan {
+  id: Uint8Array
+  schedule: RecurringSchedule
+  transaction_draft: TransactionInput
+  mode: NotificationTransactionMode
+  start_date: string
+  next_due_date: string | null
+  until_policy: RecurringUntilPolicy
+  occurrence_count: number
+  status: RecurringPlanStatus
+  created_at: number
+  updated_at: number
+}
+
+export interface RecurringPlanInput {
+  schedule: RecurringSchedule
+  transaction_draft: TransactionInput
+  mode: NotificationTransactionMode
+  start_date: string
+  until_policy: RecurringUntilPolicy
+  occurrence_count?: number
+  status?: RecurringPlanStatus
+}
+
+export interface RecurringOccurrence {
+  id: Uint8Array
+  plan_id: Uint8Array
+  due_date: string
+  notification_id: Uint8Array | null
+  created_at: number
+  updated_at: number
 }
 
 // View types (from SQL views)
@@ -350,6 +455,7 @@ export const SYSTEM_TAGS = {
   AUTO: 21,
   ARCHIVED: 22,
   ADJUSTMENT: 23,
+  RECURENT: 24,
 } as const
 
 // Helper types

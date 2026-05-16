@@ -6,7 +6,7 @@ import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput, Badge } fro
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, SubmitOptions } from './transactionFormShared'
+import type { AccountOption, SubmitOptions, TransactionSubmitInterceptor } from './transactionFormShared'
 import {
   getPlaceholder,
   formatBalance,
@@ -32,10 +32,14 @@ interface IncomeTransactionFormProps {
   counterparties: Counterparty[]
   defaultAccountId: string
   initialData?: Transaction
+  createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  addAnother?: boolean
+  onAddAnotherChange?: (checked: boolean) => void
+  onBeforeCreate?: TransactionSubmitInterceptor
 }
 
 export function IncomeTransactionForm({
@@ -45,10 +49,14 @@ export function IncomeTransactionForm({
   counterparties,
   defaultAccountId,
   initialData,
+  createFromInitialData = false,
   onSubmit,
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  addAnother: controlledAddAnother,
+  onAddAnotherChange,
+  onBeforeCreate,
 }: IncomeTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -65,7 +73,10 @@ export function IncomeTransactionForm({
   const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [addAnother, setAddAnother] = useState(false)
+  const [localAddAnother, setLocalAddAnother] = useState(false)
+  const isEditing = !!initialData && !createFromInitialData
+  const addAnother = controlledAddAnother ?? localAddAnother
+  const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
 
   // Populate from initial data
   useEffect(() => {
@@ -87,14 +98,14 @@ export function IncomeTransactionForm({
     const setActionBarConfig = layoutContext?.setActionBarConfig
     if (!useActionBar || !setActionBarConfig) return
     setActionBarConfig({
-      primaryLabel: initialData ? 'Update' : 'Submit',
+      primaryLabel: isEditing ? 'Update' : 'Submit',
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
       disabled: submitting,
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const walletOptions = getWalletOptions(accounts)
@@ -221,12 +232,16 @@ export function IncomeTransactionForm({
         }],
       }
 
-      if (initialData) {
+      if (!isEditing && onBeforeCreate && await onBeforeCreate(payload, 'income')) {
+        return
+      }
+
+      if (isEditing && initialData) {
         await transactionRepository.update(initialData.id, payload)
       } else {
         await transactionRepository.create(payload)
       }
-      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      const shouldAddAnother = showAddAnother && addAnother && !isEditing
       onSubmit({ addAnother: shouldAddAnother })
       if (shouldAddAnother) resetEntryFields()
     } catch (error) {
@@ -251,7 +266,7 @@ export function IncomeTransactionForm({
       />
 
       {/* Account */}
-      {!initialData ? (
+      {!isEditing ? (
         <div className="grid grid-cols-2 gap-2">
           <Select
             label="Wallet"
@@ -359,7 +374,7 @@ export function IncomeTransactionForm({
       </div>
 
       {/* Actions */}
-      {showAddAnother && !initialData && (
+      {showAddAnother && !isEditing && !onAddAnotherChange && (
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
@@ -377,7 +392,7 @@ export function IncomeTransactionForm({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting} className="flex-1">
-            {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
+            {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>
       )}

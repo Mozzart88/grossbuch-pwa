@@ -136,6 +136,49 @@ describe('TransferTransactionForm', () => {
     })
   })
 
+  it('shows typed duplicate accounts with badges and submits selected account ids', async () => {
+    const typedAccounts = [
+      {
+        ...mockAccounts[0],
+        id: 1,
+        wallet_id: 1,
+        walletName: 'Cash',
+        currencyCode: 'USD',
+        account_type: 'plain',
+      },
+      {
+        ...mockAccounts[0],
+        id: 4,
+        wallet_id: 1,
+        walletName: 'Cash',
+        currencyCode: 'USD',
+        account_type: 'savings',
+        is_default: false,
+      },
+    ]
+
+    render(<TransferTransactionForm {...defaultProps} accounts={typedAccounts as any} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'To' }))
+    expect(screen.getAllByText('Cash:USD').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('Savings')).toBeInTheDocument()
+    fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: /Cash:USD.*Savings/i }))
+
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '250' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          lines: expect.arrayContaining([
+            expect.objectContaining({ account_id: 1, sign: '-' }),
+            expect.objectContaining({ account_id: 4, sign: '+' }),
+          ]),
+        })
+      )
+    })
+  })
+
   it('includes fee line when fee is set', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
     fireEvent.change(document.getElementById('amount')!, { target: { value: '100' } })

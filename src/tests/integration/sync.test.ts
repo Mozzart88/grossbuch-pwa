@@ -136,6 +136,40 @@ describe('Sync Integration', () => {
       expect(trx.lines[0].amount_frac).toBe(0)
     })
 
+    it('exports full history as transaction chunks', async () => {
+      const { exportChunkedSyncPackages } = await import('../../services/sync/syncExport')
+
+      const walletId = insertWallet({ name: 'Chunk Wallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.EXPENSE,
+        sign: '-',
+        amount_int: 10,
+        rate_int: 1,
+      })
+      insertTransaction({
+        account_id: accountId,
+        tag_id: SYSTEM_TAGS.INCOME,
+        sign: '+',
+        amount_int: 20,
+        rate_int: 1,
+      })
+
+      const packages = await exportChunkedSyncPackages('sender-1', 1)
+
+      expect(packages).toHaveLength(2)
+      expect(packages.every(pkg => pkg.sender_id === 'sender-1')).toBe(true)
+      expect(packages.every(pkg => pkg.since === 0)).toBe(true)
+      expect(packages.map(pkg => pkg.transactions)).toEqual([
+        [expect.objectContaining({ lines: [expect.objectContaining({ amount_int: 10 })] })],
+        [expect.objectContaining({ lines: [expect.objectContaining({ amount_int: 20 })] })],
+      ])
+      expect(packages[0].notifications).toEqual(packages[1].notifications)
+    })
+
     it('exports budgets with tag id and type', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
@@ -148,6 +182,19 @@ describe('Sync Integration', () => {
       expect(pkg.budgets[0].type).toBe('income')
       expect(pkg.budgets[0].amount_int).toBe(500)
       expect(pkg.budgets[0].amount_frac).toBe(0)
+    })
+
+    it('exports budgets with tag context', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+
+      const autoId = insertTag({ name: 'Sync Export Auto', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const dieselId = insertTag({ name: 'Sync Export Diesel', parent_ids: [autoId] })
+      insertBudget({ tag_id: dieselId, tag_context_id: autoId, amount_int: 500 })
+
+      const pkg = await exportSyncPackage(0, 'sender-1')
+      const budget = pkg.budgets.find(b => b.tag === dieselId)
+
+      expect(budget?.tag_context).toBe(autoId)
     })
 
     it('exports deletions since timestamp', async () => {
@@ -722,6 +769,45 @@ describe('Sync Integration', () => {
       expect(budget[0]?.values[0]?.[0]).toBe('expense')
       expect(budget[0]?.values[0]?.[1]).toBe(1000)
       expect(budget[0]?.values[0]?.[2]).toBe(0)
+    })
+
+    it('imports budget tag context', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const budgetId = 'BB00BB00BB00BB01'
+      const autoId = insertTag({ name: 'Sync Import Auto', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+      const dieselId = insertTag({ name: 'Sync Import Diesel', parent_ids: [autoId] })
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [{
+          id: budgetId,
+          start: 1000,
+          end: 2000,
+          tag: dieselId,
+          tag_context: autoId,
+          amount_int: 1000,
+          amount_frac: 0,
+          updated_at: 1000,
+        }],
+        deletions: [],
+      })
+
+      expect(result.imported.budgets).toBe(1)
+
+      const db = getTestDatabase()
+      const context = db.exec(`SELECT tag_id FROM budget_tag_context WHERE hex(budget_id) = '${budgetId}'`)
+      expect(context[0]?.values[0]?.[0]).toBe(autoId)
     })
 
     it('applies deletions with delete-vs-modify conflict', async () => {

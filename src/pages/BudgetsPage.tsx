@@ -7,6 +7,15 @@ import { fromIntFrac, toIntFrac } from '../utils/amount'
 import { SYSTEM_TAGS } from '../types'
 import { useDataRefresh } from '../hooks/useDataRefresh'
 
+const isAccountBudgetTag = (tag: Pick<Tag, 'name'>): boolean =>
+  tag.name === 'savings' || tag.name === 'credits'
+
+const accountBudgetTagLabel = (tagName: string): string => {
+  if (tagName === 'savings') return 'Savings'
+  if (tagName === 'credits') return 'Credit'
+  return tagName
+}
+
 export function BudgetsPage() {
   const { showToast } = useToast()
   const dataVersion = useDataRefresh()
@@ -34,13 +43,18 @@ export function BudgetsPage() {
 
   const loadData = async () => {
     try {
-      const [budgetsData, tags, currency] = await Promise.all([
+      const [budgetsData, tags, systemTags, currency] = await Promise.all([
         budgetRepository.findByMonth(currentMonth),
         tagRepository.findExpenseTags(),
+        tagRepository.findSystemTags?.() ?? Promise.resolve([]),
         currencyRepository.findSystem(),
       ])
+      const accountBudgetTags = (systemTags ?? []).filter(isAccountBudgetTag)
       setBudgets(budgetsData)
-      setExpenseTags(tags.filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
+      setExpenseTags([
+        ...tags.filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED),
+        ...accountBudgetTags,
+      ])
       setDefaultCurrency(currency)
     } catch (error) {
       console.error('Failed to load budgets:', error)
@@ -307,7 +321,7 @@ export function BudgetsPage() {
             placeholder="Select a category"
             options={expenseTags.map((tag) => ({
               value: tag.id,
-              label: tag.name,
+              label: accountBudgetTagLabel(tag.name),
             }))}
           />
 

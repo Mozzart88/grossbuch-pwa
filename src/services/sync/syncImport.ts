@@ -11,6 +11,10 @@ import type {
   SyncCurrency,
   SyncTransaction,
   SyncBudget,
+  SyncNotification,
+  SyncRecurringPlan,
+  SyncRecurringOccurrence,
+  SyncRecurringBudget,
   SyncDeletion,
   SyncUnlinkCommand,
   SyncUnlinkConfirmCommand,
@@ -20,14 +24,14 @@ import type {
 
 /**
  * Import a SyncPackage with last-write-wins conflict resolution.
- * Process in dependency order: icons -> tags -> wallets -> accounts -> counterparties -> currencies -> transactions -> budgets -> deletions
+ * Process in dependency order: icons -> tags -> wallets -> accounts -> counterparties -> currencies -> transactions -> budgets -> notifications -> deletions
  *
  * IMPORTANT: Caller must wrap in dropUpdatedAtTriggers/restoreUpdatedAtTriggers
  * and setSuppressWriteNotifications to prevent echo loops.
  */
 export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult> {
   const result: ImportResult = {
-    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, deletions: 0 },
+    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, notifications: 0, recurringPlans: 0, recurringOccurrences: 0, recurringBudgets: 0, deletions: 0 },
     newAccountCurrencyIds: [],
     conflicts: 0,
     errors: [],
@@ -49,6 +53,10 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     result.imported.currencies = await importCurrencies(pkg.currencies)
     result.imported.transactions = await importTransactions(pkg.transactions)
     result.imported.budgets = await importBudgets(pkg.budgets)
+    result.imported.notifications = await importNotifications(pkg.notifications ?? [])
+    result.imported.recurringPlans = await importRecurringPlans(pkg.recurringPlans ?? [])
+    result.imported.recurringOccurrences = await importRecurringOccurrences(pkg.recurringOccurrences ?? [])
+    result.imported.recurringBudgets = await importRecurringBudgets(pkg.recurringBudgets ?? [])
     result.imported.deletions = await importDeletions(pkg.deletions)
 
     await execSQL('COMMIT')
@@ -234,6 +242,7 @@ async function resolveTagIdConflict(oldId: number, newId: number): Promise<void>
   await execSQL(`UPDATE trx_base SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE trx_base_tag_context SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE budget SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE budget_tag_context SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`DELETE FROM tag WHERE id = ?`, [oldId])
 }
 
@@ -315,10 +324,12 @@ async function importAccounts(accounts: SyncAccount[]): Promise<{ count: number;
         [acc.id, acc.wallet, acc.currency, acc.updated_at]
       )
       await syncAccountTags(acc.id, acc.tags)
+      await syncAccountData(acc.id, acc)
       currencyIds.push(acc.currency)
       count++
     } else if (acc.updated_at > local.updated_at) {
       await syncAccountTags(local.id, acc.tags)
+      await syncAccountData(local.id, acc)
       await execSQL(`UPDATE account SET updated_at = ? WHERE id = ?`, [acc.updated_at, local.id])
       count++
     }
@@ -332,6 +343,17 @@ async function syncAccountTags(accountId: number, tagIds: number[]): Promise<voi
     await execSQL(
       `INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)`,
       [accountId, tagId]
+    )
+  }
+}
+
+async function syncAccountData(accountId: number, acc: SyncAccount): Promise<void> {
+  const hasData = acc.note || acc.due_date || acc.rate != null
+  await execSQL(`DELETE FROM account_data WHERE account_id = ?`, [accountId])
+  if (hasData) {
+    await execSQL(
+      `INSERT INTO account_data (account_id, note, due_date, rate, updated_at) VALUES (?, ?, ?, ?, ?)`,
+      [accountId, acc.note ?? null, acc.due_date ?? null, acc.rate ?? null, acc.updated_at]
     )
   }
 }
@@ -514,11 +536,142 @@ async function importBudgets(budgets: SyncBudget[]): Promise<number> {
         `INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [hexToBlob(b.id), b.start, b.end, b.tag, type, b.amount_int, b.amount_frac, b.updated_at]
       )
+      if (b.tag_context) {
+        await execSQL(
+          `INSERT OR IGNORE INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
+          [hexToBlob(b.id), b.tag_context]
+        )
+      }
       count++
     } else if (b.updated_at > local.updated_at) {
       await execSQL(
         `UPDATE budget SET start = ?, end = ?, tag_id = ?, type = ?, amount_int = ?, amount_frac = ?, updated_at = ? WHERE hex(id) = ?`,
         [b.start, b.end, b.tag, type, b.amount_int, b.amount_frac, b.updated_at, b.id]
+      )
+      await execSQL(`DELETE FROM budget_tag_context WHERE hex(budget_id) = ?`, [b.id])
+      if (b.tag_context) {
+        await execSQL(
+          `INSERT OR IGNORE INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
+          [hexToBlob(b.id), b.tag_context]
+        )
+      }
+      count++
+    }
+  }
+  return count
+}
+
+// ======= Notifications =======
+
+async function importNotifications(notifications: SyncNotification[]): Promise<number> {
+  let count = 0
+  for (const n of notifications) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM notification WHERE hex(id) = ?`,
+      [n.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT INTO notification (id, type, status, timestamp, readed_at, updated_at, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(n.id), n.type, n.status, n.timestamp, n.readed_at, n.updated_at, n.payload]
+      )
+      count++
+    } else if (n.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE notification
+         SET type = ?, status = ?, timestamp = ?, readed_at = ?, updated_at = ?, payload = ?
+         WHERE hex(id) = ?`,
+        [n.type, n.status, n.timestamp, n.readed_at, n.updated_at, n.payload, n.id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
+// ======= Recurring =======
+
+async function importRecurringPlans(plans: SyncRecurringPlan[]): Promise<number> {
+  let count = 0
+  for (const p of plans) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM recurring_plan WHERE hex(id) = ?`,
+      [p.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT INTO recurring_plan
+         (id, schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(p.id), p.schedule, p.transaction_draft, p.mode, p.start_date, p.next_due_date, p.until_policy, p.occurrence_count, p.status, p.created_at, p.updated_at]
+      )
+      count++
+    } else if (p.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE recurring_plan
+         SET schedule = ?, transaction_draft = ?, mode = ?, start_date = ?, next_due_date = ?,
+             until_policy = ?, occurrence_count = ?, status = ?, created_at = ?, updated_at = ?
+         WHERE hex(id) = ?`,
+        [p.schedule, p.transaction_draft, p.mode, p.start_date, p.next_due_date, p.until_policy, p.occurrence_count, p.status, p.created_at, p.updated_at, p.id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
+async function importRecurringOccurrences(occurrences: SyncRecurringOccurrence[]): Promise<number> {
+  let count = 0
+  for (const o of occurrences) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM recurring_occurrence WHERE hex(id) = ?`,
+      [o.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT OR IGNORE INTO recurring_occurrence
+         (id, plan_id, due_date, notification_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(o.id), hexToBlob(o.plan_id), o.due_date, o.notification_id ? hexToBlob(o.notification_id) : null, o.created_at, o.updated_at]
+      )
+      count++
+    } else if (o.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE recurring_occurrence
+         SET plan_id = ?, due_date = ?, notification_id = ?, created_at = ?, updated_at = ?
+         WHERE hex(id) = ?`,
+        [hexToBlob(o.plan_id), o.due_date, o.notification_id ? hexToBlob(o.notification_id) : null, o.created_at, o.updated_at, o.id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
+async function importRecurringBudgets(budgets: SyncRecurringBudget[]): Promise<number> {
+  let count = 0
+  for (const b of budgets) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM recurring_budget WHERE hex(budget_id) = ?`,
+      [b.budget_id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT OR IGNORE INTO recurring_budget (budget_id, plan_id, due_month, updated_at)
+         VALUES (?, ?, ?, ?)`,
+        [hexToBlob(b.budget_id), hexToBlob(b.plan_id), b.due_month, b.updated_at]
+      )
+      count++
+    } else if (b.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE recurring_budget SET plan_id = ?, due_month = ?, updated_at = ?
+         WHERE hex(budget_id) = ?`,
+        [hexToBlob(b.plan_id), b.due_month, b.updated_at, b.budget_id]
       )
       count++
     }
@@ -640,6 +793,39 @@ async function applyDeletion(del: SyncDeletion): Promise<boolean> {
       )
       if (local && del.deleted_at > local.updated_at) {
         await execSQL(`DELETE FROM budget WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'notification': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM notification WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM notification WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'recurring_plan': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM recurring_plan WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM recurring_plan WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'recurring_occurrence': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM recurring_occurrence WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM recurring_occurrence WHERE hex(id) = ?`, [del.entity_id])
         return true
       }
       return false

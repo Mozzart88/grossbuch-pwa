@@ -243,4 +243,178 @@ describe('Budget Integration', () => {
       amount_frac: 0,
     })).rejects.toThrow('A budget already exists for this tag and period')
   })
+
+  it('allows separate budgets for the same shared tag in different contexts', async () => {
+    const budgetRepository = await getRepository()
+    const autoId = insertTag({ name: 'Budget Auto', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const boatId = insertTag({ name: 'Budget Boat', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const maintenanceId = insertTag({ name: 'Budget Maintenance', parent_ids: [autoId, boatId] })
+
+    const now = new Date()
+    const start = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000)
+    const end = Math.floor(new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() / 1000)
+
+    await budgetRepository.create({
+      tag_id: maintenanceId,
+      tag_context_id: autoId,
+      amount_int: 100,
+      amount_frac: 0,
+      start,
+      end,
+    })
+    await budgetRepository.create({
+      tag_id: maintenanceId,
+      tag_context_id: boatId,
+      amount_int: 200,
+      amount_frac: 0,
+      start,
+      end,
+    })
+
+    await expect(budgetRepository.create({
+      tag_id: maintenanceId,
+      tag_context_id: autoId,
+      amount_int: 300,
+      amount_frac: 0,
+      start,
+      end,
+    })).rejects.toThrow('A budget already exists for this tag and period')
+
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+    expect(budgets.filter(b => b.tag_id === maintenanceId)).toHaveLength(2)
+    expect(budgets.find(b => b.tag_context_id === autoId)?.amount_int).toBe(100)
+    expect(budgets.find(b => b.tag_context_id === boatId)?.amount_int).toBe(200)
+  })
+
+  it('calculates contextual budget actuals by matching transaction context', async () => {
+    const budgetRepository = await getRepository()
+    const walletId = insertWallet({ name: 'Context Wallet' })
+    const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+    const autoId = insertTag({ name: 'Actual Auto', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const boatId = insertTag({ name: 'Actual Boat', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const dieselId = insertTag({ name: 'Actual Diesel', parent_ids: [autoId, boatId] })
+
+    await budgetRepository.create({
+      tag_id: dieselId,
+      tag_context_id: autoId,
+      amount_int: 100,
+      amount_frac: 0,
+    })
+    await budgetRepository.create({
+      tag_id: dieselId,
+      tag_context_id: boatId,
+      amount_int: 100,
+      amount_frac: 0,
+    })
+
+    insertTransaction({
+      account_id: accountId,
+      tag_id: dieselId,
+      tag_context_id: autoId,
+      sign: '-',
+      amount_int: 25,
+      rate_int: 1,
+      timestamp: Math.floor(Date.now() / 1000),
+    })
+    insertTransaction({
+      account_id: accountId,
+      tag_id: dieselId,
+      tag_context_id: boatId,
+      sign: '-',
+      amount_int: 40,
+      rate_int: 1,
+      timestamp: Math.floor(Date.now() / 1000),
+    })
+
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+    expect(budgets.find(b => b.tag_context_id === autoId)?.actual).toBeCloseTo(25, 1)
+    expect(budgets.find(b => b.tag_context_id === boatId)?.actual).toBeCloseTo(40, 1)
+  })
+
+  it('calculates savings and credit budget actuals from inbound transfer and exchange lines', async () => {
+    const budgetRepository = await getRepository()
+    const db = getTestDatabase()
+    const walletId = insertWallet({ name: 'Account Budget Wallet' })
+    const plainAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+    const savingsAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 0 })
+    const creditAccountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: -300 })
+    const savingsTagId = Number(db.exec("SELECT id FROM tag WHERE name = 'savings'")[0].values[0][0])
+    const creditsTagId = Number(db.exec("SELECT id FROM tag WHERE name = 'credits'")[0].values[0][0])
+
+    db.run('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [savingsAccountId, savingsTagId])
+    db.run('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [creditAccountId, creditsTagId])
+
+    await budgetRepository.create({
+      tag_id: savingsTagId,
+      amount_int: 100,
+      amount_frac: 0,
+      type: 'expense',
+    })
+    await budgetRepository.create({
+      tag_id: creditsTagId,
+      amount_int: 200,
+      amount_frac: 0,
+      type: 'expense',
+    })
+
+    const now = Math.floor(Date.now() / 1000)
+    insertTransaction({
+      account_id: savingsAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '+',
+      amount_int: 60,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: savingsAccountId,
+      tag_id: SYSTEM_TAGS.EXCHANGE,
+      sign: '+',
+      amount_int: 15,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: savingsAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '-',
+      amount_int: 10,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: plainAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '+',
+      amount_int: 999,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: creditAccountId,
+      tag_id: SYSTEM_TAGS.TRANSFER,
+      sign: '+',
+      amount_int: 120,
+      rate_int: 1,
+      timestamp: now,
+    })
+    insertTransaction({
+      account_id: creditAccountId,
+      tag_id: SYSTEM_TAGS.FOOD,
+      sign: '-',
+      amount_int: 45,
+      rate_int: 1,
+      timestamp: now,
+    })
+
+    const date = new Date(now * 1000)
+    const currentMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+
+    expect(budgets.find(b => b.tag_id === savingsTagId)?.actual).toBeCloseTo(75, 1)
+    expect(budgets.find(b => b.tag_id === creditsTagId)?.actual).toBeCloseTo(120, 1)
+  })
 })

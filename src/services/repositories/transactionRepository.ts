@@ -249,6 +249,12 @@ export const transactionRepository = {
         WHERE t.timestamp >= ? AND t.timestamp < ?
           AND (tb.rate_int > 0 OR tb.rate_frac > 0)
           AND tb.tag_id NOT IN (?, ?, ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM account_to_tags a2t
+            JOIN tag account_tag ON account_tag.id = a2t.tag_id
+            WHERE a2t.account_id = a.id
+              AND account_tag.name IN ('savings', 'credits')
+          )
       ) sub
     `, [
       sysCurrencyId, sysRate,
@@ -272,7 +278,13 @@ export const transactionRepository = {
 
     const conditions: string[] = [
       `t.timestamp >= ? AND t.timestamp < ?`,
-      '(tb.rate_int > 0 OR tb.rate_frac > 0)'
+      '(tb.rate_int > 0 OR tb.rate_frac > 0)',
+      `NOT EXISTS (
+        SELECT 1 FROM account_to_tags a2t
+        JOIN tag account_tag ON account_tag.id = a2t.tag_id
+        WHERE a2t.account_id = a.id
+          AND account_tag.name IN ('savings', 'credits')
+      )`
     ]
     const params: unknown[] = [
       SYSTEM_TAGS.EXCHANGE,

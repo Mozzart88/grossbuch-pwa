@@ -1,20 +1,26 @@
-import { useState, useEffect } from 'react'
-import type { Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionLine } from '../../types'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import type { NotificationTransactionMode, RecurringSchedule, RecurringUntilPolicy, Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionInput, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
-import { walletRepository, tagRepository, counterpartyRepository, currencyRepository } from '../../services/repositories'
+import { walletRepository, tagRepository, counterpartyRepository, currencyRepository, recurringRepository } from '../../services/repositories'
 import type { TransactionMode, AccountOption, SubmitOptions } from './transactionFormShared'
 import { IncomeTransactionForm } from './IncomeTransactionForm'
 import { ExpenseTransactionForm } from './ExpenseTransactionForm'
 import { TransferTransactionForm } from './TransferTransactionForm'
 import { ExchangeTransactionForm } from './ExchangeTransactionForm'
+import { RecurrenceOptionsFields } from './RecurrenceOptionsFields'
+import { Button, Modal, useToast } from '../ui'
 
 interface TransactionFormProps {
   initialData?: Transaction
+  initialDraft?: TransactionInput
   initialMode?: TransactionMode
   onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  onRecurrenceActionChange?: (action: ReactNode | null) => void
+  onAddAnotherActionChange?: (action: ReactNode | null) => void
 }
 
 const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -28,7 +34,28 @@ const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
   return exchangeLines.length === 2 && expenseLines.length >= 1
 }
 
-export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false }: TransactionFormProps) {
+function draftToTransaction(draft: TransactionInput): Transaction {
+  const trxId = new Uint8Array(8)
+  return {
+    id: trxId,
+    timestamp: draft.timestamp ?? Math.floor(Date.now() / 1000),
+    counterparty_id: draft.counterparty_id ?? null,
+    note: draft.note ?? null,
+    lines: draft.lines.map((line, index) => ({
+      id: new Uint8Array([index + 1, 0, 0, 0, 0, 0, 0, 0]),
+      trx_id: trxId,
+      ...line,
+    })),
+  }
+}
+
+export function TransactionForm({ initialData, initialDraft, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false, onRecurrenceActionChange, onAddAnotherActionChange }: TransactionFormProps) {
+  const { showToast } = useToast()
+  const prefillData = useMemo(
+    () => initialData ?? (initialDraft ? draftToTransaction(initialDraft) : undefined),
+    [initialData, initialDraft]
+  )
+  const createFromInitialData = !initialData && !!initialDraft
   const [mode, setMode] = useState<TransactionMode>(initialMode || 'expense')
   const [loading, setLoading] = useState(true)
 
@@ -43,11 +70,20 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
   const [counterparties, setCounterparties] = useState<Counterparty[]>([])
   const [defaultAccountId, setDefaultAccountId] = useState('')
   const [defaultPaymentCurrencyId, setDefaultPaymentCurrencyId] = useState<number | null>(null)
+  const [recurrenceEnabled, setRecurrenceEnabled] = useState(false)
+  const [recurrenceModalOpen, setRecurrenceModalOpen] = useState(false)
+  const [recurrenceEnabledBeforeOpen, setRecurrenceEnabledBeforeOpen] = useState(false)
+  const [recurrenceSaving, setRecurrenceSaving] = useState(false)
+  const [addAnother, setAddAnother] = useState(false)
+  const [pendingRecurring, setPendingRecurring] = useState<{ payload: TransactionInput; mode: NotificationTransactionMode } | null>(null)
+  const [schedule, setSchedule] = useState<RecurringSchedule>({ frequency: 'monthly', interval: 1 })
+  const [until, setUntil] = useState<RecurringUntilPolicy>({ type: 'never' })
+  const [firstAction, setFirstAction] = useState<'plan-only' | 'add-now'>('plan-only')
 
   // Detect mode from initialData (does not need accounts/currencies)
   useEffect(() => {
-    if (!initialData || !initialData.lines || initialData.lines.length === 0) return
-    const lines = initialData.lines as TransactionLine[]
+    if (!prefillData || !prefillData.lines || prefillData.lines.length === 0) return
+    const lines = prefillData.lines as TransactionLine[]
     if (isMultiCurrencyExpense(lines)) {
       setMode('expense')
     } else if (lines.some(l => l.tag_id === SYSTEM_TAGS.TRANSFER)) {
@@ -59,13 +95,9 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     } else {
       setMode('expense')
     }
-  }, [initialData])
+  }, [prefillData])
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [wallets, incomeTagList, expenseTagList, incomeContextOptions, expenseContextOptions, cps, currencyList, usedCurrencies, commonTagList] = await Promise.all([
         walletRepository.findActive(),
@@ -107,7 +139,7 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       setAccounts(accountOptions)
 
       // Compute defaults for sub-forms (only when not editing)
-      if (!initialData) {
+      if (!initialData && !initialDraft) {
         if (accountOptions.length > 0) {
           const defaultAcc = accountOptions.find(a => a.walletIsDefault && a.is_default)
             || accountOptions.find(a => a.is_default)
@@ -122,7 +154,68 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     } finally {
       setLoading(false)
     }
-  }
+  }, [initialData, initialDraft])
+
+  useEffect(() => {
+    void loadData()
+  }, [loadData])
+
+  const recurrenceAction = useMemo(() => {
+    if (initialData) return null
+
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setRecurrenceEnabled(enabled => !enabled)
+        }}
+        className={`p-2 hover:text-gray-900 dark:hover:text-gray-100 ${recurrenceEnabled
+          ? 'text-primary-600 dark:text-primary-400'
+          : 'text-gray-400 dark:text-gray-500'
+        }`}
+        aria-label="Recurring transaction"
+        title="Recurring transaction"
+      >
+        <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M18.178 8.822c-1.17-1.17-3.066-1.17-4.236 0L12 10.764l-1.942-1.942a2.995 2.995 0 0 0-4.236 0 2.995 2.995 0 0 0 0 4.236 2.995 2.995 0 0 0 4.236 0L12 11.116l1.942 1.942a2.995 2.995 0 0 0 4.236 0 2.995 2.995 0 0 0 0-4.236Z" />
+        </svg>
+      </button>
+    )
+  }, [initialData, recurrenceEnabled])
+
+  useEffect(() => {
+    onRecurrenceActionChange?.(recurrenceAction)
+    return () => onRecurrenceActionChange?.(null)
+  }, [onRecurrenceActionChange, recurrenceAction])
+
+  const addAnotherAction = useMemo(() => {
+    if (initialData || !showAddAnother) return null
+
+    return (
+      <button
+        type="button"
+        onClick={() => setAddAnother(enabled => !enabled)}
+        className={`p-2 hover:text-gray-900 dark:hover:text-gray-100 ${addAnother
+          ? 'text-primary-600 dark:text-primary-400'
+          : 'text-gray-400 dark:text-gray-500'
+        }`}
+        aria-label="Add another"
+        aria-pressed={addAnother}
+        title="Add another"
+      >
+        <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.75" d="M5 17v4m-2-2h4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 10v6m-3-3h6" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.25" d="M18 3v8m-4-4h8" />
+        </svg>
+      </button>
+    )
+  }, [addAnother, initialData, showAddAnother])
+
+  useEffect(() => {
+    onAddAnotherActionChange?.(addAnotherAction)
+    return () => onAddAnotherActionChange?.(null)
+  }, [onAddAnotherActionChange, addAnotherAction])
 
   if (loading) {
     return (
@@ -132,7 +225,79 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
     )
   }
 
-  const sharedProps = { initialData, onSubmit, onCancel, useActionBar, showAddAnother }
+  const getPayloadDate = (payload: TransactionInput): string => {
+    const date = new Date((payload.timestamp ?? Math.floor(Date.now() / 1000)) * 1000)
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-')
+  }
+
+  const today = getPayloadDate({ lines: [] })
+
+  const handleBeforeCreate = async (payload: TransactionInput, submitMode: NotificationTransactionMode): Promise<boolean> => {
+    const payloadDate = getPayloadDate(payload)
+    if (!recurrenceEnabled && payloadDate <= today) return false
+    setPendingRecurring({ payload, mode: submitMode })
+    setRecurrenceEnabledBeforeOpen(recurrenceEnabled)
+    setRecurrenceEnabled(true)
+    setFirstAction(payloadDate === today ? 'plan-only' : 'plan-only')
+    setRecurrenceModalOpen(true)
+    return true
+  }
+
+  const closeRecurrenceModal = () => {
+    setPendingRecurring(null)
+    setRecurrenceEnabled(recurrenceEnabledBeforeOpen)
+    setRecurrenceModalOpen(false)
+  }
+
+  const keepRecurrenceSettings = () => {
+    setRecurrenceEnabled(true)
+    setRecurrenceModalOpen(false)
+  }
+
+  const saveRecurringPlan = async () => {
+    if (!pendingRecurring) {
+      setRecurrenceModalOpen(false)
+      return
+    }
+    setRecurrenceSaving(true)
+    try {
+      const startDate = getPayloadDate(pendingRecurring.payload)
+      await recurringRepository.createPlanFromTransaction(
+        {
+          schedule,
+          transaction_draft: pendingRecurring.payload,
+          mode: pendingRecurring.mode,
+          start_date: startDate,
+          until_policy: until,
+        },
+        startDate < today ? 'add-past' : startDate === today ? firstAction : 'plan-only'
+      )
+      showToast('Recurring plan saved', 'success')
+      setRecurrenceModalOpen(false)
+      setPendingRecurring(null)
+      onSubmit()
+    } catch (error) {
+      console.error('Failed to save recurring plan:', error)
+      showToast('Failed to save recurring plan', 'error')
+    } finally {
+      setRecurrenceSaving(false)
+    }
+  }
+
+  const sharedProps = { initialData: prefillData, createFromInitialData, onSubmit, onCancel, useActionBar, showAddAnother, addAnother, onAddAnotherChange: setAddAnother, onBeforeCreate: handleBeforeCreate }
+  const incomeAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') === 'plain')
+  const expenseAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') !== 'savings')
+  const getDefaultFor = (list: AccountOption[]) => {
+    const defaultAcc = list.find(a => a.id.toString() === defaultAccountId)
+      || list.find(a => a.walletIsDefault && a.is_default)
+      || list.find(a => a.is_default)
+      || list[0]
+    return defaultAcc?.id.toString() ?? ''
+  }
 
   return (
     <div className="space-y-4">
@@ -156,24 +321,24 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
       {mode === 'income' && (
         <IncomeTransactionForm
           {...sharedProps}
-          accounts={accounts}
+          accounts={incomeAccounts}
           incomeTags={incomeTags}
           incomeTagOptions={incomeTagOptions}
           counterparties={counterparties}
-          defaultAccountId={defaultAccountId}
+          defaultAccountId={getDefaultFor(incomeAccounts)}
         />
       )}
       {mode === 'expense' && (
         <ExpenseTransactionForm
           {...sharedProps}
-          accounts={accounts}
+          accounts={expenseAccounts}
           currencies={currencies}
           activeCurrencies={activeCurrencies}
           expenseTags={expenseTags}
           expenseTagOptions={expenseTagOptions}
           commonTags={commonTags}
           counterparties={counterparties}
-          defaultAccountId={defaultAccountId}
+          defaultAccountId={getDefaultFor(expenseAccounts)}
           defaultPaymentCurrencyId={defaultPaymentCurrencyId}
         />
       )}
@@ -191,6 +356,55 @@ export function TransactionForm({ initialData, initialMode, onSubmit, onCancel, 
           defaultAccountId={defaultAccountId}
         />
       )}
+
+      <Modal
+        isOpen={recurrenceModalOpen}
+        onClose={closeRecurrenceModal}
+        title="Recurring Transaction"
+      >
+        <div className="space-y-4">
+          <RecurrenceOptionsFields
+            schedule={schedule}
+            until={until}
+            today={today}
+            onScheduleChange={setSchedule}
+            onUntilChange={setUntil}
+          />
+
+          {pendingRecurring && getPayloadDate(pendingRecurring.payload) === today && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                type="checkbox"
+                checked={firstAction === 'add-now'}
+                onChange={(event) => setFirstAction(event.target.checked ? 'add-now' : 'plan-only')}
+              />
+              Add the first transaction now
+            </label>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={closeRecurrenceModal}
+              disabled={recurrenceSaving}
+              className="flex-1"
+            >
+              Close
+            </Button>
+            {!pendingRecurring && (
+              <Button type="button" onClick={keepRecurrenceSettings} className="flex-1">
+                Save
+              </Button>
+            )}
+            {pendingRecurring && (
+              <Button type="button" onClick={saveRecurringPlan} disabled={recurrenceSaving} className="flex-1">
+                {recurrenceSaving ? 'Saving...' : 'Save'}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

@@ -186,6 +186,14 @@ export const tagRepository = {
       return { canDelete: false, reason: `${contextCount.count} transactions use this tag as context` }
     }
 
+    const budgetContextCount = await queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM budget_tag_context WHERE tag_id = ?',
+      [id]
+    )
+    if (budgetContextCount && budgetContextCount.count > 0) {
+      return { canDelete: false, reason: `${budgetContextCount.count} budgets use this tag as context` }
+    }
+
     return { canDelete: true }
   },
 

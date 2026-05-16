@@ -25,6 +25,9 @@ const EXPECTED_TRIGGER_NAMES = [
   'trg_account_to_tags_insert',
   'trg_account_to_tags_update',
   'trg_account_to_tags_delete',
+  'trg_account_data_insert',
+  'trg_account_data_update',
+  'trg_account_data_delete',
   'trg_counterparty_update',
   'trg_counterparty_to_tags_insert',
   'trg_counterparty_to_tags_update',
@@ -48,6 +51,12 @@ const EXPECTED_TRIGGER_NAMES = [
   'trg_trx_base_tag_context_insert',
   'trg_trx_base_tag_context_delete',
   'trg_budget_update',
+  'trg_budget_tag_context_insert',
+  'trg_budget_tag_context_delete',
+  'trg_notification_update',
+  'trg_recurring_plan_update',
+  'trg_recurring_occurrence_update',
+  'trg_recurring_budget_update',
 ]
 
 describe('syncTriggers', () => {

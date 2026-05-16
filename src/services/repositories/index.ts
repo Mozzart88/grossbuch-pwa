@@ -6,4 +6,5 @@ export { counterpartyRepository } from './counterpartyRepository'
 export { transactionRepository } from './transactionRepository'
 export { settingsRepository } from './settingsRepository'
 export { budgetRepository } from './budgetRepository'
-
+export { notificationRepository } from './notificationRepository'
+export { recurringRepository } from './recurringRepository'

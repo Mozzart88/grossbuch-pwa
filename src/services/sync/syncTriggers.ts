@@ -25,6 +25,9 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_account_to_tags_insert',
   'trg_account_to_tags_update',
   'trg_account_to_tags_delete',
+  'trg_account_data_insert',
+  'trg_account_data_update',
+  'trg_account_data_delete',
   // Counterparty
   'trg_counterparty_update',
   'trg_counterparty_to_tags_insert',
@@ -52,6 +55,14 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_trx_base_tag_context_delete',
   // Budget
   'trg_budget_update',
+  'trg_budget_tag_context_insert',
+  'trg_budget_tag_context_delete',
+  // Notification
+  'trg_notification_update',
+  // Recurring
+  'trg_recurring_plan_update',
+  'trg_recurring_occurrence_update',
+  'trg_recurring_budget_update',
 ] as const
 
 /**
@@ -202,6 +213,34 @@ END`)
 
   await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_to_tags_delete
 AFTER DELETE ON account_to_tags
+FOR EACH ROW
+BEGIN
+  UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account.id = OLD.account_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_data_insert
+AFTER INSERT ON account_data
+FOR EACH ROW
+BEGIN
+  UPDATE account_data SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account_id = NEW.account_id;
+  UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account.id = NEW.account_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_data_update
+AFTER UPDATE OF note, due_date, rate ON account_data
+FOR EACH ROW
+BEGIN
+  UPDATE account_data SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account_id = NEW.account_id;
+  UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE account.id = NEW.account_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_account_data_delete
+AFTER DELETE ON account_data
 FOR EACH ROW
 BEGIN
   UPDATE account SET updated_at = unixepoch(CURRENT_TIMESTAMP)
@@ -397,5 +436,56 @@ FOR EACH ROW
 BEGIN
   UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
   WHERE budget.id = NEW.id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_budget_tag_context_insert
+AFTER INSERT ON budget_tag_context
+FOR EACH ROW
+BEGIN
+  UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.budget_id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_budget_tag_context_delete
+AFTER DELETE ON budget_tag_context
+FOR EACH ROW
+BEGIN
+  UPDATE budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = OLD.budget_id;
+END`)
+
+  // Notification
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_notification_update
+AFTER UPDATE OF type, status, timestamp, readed_at, payload ON notification
+FOR EACH ROW
+BEGIN
+  UPDATE notification SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.id;
+END`)
+
+  // Recurring
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_recurring_plan_update
+AFTER UPDATE OF schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status
+ON recurring_plan
+FOR EACH ROW
+BEGIN
+  UPDATE recurring_plan SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_recurring_occurrence_update
+AFTER UPDATE OF plan_id, due_date, notification_id ON recurring_occurrence
+FOR EACH ROW
+BEGIN
+  UPDATE recurring_occurrence SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_recurring_budget_update
+AFTER UPDATE OF budget_id, plan_id, due_month ON recurring_budget
+FOR EACH ROW
+BEGIN
+  UPDATE recurring_budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE budget_id = NEW.budget_id;
 END`)
 }

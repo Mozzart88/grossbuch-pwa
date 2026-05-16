@@ -7,6 +7,7 @@ import App from '../../App'
 vi.mock('../../pages', () => ({
   TransactionsPage: () => <div data-testid="transactions-page">Transactions</div>,
   AddTransactionPage: () => <div data-testid="add-transaction-page">Add Transaction</div>,
+  NotificationDetailPage: () => <div data-testid="notification-detail-page">Notification</div>,
   EditTransactionPage: () => <div data-testid="edit-transaction-page">Edit Transaction</div>,
   SettingsPage: () => <div data-testid="settings-page">Settings</div>,
   AccountsPage: () => <div data-testid="accounts-page">Accounts</div>,
@@ -27,6 +28,7 @@ vi.mock('../../pages', () => ({
   InstallPage: () => <div data-testid="install-page">Install</div>,
   SharePage: () => <div data-testid="share-page">Share</div>,
   LinkedDevicesPage: () => <div data-testid="linked-devices-page">LinkedDevices</div>,
+  RecurringTransactionsPage: () => <div data-testid="recurring-transactions-page">Recurring</div>,
   OnboardingPage: ({ onComplete }: { onComplete: () => void }) => (
     <div data-testid="onboarding-page">
       <button onClick={onComplete}>Complete Onboarding</button>
@@ -47,6 +49,10 @@ vi.mock('../../components/auth', async () => {
     ),
   }
 })
+
+vi.mock('../../components/layout/NotificationDrawer', () => ({
+  NotificationDrawer: () => <div data-testid="notification-drawer" />,
+}))
 
 // Mock TabBar
 vi.mock('../../components/ui', async () => {

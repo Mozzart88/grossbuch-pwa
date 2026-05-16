@@ -1,5 +1,6 @@
 export { TransactionsPage } from './TransactionsPage'
 export { AddTransactionPage } from './AddTransactionPage'
+export { NotificationDetailPage } from './NotificationDetailPage'
 export { EditTransactionPage } from './EditTransactionPage'
 export { SettingsPage } from './SettingsPage'
 export { AccountsPage } from './AccountsPage'
@@ -21,4 +22,4 @@ export { InstallPage } from './InstallPage'
 export { SharePage } from './SharePage'
 export { LinkedDevicesPage } from './LinkedDevicesPage'
 export { OnboardingPage } from './OnboardingPage'
-
+export { RecurringTransactionsPage } from './RecurringTransactionsPage'

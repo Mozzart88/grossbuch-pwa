@@ -29,4 +29,8 @@ describe('repositories index', () => {
   it('exports settingsRepository', () => {
     expect(repositories.settingsRepository).toBeDefined()
   })
+
+  it('exports recurringRepository', () => {
+    expect(repositories.recurringRepository).toBeDefined()
+  })
 })

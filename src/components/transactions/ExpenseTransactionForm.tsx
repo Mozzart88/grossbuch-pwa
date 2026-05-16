@@ -7,7 +7,7 @@ import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, SubmitOptions } from './transactionFormShared'
+import type { AccountOption, SubmitOptions, TransactionSubmitInterceptor } from './transactionFormShared'
 import {
   getPlaceholder,
   formatBalance,
@@ -59,10 +59,14 @@ interface ExpenseTransactionFormProps {
   defaultAccountId: string
   defaultPaymentCurrencyId: number | null
   initialData?: Transaction
+  createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  addAnother?: boolean
+  onAddAnotherChange?: (checked: boolean) => void
+  onBeforeCreate?: TransactionSubmitInterceptor
 }
 
 const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -87,10 +91,14 @@ export function ExpenseTransactionForm({
   defaultAccountId,
   defaultPaymentCurrencyId,
   initialData,
+  createFromInitialData = false,
   onSubmit,
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  addAnother: controlledAddAnother,
+  onAddAnotherChange,
+  onBeforeCreate,
 }: ExpenseTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -113,7 +121,10 @@ export function ExpenseTransactionForm({
   const [activeCommons, setActiveCommons] = useState<CommonEntry[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [addAnother, setAddAnother] = useState(false)
+  const [localAddAnother, setLocalAddAnother] = useState(false)
+  const isEditing = !!initialData && !createFromInitialData
+  const addAnother = controlledAddAnother ?? localAddAnother
+  const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
 
   // Populate from initial data
   useEffect(() => {
@@ -136,7 +147,10 @@ export function ExpenseTransactionForm({
       setAccountId(exchangeOut.account_id.toString())
       setPaymentAmount(fromIntFrac(exchangeOut.amount_int, exchangeOut.amount_frac).toString())
 
-      const targetCurrency = currencies.find(c => c.code === expenseLines[0]?.currency)
+      const targetAccount = accounts.find(a => a.id === expenseLines[0]?.account_id)
+      const targetCurrency = targetAccount
+        ? currencies.find(c => c.id === targetAccount.currency_id)
+        : currencies.find(c => c.code === expenseLines[0]?.currency)
       if (targetCurrency) setPaymentCurrencyId(targetCurrency.id)
 
       if (expenseLines.length === 1) {
@@ -218,14 +232,14 @@ export function ExpenseTransactionForm({
     const setActionBarConfig = layoutContext?.setActionBarConfig
     if (!useActionBar || !setActionBarConfig) return
     setActionBarConfig({
-      primaryLabel: initialData ? 'Update' : 'Submit',
+      primaryLabel: isEditing ? 'Update' : 'Submit',
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
       disabled: submitting,
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, initialData, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const walletOptions = getWalletOptions(accounts)
@@ -606,12 +620,16 @@ export function ExpenseTransactionForm({
         lines,
       }
 
-      if (initialData) {
+      if (!isEditing && onBeforeCreate && await onBeforeCreate(payload, 'expense')) {
+        return
+      }
+
+      if (isEditing && initialData) {
         await transactionRepository.update(initialData.id, payload)
       } else {
         await transactionRepository.create(payload)
       }
-      const shouldAddAnother = showAddAnother && addAnother && !initialData
+      const shouldAddAnother = showAddAnother && addAnother && !isEditing
       onSubmit({ addAnother: shouldAddAnother })
       if (shouldAddAnother) resetEntryFields()
     } catch (error) {
@@ -691,7 +709,7 @@ export function ExpenseTransactionForm({
       )}
 
       {/* Account */}
-      {!initialData ? (
+      {!isEditing ? (
         <div className="grid grid-cols-2 gap-2">
           <Select
             label="Wallet"
@@ -885,7 +903,7 @@ export function ExpenseTransactionForm({
       </div>
 
       {/* Actions */}
-      {showAddAnother && !initialData && (
+      {showAddAnother && !isEditing && !onAddAnotherChange && (
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
@@ -903,7 +921,7 @@ export function ExpenseTransactionForm({
             Cancel
           </Button>
           <Button type="submit" disabled={submitting} className="flex-1">
-            {submitting ? 'Saving...' : (initialData ? 'Update' : 'Add')}
+            {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>
       )}

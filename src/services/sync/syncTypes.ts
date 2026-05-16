@@ -29,6 +29,9 @@ export interface SyncAccount {
   currency: number
   updated_at: number
   tags: number[]
+  note?: string | null
+  due_date?: string | null
+  rate?: number | null
 }
 
 export interface SyncCounterparty {
@@ -74,9 +77,50 @@ export interface SyncBudget {
   start: number
   end: number
   tag: number
+  tag_context?: number | null
   type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number
+  updated_at: number
+}
+
+export interface SyncNotification {
+  id: string // hex
+  type: string
+  status: string
+  timestamp: number
+  readed_at: number | null
+  updated_at: number
+  payload: string
+}
+
+export interface SyncRecurringPlan {
+  id: string
+  schedule: string
+  transaction_draft: string
+  mode: string
+  start_date: string
+  next_due_date: string | null
+  until_policy: string
+  occurrence_count: number
+  status: string
+  created_at: number
+  updated_at: number
+}
+
+export interface SyncRecurringOccurrence {
+  id: string
+  plan_id: string
+  due_date: string
+  notification_id: string | null
+  created_at: number
+  updated_at: number
+}
+
+export interface SyncRecurringBudget {
+  budget_id: string
+  plan_id: string
+  due_month: string
   updated_at: number
 }
 
@@ -101,6 +145,10 @@ export interface SyncPackage {
   currencies: SyncCurrency[]
   transactions: SyncTransaction[]
   budgets: SyncBudget[]
+  notifications?: SyncNotification[]
+  recurringPlans?: SyncRecurringPlan[]
+  recurringOccurrences?: SyncRecurringOccurrence[]
+  recurringBudgets?: SyncRecurringBudget[]
   deletions: SyncDeletion[]
   commands?: SyncCommand[]
 }
@@ -174,6 +222,10 @@ export interface ImportResult {
     currencies: number
     transactions: number
     budgets: number
+    notifications: number
+    recurringPlans: number
+    recurringOccurrences: number
+    recurringBudgets: number
     deletions: number
   }
   newAccountCurrencyIds: number[]

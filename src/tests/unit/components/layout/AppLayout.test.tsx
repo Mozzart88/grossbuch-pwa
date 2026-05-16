@@ -23,6 +23,23 @@ vi.mock('../../../../components/layout/NavDrawer', () => ({
   ),
 }))
 
+vi.mock('../../../../components/layout/NotificationDrawer', () => ({
+  NotificationDrawer: ({
+    isOpen,
+    onClose,
+    onUnreadCountChange,
+  }: {
+    isOpen: boolean
+    onClose: () => void
+    onUnreadCountChange?: (count: number) => void
+  }) => (
+    <div data-testid="notification-drawer" data-open={isOpen}>
+      <button onClick={() => onUnreadCountChange?.(1)}>Set unread</button>
+      <button onClick={onClose}>Close notifications</button>
+    </div>
+  ),
+}))
+
 describe('AppLayout', () => {
   const renderLayout = (children: React.ReactNode = null) => {
     return render(
@@ -74,6 +91,12 @@ describe('AppLayout', () => {
       expect(screen.getByRole('button', { name: /open menu/i })).toBeInTheDocument()
     })
 
+    it('renders the notification button', () => {
+      renderLayout()
+
+      expect(screen.getByRole('button', { name: /open notifications/i })).toBeInTheDocument()
+    })
+
     it('renders a header element', () => {
       renderLayout()
 
@@ -90,6 +113,27 @@ describe('AppLayout', () => {
       fireEvent.click(hamburger)
 
       expect(drawer).toHaveAttribute('data-open', 'true')
+    })
+
+    it('opens notification drawer when bell is clicked', () => {
+      renderLayout()
+
+      const drawer = screen.getByTestId('notification-drawer')
+      expect(drawer).toHaveAttribute('data-open', 'false')
+
+      fireEvent.click(screen.getByRole('button', { name: /open notifications/i }))
+
+      expect(drawer).toHaveAttribute('data-open', 'true')
+    })
+
+    it('shows unread notification indicator when drawer reports unread items', () => {
+      renderLayout()
+
+      expect(document.querySelector('.bg-red-600')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set unread' }))
+
+      expect(document.querySelector('.bg-red-600')).toBeInTheDocument()
     })
 
     it('closes drawer when onClose is called', () => {
