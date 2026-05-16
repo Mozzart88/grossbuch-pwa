@@ -126,6 +126,16 @@ describe('AppLayout', () => {
       expect(drawer).toHaveAttribute('data-open', 'true')
     })
 
+    it('shows unread notification indicator when drawer reports unread items', () => {
+      renderLayout()
+
+      expect(document.querySelector('.bg-red-600')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Set unread' }))
+
+      expect(document.querySelector('.bg-red-600')).toBeInTheDocument()
+    })
+
     it('closes drawer when onClose is called', () => {
       renderLayout()
 

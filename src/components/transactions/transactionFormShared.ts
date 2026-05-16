@@ -1,4 +1,4 @@
-import type { Account, TagContextOption } from '../../types'
+import type { Account, NotificationTransactionMode, TagContextOption, TransactionInput } from '../../types'
 import type { LiveSearchOption, SelectUIOption } from '../ui'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { toLocalISOString } from '../../utils/dateUtils'
@@ -18,6 +18,11 @@ export interface AccountOption extends Account {
 export interface SubmitOptions {
   addAnother?: boolean
 }
+
+export type TransactionSubmitInterceptor = (
+  payload: TransactionInput,
+  mode: NotificationTransactionMode
+) => Promise<boolean>
 
 export const encodeTagSelection = (tagId: number, contextId?: number | null): string =>
   `${tagId}:${contextId ?? ''}`

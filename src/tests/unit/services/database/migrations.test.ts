@@ -7,7 +7,7 @@ vi.mock('../../../../services/database/connection', () => ({
 }))
 
 import { execSQL, queryOne } from '../../../../services/database/connection'
-import { runMigrations } from '../../../../services/database/migrations'
+import { CURRENT_VERSION, runMigrations } from '../../../../services/database/migrations'
 
 const mockExecSQL = vi.mocked(execSQL)
 const mockQueryOne = vi.mocked(queryOne)
@@ -19,6 +19,10 @@ describe('migrations', () => {
   })
 
   describe('runMigrations', () => {
+    it('sets current version to 23', () => {
+      expect(CURRENT_VERSION).toBe(23)
+    })
+
     it('runs all migrations when db_version is 0', async () => {
       // Simulate table doesn't exist yet
       mockQueryOne.mockRejectedValue(new Error('no such table: settings'))
@@ -227,7 +231,7 @@ describe('migrations', () => {
 
     it('parses db_version correctly', async () => {
       // Already at current version
-      mockQueryOne.mockResolvedValue({ value: '22' })
+      mockQueryOne.mockResolvedValue({ value: '23' })
 
       await runMigrations()
 
@@ -240,9 +244,28 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      // Full migration (v1-v22): each migration joins statements into one execSQL call
-      // v1 = 1 call, v2-v22 = 2 calls each (migration + version update) = 1 + 21*2 = 43
-      expect(mockExecSQL.mock.calls.length).toEqual(43)
+      // Full migration (v1-v23): each migration joins statements into one execSQL call
+      // v1 = 1 call, v2-v23 = 2 calls each (migration + version update) = 1 + 22*2 = 45
+      expect(mockExecSQL.mock.calls.length).toEqual(45)
+    })
+
+    it('creates recurring tables and recurent tag in migration v23', async () => {
+      mockQueryOne.mockResolvedValue({ value: '22' })
+
+      await runMigrations()
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining("INSERT OR IGNORE INTO tag (name) VALUES ('recurent')")
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS recurring_plan')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('CREATE TABLE IF NOT EXISTS recurring_occurrence')
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('trg_sync_del_recurring_plan')
+      )
     })
 
     it('updates db_version to 4 after migration', async () => {

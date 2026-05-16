@@ -7,7 +7,7 @@ import type { LiveSearchOption } from '../ui'
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, SubmitOptions } from './transactionFormShared'
+import type { AccountOption, SubmitOptions, TransactionSubmitInterceptor } from './transactionFormShared'
 import {
   getPlaceholder,
   formatBalance,
@@ -64,6 +64,7 @@ interface ExpenseTransactionFormProps {
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  onBeforeCreate?: TransactionSubmitInterceptor
 }
 
 const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -93,6 +94,7 @@ export function ExpenseTransactionForm({
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  onBeforeCreate,
 }: ExpenseTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -139,7 +141,10 @@ export function ExpenseTransactionForm({
       setAccountId(exchangeOut.account_id.toString())
       setPaymentAmount(fromIntFrac(exchangeOut.amount_int, exchangeOut.amount_frac).toString())
 
-      const targetCurrency = currencies.find(c => c.code === expenseLines[0]?.currency)
+      const targetAccount = accounts.find(a => a.id === expenseLines[0]?.account_id)
+      const targetCurrency = targetAccount
+        ? currencies.find(c => c.id === targetAccount.currency_id)
+        : currencies.find(c => c.code === expenseLines[0]?.currency)
       if (targetCurrency) setPaymentCurrencyId(targetCurrency.id)
 
       if (expenseLines.length === 1) {
@@ -607,6 +612,10 @@ export function ExpenseTransactionForm({
         timestamp: Math.floor(datetime / 1000),
         note: note || undefined,
         lines,
+      }
+
+      if (!isEditing && onBeforeCreate && await onBeforeCreate(payload, 'expense')) {
+        return
       }
 
       if (isEditing && initialData) {

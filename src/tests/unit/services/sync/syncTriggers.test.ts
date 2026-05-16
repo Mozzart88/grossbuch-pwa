@@ -54,6 +54,9 @@ const EXPECTED_TRIGGER_NAMES = [
   'trg_budget_tag_context_insert',
   'trg_budget_tag_context_delete',
   'trg_notification_update',
+  'trg_recurring_plan_update',
+  'trg_recurring_occurrence_update',
+  'trg_recurring_budget_update',
 ]
 
 describe('syncTriggers', () => {

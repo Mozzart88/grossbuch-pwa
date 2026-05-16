@@ -28,6 +28,7 @@ vi.mock('../../pages', () => ({
   InstallPage: () => <div data-testid="install-page">Install</div>,
   SharePage: () => <div data-testid="share-page">Share</div>,
   LinkedDevicesPage: () => <div data-testid="linked-devices-page">LinkedDevices</div>,
+  RecurringTransactionsPage: () => <div data-testid="recurring-transactions-page">Recurring</div>,
   OnboardingPage: ({ onComplete }: { onComplete: () => void }) => (
     <div data-testid="onboarding-page">
       <button onClick={onComplete}>Complete Onboarding</button>

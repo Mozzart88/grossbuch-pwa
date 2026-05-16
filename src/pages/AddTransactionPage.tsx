@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { PageHeader } from '../components/layout/PageHeader'
 import { TransactionForm } from '../components/transactions'
@@ -16,6 +17,7 @@ export function AddTransactionPage() {
   const [notificationDraft, setNotificationDraft] = useState<TransactionInput | undefined>()
   const [notificationMode, setNotificationMode] = useState<TransactionMode | undefined>()
   const [loadingNotification, setLoadingNotification] = useState(false)
+  const [recurrenceAction, setRecurrenceAction] = useState<ReactNode | null>(null)
 
   // Get initial mode from query parameter (?type=exchange)
   const typeParam = searchParams.get('type')
@@ -70,7 +72,7 @@ export function AddTransactionPage() {
 
   return (
     <div>
-      <PageHeader title="Add Transaction" showBack />
+      <PageHeader title="Add Transaction" showBack rightAction={recurrenceAction} />
       <div className="p-4 pb-24">
         <TransactionForm
           initialMode={initialMode}
@@ -79,6 +81,7 @@ export function AddTransactionPage() {
           onCancel={handleCancel}
           useActionBar
           showAddAnother
+          onRecurrenceActionChange={setRecurrenceAction}
         />
       </div>
     </div>

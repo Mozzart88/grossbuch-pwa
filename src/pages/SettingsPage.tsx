@@ -13,6 +13,7 @@ const settingsLinks = [
   { to: '/settings/security', label: 'Security', icon: '🔒', description: 'Change PIN and security settings' },
   { to: '/settings/share', label: 'Share', icon: '🔗', description: 'Share app with a link or QR code' },
   { to: '/settings/linked-devices', label: 'Linked Devices', icon: '📱', description: 'Manage paired devices' },
+  { to: '/settings/recurring', label: 'Recurring Transactions', icon: '∞', description: 'Manage planned repeated transactions' },
 ]
 
 export function SettingsPage() {

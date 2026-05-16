@@ -6,7 +6,7 @@ import { Button, Select, LiveSearch, DateTimeUI, Modal, AmountInput, Badge } fro
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, SubmitOptions } from './transactionFormShared'
+import type { AccountOption, SubmitOptions, TransactionSubmitInterceptor } from './transactionFormShared'
 import {
   getPlaceholder,
   formatBalance,
@@ -37,6 +37,7 @@ interface IncomeTransactionFormProps {
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  onBeforeCreate?: TransactionSubmitInterceptor
 }
 
 export function IncomeTransactionForm({
@@ -51,6 +52,7 @@ export function IncomeTransactionForm({
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  onBeforeCreate,
 }: IncomeTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -222,6 +224,10 @@ export function IncomeTransactionForm({
           rate_int: accountRateData.int,
           rate_frac: accountRateData.frac,
         }],
+      }
+
+      if (!isEditing && onBeforeCreate && await onBeforeCreate(payload, 'income')) {
+        return
       }
 
       if (isEditing && initialData) {

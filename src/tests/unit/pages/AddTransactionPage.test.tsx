@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AddTransactionPage } from '../../../pages/AddTransactionPage'
 import { LayoutProvider } from '../../../store/LayoutContext'
@@ -179,10 +179,94 @@ describe('AddTransactionPage', () => {
     )
   }
 
+  const fillExpenseForm = async () => {
+    await waitFor(() => {
+      expect(screen.getByText('Account')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '50' } })
+
+    const categoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'food' } })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'food' })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'food' }))
+  }
+
   it('renders page header with title', async () => {
     renderPage()
 
     expect(screen.getByText('Add Transaction')).toBeInTheDocument()
+  })
+
+  it('renders recurring transaction action in the page header', async () => {
+    renderPage()
+
+    const recurringButton = await screen.findByRole('button', { name: /recurring transaction/i })
+    expect(recurringButton.closest('header')).toBeInTheDocument()
+    expect(recurringButton.className).toContain('p-2')
+    expect(recurringButton.className).toContain('text-gray-400')
+  })
+
+  it('toggles recurring transaction action without opening setup immediately', async () => {
+    renderPage()
+
+    const recurringButton = await screen.findByRole('button', { name: /recurring transaction/i })
+    fireEvent.click(recurringButton)
+
+    await waitFor(() => {
+      expect(recurringButton.className).toContain('text-primary-600')
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    fireEvent.click(recurringButton)
+
+    await waitFor(() => {
+      expect(recurringButton.className).toContain('text-gray-400')
+    })
+  })
+
+  it('shows selectable recurrence controls in the setup modal on submit', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /recurring transaction/i }))
+    await fillExpenseForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    const dialog = await screen.findByRole('dialog')
+    const recurrence = within(dialog)
+
+    expect(recurrence.getByRole('button', { name: 'Daily' })).toBeInTheDocument()
+    expect(recurrence.getByRole('button', { name: 'Monthly' })).toBeInTheDocument()
+    expect(recurrence.getByRole('button', { name: 'Weekly' })).toBeInTheDocument()
+    expect(recurrence.getByRole('button', { name: 'Yearly' })).toBeInTheDocument()
+
+    fireEvent.click(recurrence.getByRole('button', { name: 'Weekly' }))
+    fireEvent.change(recurrence.getByLabelText('Repeat interval'), { target: { value: '2' } })
+    fireEvent.click(recurrence.getByRole('button', { name: 'Mon' }))
+    fireEvent.click(recurrence.getByRole('button', { name: 'Wed' }))
+
+    expect(recurrence.getByText('weeks')).toBeInTheDocument()
+    expect(recurrence.getByRole('button', { name: 'Mon' }).className).toContain('bg-primary-100')
+    expect(recurrence.getByRole('button', { name: 'Wed' }).className).toContain('bg-primary-100')
+
+    fireEvent.click(recurrence.getByRole('button', { name: 'Yearly' }))
+    fireEvent.click(recurrence.getByRole('button', { name: 'Feb' }))
+    fireEvent.click(recurrence.getByRole('button', { name: 'Oct' }))
+    fireEvent.click(recurrence.getByRole('button', { name: '2' }))
+    fireEvent.click(recurrence.getByRole('button', { name: '10' }))
+
+    expect(recurrence.getByRole('button', { name: 'Feb' }).className).toContain('bg-primary-100')
+    expect(recurrence.getByRole('button', { name: 'Oct' }).className).toContain('bg-primary-100')
+    expect(recurrence.getByRole('button', { name: '2' }).className).toContain('bg-primary-100')
+    expect(recurrence.getByRole('button', { name: '10' }).className).toContain('bg-primary-100')
+
+    fireEvent.change(recurrence.getByRole('combobox'), { target: { value: 'count' } })
+
+    expect(recurrence.getByText('Stop after')).toBeInTheDocument()
+    expect(recurrence.getByText('repetitions')).toBeInTheDocument()
   })
 
   it('renders transaction form', async () => {

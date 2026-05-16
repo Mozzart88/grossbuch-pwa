@@ -94,6 +94,36 @@ export interface SyncNotification {
   payload: string
 }
 
+export interface SyncRecurringPlan {
+  id: string
+  schedule: string
+  transaction_draft: string
+  mode: string
+  start_date: string
+  next_due_date: string | null
+  until_policy: string
+  occurrence_count: number
+  status: string
+  created_at: number
+  updated_at: number
+}
+
+export interface SyncRecurringOccurrence {
+  id: string
+  plan_id: string
+  due_date: string
+  notification_id: string | null
+  created_at: number
+  updated_at: number
+}
+
+export interface SyncRecurringBudget {
+  budget_id: string
+  plan_id: string
+  due_month: string
+  updated_at: number
+}
+
 export interface SyncDeletion {
   entity: string // aka table_name
   entity_id: string
@@ -116,6 +146,9 @@ export interface SyncPackage {
   transactions: SyncTransaction[]
   budgets: SyncBudget[]
   notifications?: SyncNotification[]
+  recurringPlans?: SyncRecurringPlan[]
+  recurringOccurrences?: SyncRecurringOccurrence[]
+  recurringBudgets?: SyncRecurringBudget[]
   deletions: SyncDeletion[]
   commands?: SyncCommand[]
 }
@@ -190,6 +223,9 @@ export interface ImportResult {
     transactions: number
     budgets: number
     notifications: number
+    recurringPlans: number
+    recurringOccurrences: number
+    recurringBudgets: number
     deletions: number
   }
   newAccountCurrencyIds: number[]

@@ -12,6 +12,9 @@ import type {
   SyncTransactionLine,
   SyncBudget,
   SyncNotification,
+  SyncRecurringPlan,
+  SyncRecurringOccurrence,
+  SyncRecurringBudget,
 } from './syncTypes'
 
 const TRX_BATCH_SIZE = 100
@@ -25,7 +28,7 @@ export async function exportChunkedSyncPackages(
   senderId: string,
   batchSize = TRX_BATCH_SIZE
 ): Promise<SyncPackage[]> {
-  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, deletions] =
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, recurringPlans, recurringOccurrences, recurringBudgets, deletions] =
     await Promise.all([
       exportIcons(0),
       exportTags(0),
@@ -36,6 +39,9 @@ export async function exportChunkedSyncPackages(
       exportTransactions(0),
       exportBudgets(0),
       exportNotifications(0),
+      exportRecurringPlans(0),
+      exportRecurringOccurrences(0),
+      exportRecurringBudgets(0),
       getDeletionsSince(0),
     ])
 
@@ -53,6 +59,9 @@ export async function exportChunkedSyncPackages(
     transactions: trxSlice,
     budgets,
     notifications,
+    recurringPlans,
+    recurringOccurrences,
+    recurringBudgets,
     deletions,
   })
 
@@ -75,7 +84,7 @@ export async function exportSyncPackage(
   sinceTimestamp: number,
   senderId: string
 ): Promise<SyncPackage> {
-  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, deletions] =
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, recurringPlans, recurringOccurrences, recurringBudgets, deletions] =
     await Promise.all([
       exportIcons(sinceTimestamp),
       exportTags(sinceTimestamp),
@@ -86,6 +95,9 @@ export async function exportSyncPackage(
       exportTransactions(sinceTimestamp),
       exportBudgets(sinceTimestamp),
       exportNotifications(sinceTimestamp),
+      exportRecurringPlans(sinceTimestamp),
+      exportRecurringOccurrences(sinceTimestamp),
+      exportRecurringBudgets(sinceTimestamp),
       getDeletionsSince(sinceTimestamp),
     ])
 
@@ -103,6 +115,9 @@ export async function exportSyncPackage(
     transactions,
     budgets,
     notifications,
+    recurringPlans,
+    recurringOccurrences,
+    recurringBudgets,
     deletions,
   }
 }
@@ -362,6 +377,54 @@ async function exportNotifications(since: number): Promise<SyncNotification[]> {
       updated_at,
       payload
     FROM notification
+    WHERE updated_at >= ?`,
+    [since]
+  )
+}
+
+async function exportRecurringPlans(since: number): Promise<SyncRecurringPlan[]> {
+  return querySQL<SyncRecurringPlan>(
+    `SELECT
+      hex(id) as id,
+      schedule,
+      transaction_draft,
+      mode,
+      start_date,
+      next_due_date,
+      until_policy,
+      occurrence_count,
+      status,
+      created_at,
+      updated_at
+    FROM recurring_plan
+    WHERE updated_at >= ?`,
+    [since]
+  )
+}
+
+async function exportRecurringOccurrences(since: number): Promise<SyncRecurringOccurrence[]> {
+  return querySQL<SyncRecurringOccurrence>(
+    `SELECT
+      hex(id) as id,
+      hex(plan_id) as plan_id,
+      due_date,
+      CASE WHEN notification_id IS NULL THEN NULL ELSE hex(notification_id) END as notification_id,
+      created_at,
+      updated_at
+    FROM recurring_occurrence
+    WHERE updated_at >= ?`,
+    [since]
+  )
+}
+
+async function exportRecurringBudgets(since: number): Promise<SyncRecurringBudget[]> {
+  return querySQL<SyncRecurringBudget>(
+    `SELECT
+      hex(budget_id) as budget_id,
+      hex(plan_id) as plan_id,
+      due_month,
+      updated_at
+    FROM recurring_budget
     WHERE updated_at >= ?`,
     [since]
   )

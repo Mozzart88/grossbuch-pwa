@@ -59,6 +59,10 @@ const UPDATED_AT_TRIGGER_NAMES = [
   'trg_budget_tag_context_delete',
   // Notification
   'trg_notification_update',
+  // Recurring
+  'trg_recurring_plan_update',
+  'trg_recurring_occurrence_update',
+  'trg_recurring_budget_update',
 ] as const
 
 /**
@@ -457,5 +461,31 @@ FOR EACH ROW
 BEGIN
   UPDATE notification SET updated_at = unixepoch(CURRENT_TIMESTAMP)
   WHERE id = NEW.id;
+END`)
+
+  // Recurring
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_recurring_plan_update
+AFTER UPDATE OF schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status
+ON recurring_plan
+FOR EACH ROW
+BEGIN
+  UPDATE recurring_plan SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_recurring_occurrence_update
+AFTER UPDATE OF plan_id, due_date, notification_id ON recurring_occurrence
+FOR EACH ROW
+BEGIN
+  UPDATE recurring_occurrence SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE id = NEW.id;
+END`)
+
+  await execSQL(`CREATE TRIGGER IF NOT EXISTS trg_recurring_budget_update
+AFTER UPDATE OF budget_id, plan_id, due_month ON recurring_budget
+FOR EACH ROW
+BEGIN
+  UPDATE recurring_budget SET updated_at = unixepoch(CURRENT_TIMESTAMP)
+  WHERE budget_id = NEW.budget_id;
 END`)
 }

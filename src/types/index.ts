@@ -194,6 +194,10 @@ export interface TransactionNotificationPayload {
   title: string
   mode: NotificationTransactionMode
   draft: TransactionInput
+  recurring?: {
+    plan_id: string
+    due_date: string
+  }
 }
 
 export type NotificationPayload = PlainNotificationPayload | TransactionNotificationPayload
@@ -269,6 +273,57 @@ export interface BudgetInput {
   type?: 'income' | 'expense'
   amount_int: number
   amount_frac: number
+}
+
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly'
+export type RecurringUntilType = 'never' | 'count' | 'date'
+export type RecurringPlanStatus = 'active' | 'paused' | 'deleted'
+
+export interface RecurringSchedule {
+  frequency: RecurringFrequency
+  interval: number
+  weekdays?: number[]
+  monthDays?: number[]
+  months?: number[]
+}
+
+export interface RecurringUntilPolicy {
+  type: RecurringUntilType
+  count?: number
+  date?: string
+}
+
+export interface RecurringPlan {
+  id: Uint8Array
+  schedule: RecurringSchedule
+  transaction_draft: TransactionInput
+  mode: NotificationTransactionMode
+  start_date: string
+  next_due_date: string | null
+  until_policy: RecurringUntilPolicy
+  occurrence_count: number
+  status: RecurringPlanStatus
+  created_at: number
+  updated_at: number
+}
+
+export interface RecurringPlanInput {
+  schedule: RecurringSchedule
+  transaction_draft: TransactionInput
+  mode: NotificationTransactionMode
+  start_date: string
+  until_policy: RecurringUntilPolicy
+  occurrence_count?: number
+  status?: RecurringPlanStatus
+}
+
+export interface RecurringOccurrence {
+  id: Uint8Array
+  plan_id: Uint8Array
+  due_date: string
+  notification_id: Uint8Array | null
+  created_at: number
+  updated_at: number
 }
 
 // View types (from SQL views)
@@ -400,6 +455,7 @@ export const SYSTEM_TAGS = {
   AUTO: 21,
   ARCHIVED: 22,
   ADJUSTMENT: 23,
+  RECURENT: 24,
 } as const
 
 // Helper types

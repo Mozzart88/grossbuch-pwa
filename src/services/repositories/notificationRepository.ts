@@ -55,6 +55,7 @@ function parsePayload(type: NotificationType, raw: string): NotificationPayload 
     title: payload.title,
     mode: payload.mode as NotificationTransactionMode,
     draft: payload.draft,
+    recurring: payload.recurring,
   }
 }
 

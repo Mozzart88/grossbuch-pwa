@@ -13,6 +13,7 @@ import { SyncProvider, useSyncContext } from './contexts/SyncContext'
 import { TransactionListUiProvider } from './contexts/TransactionListUiContext'
 import { useInstallation } from './hooks/useInstallation'
 import { useInstallationRegistration } from './hooks/useInstallationRegistration'
+import { useRecurringDueProcessor } from './hooks/useRecurringDueProcessor'
 import { AppLayout } from './components/layout/AppLayout'
 import { ShareLinkCapture } from './components/ShareLinkCapture'
 import { AUTH_STORAGE_KEYS } from './types/auth'
@@ -42,6 +43,7 @@ import {
   SharePage,
   LinkedDevicesPage,
   OnboardingPage,
+  RecurringTransactionsPage,
 } from './pages'
 
 function SyncGate({ children }: { children: React.ReactNode }) {
@@ -126,6 +128,9 @@ function AppContent() {
   // Background sync exchange rates when app opens
   useExchangeRateSync({ enabled: isReady })
 
+  // Generate due recurring transaction draft notifications once the DB is ready.
+  useRecurringDueProcessor({ enabled: isReady })
+
   // Register installation with backend API
   useInstallationRegistration({ enabled: isReady })
 
@@ -202,6 +207,7 @@ function AppContent() {
         <Route path="/settings/download" element={<DownloadPage />} />
         <Route path="/settings/tags" element={<TagsPage />} />
         <Route path="/settings/budgets" element={<BudgetsPage />} />
+        <Route path="/settings/recurring" element={<RecurringTransactionsPage />} />
         <Route path="/settings/security" element={<ChangePinPage />} />
         <Route path="/settings/share" element={<SharePage />} />
         <Route path="/settings/linked-devices" element={<LinkedDevicesPage />} />

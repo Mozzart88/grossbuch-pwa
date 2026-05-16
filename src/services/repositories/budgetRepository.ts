@@ -1,5 +1,6 @@
 import { querySQL, queryOne, execSQL } from '../database'
 import { currencyRepository } from './currencyRepository'
+import { recurringRepository } from './recurringRepository'
 import type { Budget, BudgetInput, BudgetSummary } from '../../types'
 
 // Helper to convert Uint8Array to hex string for SQL queries
@@ -328,6 +329,13 @@ ${budgetContextJoins}
 
         const budget = await this.findWithActual(id)
         if (!budget) throw new Error('Budget not found')
+        if (input.amount_int !== undefined || input.amount_frac !== undefined) {
+            await recurringRepository.syncDraftFromBudget(
+                id,
+                input.amount_int ?? budget.amount_int,
+                input.amount_frac ?? budget.amount_frac
+            )
+        }
         return budget
     },
 

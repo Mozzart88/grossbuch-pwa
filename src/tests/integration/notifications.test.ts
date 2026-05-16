@@ -54,9 +54,9 @@ describe('Notifications Integration', () => {
     expect(await notificationRepository.findById(all[0].id)).toBeNull()
   })
 
-  it('has v22 schema, indexes, triggers, and deletion tracking', () => {
+  it('has notification schema, indexes, triggers, and deletion tracking', () => {
     const db = getTestDatabase()
-    expect(CURRENT_VERSION).toBe(22)
+    expect(CURRENT_VERSION).toBe(23)
 
     const columns = db.exec(`PRAGMA table_info(notification)`)[0].values.map(row => row[1])
     expect(columns).toEqual(['id', 'type', 'status', 'timestamp', 'readed_at', 'updated_at', 'payload'])

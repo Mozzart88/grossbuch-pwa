@@ -6,7 +6,7 @@ import { Button, SelectUI, DateTimeUI, ChevronIcon, AmountInput, Badge } from '.
 import { toDateTimeLocal } from '../../utils/dateUtils'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { useLayoutContextSafe } from '../../store/LayoutContext'
-import type { AccountOption, AccountSelectUIOption, SubmitOptions } from './transactionFormShared'
+import type { AccountOption, AccountSelectUIOption, SubmitOptions, TransactionSubmitInterceptor } from './transactionFormShared'
 import { getPlaceholder, toAmountIntFrac, toDateString, isDateInPast, toAccountSelectUIOptions } from './transactionFormShared'
 import { getRateForDate } from '../../services/exchangeRate/historicalRateService'
 
@@ -19,6 +19,7 @@ interface ExchangeTransactionFormProps {
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  onBeforeCreate?: TransactionSubmitInterceptor
 }
 
 const renderAccountOption = (option: AccountSelectUIOption) => (
@@ -40,6 +41,7 @@ export function ExchangeTransactionForm({
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  onBeforeCreate,
 }: ExchangeTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
   const layoutContext = useLayoutContextSafe()
@@ -223,6 +225,10 @@ export function ExchangeTransactionForm({
         timestamp: Math.floor(datetime / 1000),
         note: note || undefined,
         lines,
+      }
+
+      if (!isEditing && onBeforeCreate && await onBeforeCreate(payload, 'exchange')) {
+        return
       }
 
       if (isEditing && initialData) {

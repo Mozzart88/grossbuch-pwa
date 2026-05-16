@@ -12,6 +12,9 @@ import type {
   SyncTransaction,
   SyncBudget,
   SyncNotification,
+  SyncRecurringPlan,
+  SyncRecurringOccurrence,
+  SyncRecurringBudget,
   SyncDeletion,
   SyncUnlinkCommand,
   SyncUnlinkConfirmCommand,
@@ -28,7 +31,7 @@ import type {
  */
 export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult> {
   const result: ImportResult = {
-    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, notifications: 0, deletions: 0 },
+    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, notifications: 0, recurringPlans: 0, recurringOccurrences: 0, recurringBudgets: 0, deletions: 0 },
     newAccountCurrencyIds: [],
     conflicts: 0,
     errors: [],
@@ -51,6 +54,9 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     result.imported.transactions = await importTransactions(pkg.transactions)
     result.imported.budgets = await importBudgets(pkg.budgets)
     result.imported.notifications = await importNotifications(pkg.notifications ?? [])
+    result.imported.recurringPlans = await importRecurringPlans(pkg.recurringPlans ?? [])
+    result.imported.recurringOccurrences = await importRecurringOccurrences(pkg.recurringOccurrences ?? [])
+    result.imported.recurringBudgets = await importRecurringBudgets(pkg.recurringBudgets ?? [])
     result.imported.deletions = await importDeletions(pkg.deletions)
 
     await execSQL('COMMIT')
@@ -585,6 +591,94 @@ async function importNotifications(notifications: SyncNotification[]): Promise<n
   return count
 }
 
+// ======= Recurring =======
+
+async function importRecurringPlans(plans: SyncRecurringPlan[]): Promise<number> {
+  let count = 0
+  for (const p of plans) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM recurring_plan WHERE hex(id) = ?`,
+      [p.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT INTO recurring_plan
+         (id, schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(p.id), p.schedule, p.transaction_draft, p.mode, p.start_date, p.next_due_date, p.until_policy, p.occurrence_count, p.status, p.created_at, p.updated_at]
+      )
+      count++
+    } else if (p.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE recurring_plan
+         SET schedule = ?, transaction_draft = ?, mode = ?, start_date = ?, next_due_date = ?,
+             until_policy = ?, occurrence_count = ?, status = ?, created_at = ?, updated_at = ?
+         WHERE hex(id) = ?`,
+        [p.schedule, p.transaction_draft, p.mode, p.start_date, p.next_due_date, p.until_policy, p.occurrence_count, p.status, p.created_at, p.updated_at, p.id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
+async function importRecurringOccurrences(occurrences: SyncRecurringOccurrence[]): Promise<number> {
+  let count = 0
+  for (const o of occurrences) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM recurring_occurrence WHERE hex(id) = ?`,
+      [o.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT OR IGNORE INTO recurring_occurrence
+         (id, plan_id, due_date, notification_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(o.id), hexToBlob(o.plan_id), o.due_date, o.notification_id ? hexToBlob(o.notification_id) : null, o.created_at, o.updated_at]
+      )
+      count++
+    } else if (o.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE recurring_occurrence
+         SET plan_id = ?, due_date = ?, notification_id = ?, created_at = ?, updated_at = ?
+         WHERE hex(id) = ?`,
+        [hexToBlob(o.plan_id), o.due_date, o.notification_id ? hexToBlob(o.notification_id) : null, o.created_at, o.updated_at, o.id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
+async function importRecurringBudgets(budgets: SyncRecurringBudget[]): Promise<number> {
+  let count = 0
+  for (const b of budgets) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM recurring_budget WHERE hex(budget_id) = ?`,
+      [b.budget_id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT OR IGNORE INTO recurring_budget (budget_id, plan_id, due_month, updated_at)
+         VALUES (?, ?, ?, ?)`,
+        [hexToBlob(b.budget_id), hexToBlob(b.plan_id), b.due_month, b.updated_at]
+      )
+      count++
+    } else if (b.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE recurring_budget SET plan_id = ?, due_month = ?, updated_at = ?
+         WHERE hex(budget_id) = ?`,
+        [hexToBlob(b.plan_id), b.due_month, b.updated_at, b.budget_id]
+      )
+      count++
+    }
+  }
+  return count
+}
+
 // ======= Deletions =======
 
 async function importDeletions(deletions: SyncDeletion[]): Promise<number> {
@@ -710,6 +804,28 @@ async function applyDeletion(del: SyncDeletion): Promise<boolean> {
       )
       if (local && del.deleted_at > local.updated_at) {
         await execSQL(`DELETE FROM notification WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'recurring_plan': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM recurring_plan WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM recurring_plan WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'recurring_occurrence': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM recurring_occurrence WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM recurring_occurrence WHERE hex(id) = ?`, [del.entity_id])
         return true
       }
       return false
