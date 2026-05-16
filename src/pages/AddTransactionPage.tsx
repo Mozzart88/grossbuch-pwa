@@ -18,6 +18,7 @@ export function AddTransactionPage() {
   const [notificationMode, setNotificationMode] = useState<TransactionMode | undefined>()
   const [loadingNotification, setLoadingNotification] = useState(false)
   const [recurrenceAction, setRecurrenceAction] = useState<ReactNode | null>(null)
+  const [addAnotherAction, setAddAnotherAction] = useState<ReactNode | null>(null)
 
   // Get initial mode from query parameter (?type=exchange)
   const typeParam = searchParams.get('type')
@@ -72,7 +73,16 @@ export function AddTransactionPage() {
 
   return (
     <div>
-      <PageHeader title="Add Transaction" showBack rightAction={recurrenceAction} />
+      <PageHeader
+        title="Add Transaction"
+        showBack
+        rightAction={
+          <div className="flex items-center gap-1">
+            {addAnotherAction}
+            {recurrenceAction}
+          </div>
+        }
+      />
       <div className="p-4 pb-24">
         <TransactionForm
           initialMode={initialMode}
@@ -81,6 +91,7 @@ export function AddTransactionPage() {
           onCancel={handleCancel}
           useActionBar
           showAddAnother
+          onAddAnotherActionChange={setAddAnotherAction}
           onRecurrenceActionChange={setRecurrenceAction}
         />
       </div>

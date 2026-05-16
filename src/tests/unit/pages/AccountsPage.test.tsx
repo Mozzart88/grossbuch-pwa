@@ -154,6 +154,11 @@ describe('AccountsPage', () => {
     fireEvent.click(screen.getByText(walletName))
   }
 
+  const chooseType = (dialog: HTMLElement, typeLabel: string) => {
+    const typeGroup = within(dialog).getByRole('group', { name: 'Type' })
+    fireEvent.click(within(typeGroup).getByRole('button', { name: typeLabel }))
+  }
+
   // Helper to open dropdown menu and click an action
   const openDropdownAndClick = async (dropdownIndex: number, actionText: string) => {
     const dropdownTriggers = screen.getAllByRole('button', { expanded: false })
@@ -417,6 +422,7 @@ describe('AccountsPage', () => {
 
       const nameInput = screen.getByLabelText('Name')
       fireEvent.change(nameInput, { target: { value: 'New Wallet' } })
+      chooseType(screen.getByRole('dialog'), 'Savings')
 
       const submitButton = screen.getByRole('button', { name: 'Save' })
       fireEvent.click(submitButton)
@@ -425,6 +431,7 @@ describe('AccountsPage', () => {
         expect(mockWalletRepository.create).toHaveBeenCalledWith(
           expect.objectContaining({
             name: 'New Wallet',
+            account_type: 'savings',
           })
         )
       })
@@ -501,6 +508,7 @@ describe('AccountsPage', () => {
 
       const nameInput = screen.getByLabelText('Name')
       fireEvent.change(nameInput, { target: { value: 'Updated Cash' } })
+      chooseType(screen.getByRole('dialog'), 'Credit')
 
       const submitButton = screen.getByRole('button', { name: 'Save' })
       fireEvent.click(submitButton)
@@ -510,6 +518,7 @@ describe('AccountsPage', () => {
           1,
           expect.objectContaining({
             name: 'Updated Cash',
+            account_type: 'credits',
           })
         )
       })
@@ -1821,7 +1830,8 @@ describe('AccountsPage', () => {
       await openDropdownAndClick(1, 'Details')
       const dialog = await screen.findByRole('dialog')
 
-      expect(within(dialog).getByLabelText('Type')).toHaveValue('plain')
+      const typeGroup = within(dialog).getByRole('group', { name: 'Type' })
+      expect(within(typeGroup).getByRole('button', { name: 'Plain' })).toHaveAttribute('aria-pressed', 'true')
       expect(within(dialog).queryByLabelText('Note')).not.toBeInTheDocument()
       expect(within(dialog).queryByLabelText('Due Date')).not.toBeInTheDocument()
       expect(within(dialog).queryByLabelText('Profitability')).not.toBeInTheDocument()
@@ -1853,6 +1863,7 @@ describe('AccountsPage', () => {
       await openDropdownAndClick(1, 'Details')
       const dialog = await screen.findByRole('dialog')
 
+      chooseType(dialog, 'Savings')
       expect(within(dialog).getByLabelText('Profitability')).toBeInTheDocument()
       fireEvent.change(within(dialog).getByLabelText('Note'), { target: { value: 'New fund' } })
       fireEvent.change(within(dialog).getByLabelText('Due Date'), { target: { value: '2026-07-01' } })
@@ -1876,7 +1887,7 @@ describe('AccountsPage', () => {
 
       await openDropdownAndClick(1, 'Details')
       const dialog = await screen.findByRole('dialog')
-      fireEvent.change(within(dialog).getByLabelText('Type'), { target: { value: 'credits' } })
+      chooseType(dialog, 'Credit')
 
       expect(within(dialog).getByLabelText('Loan Rate')).toBeInTheDocument()
       fireEvent.change(within(dialog).getByLabelText('Loan Rate'), { target: { value: '12' } })

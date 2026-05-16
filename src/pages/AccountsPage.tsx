@@ -58,11 +58,15 @@ export function AccountsPage() {
   const [submitting, setSubmitting] = useState(false)
 
   const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6', '#06B6D4', '#84CC16']
-  const ACCOUNT_TYPE_OPTIONS = [
+  const ACCOUNT_TYPE_OPTIONS: Array<{ value: AccountType; label: string }> = [
     { value: 'plain', label: 'Plain' },
     { value: 'savings', label: 'Savings' },
     { value: 'credits', label: 'Credit' },
   ]
+  const accountTypeButtonClass = (active: boolean) => `rounded-lg border px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${active
+    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+  }`
 
   useEffect(() => {
     loadData()
@@ -305,6 +309,31 @@ export function AccountsPage() {
 
   const typeLabel = (type?: AccountType) => type === 'savings' ? 'Savings' : type === 'credits' ? 'Credit' : 'Plain'
 
+  const AccountTypeSelector = ({
+    value,
+    onChange,
+  }: {
+    value: AccountType
+    onChange: (value: AccountType) => void
+  }) => (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+      <div className="grid grid-cols-3 gap-2" role="group" aria-label="Type">
+        {ACCOUNT_TYPE_OPTIONS.map(({ value: typeValue, label }) => (
+          <button
+            key={typeValue}
+            type="button"
+            aria-pressed={value === typeValue}
+            onClick={() => onChange(typeValue)}
+            className={accountTypeButtonClass(value === typeValue)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
   // Adjust balance handlers
   const openAdjustBalanceModal = (account: Account) => {
     setAdjustingAccount(account)
@@ -546,12 +575,7 @@ export function AccountsPage() {
               ))}
             </div>
           </div>
-          <Select
-            label="Type"
-            value={walletType}
-            onChange={(e) => setWalletType(e.target.value as AccountType)}
-            options={ACCOUNT_TYPE_OPTIONS}
-          />
+          <AccountTypeSelector value={walletType} onChange={setWalletType} />
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={closeWalletModal} className="flex-1">
               Cancel
@@ -609,12 +633,7 @@ export function AccountsPage() {
 
       <Modal isOpen={accountDataModalOpen} onClose={closeAccountDataModal} title="Account Details">
         <form onSubmit={handleAccountDataSubmit} className="space-y-4">
-          <Select
-            label="Type"
-            value={accountType}
-            onChange={(e) => setAccountType(e.target.value as AccountType)}
-            options={ACCOUNT_TYPE_OPTIONS}
-          />
+          <AccountTypeSelector value={accountType} onChange={setAccountType} />
           {accountType !== 'plain' && (
             <>
               <Input

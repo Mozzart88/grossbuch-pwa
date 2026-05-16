@@ -115,7 +115,7 @@ export function RecurringTransactionsPage() {
           <RecurrenceOptionsFields
             schedule={editSchedule}
             until={editUntil}
-            today={todayDate()}
+            today={editingPlan?.next_due_date ?? todayDate()}
             onScheduleChange={setEditSchedule}
             onUntilChange={setEditUntil}
           />

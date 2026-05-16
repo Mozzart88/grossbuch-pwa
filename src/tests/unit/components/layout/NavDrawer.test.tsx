@@ -90,6 +90,12 @@ describe('NavDrawer', () => {
       expect(screen.getByText('Exchanges')).toBeInTheDocument()
     })
 
+    it('renders Recurring Transactions link', () => {
+      renderDrawer(true)
+
+      expect(screen.getByText('Recurring Transactions')).toBeInTheDocument()
+    })
+
     it('renders Settings link', () => {
       renderDrawer(true)
 
@@ -125,6 +131,16 @@ describe('NavDrawer', () => {
       fireEvent.click(screen.getByText('Exchanges'))
 
       expect(mockNavigate).toHaveBeenCalledWith('/settings/exchange-rates')
+      expect(onClose).toHaveBeenCalled()
+    })
+
+    it('navigates to recurring transactions and closes drawer on Recurring Transactions click', () => {
+      const onClose = vi.fn()
+      renderDrawer(true, onClose)
+
+      fireEvent.click(screen.getByText('Recurring Transactions'))
+
+      expect(mockNavigate).toHaveBeenCalledWith('/settings/recurring')
       expect(onClose).toHaveBeenCalled()
     })
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, useNavigate } from 'react-router-dom'
 import { SummariesPage } from '../../../pages/SummariesPage'
 import { LayoutProvider, useLayoutContext } from '../../../store/LayoutContext'
@@ -1904,13 +1904,12 @@ describe('SummariesPage', () => {
 
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
 
-      const categorySelect = screen.getByLabelText('Category')
-      // Truthy branch: value '12'
-      fireEvent.change(categorySelect, { target: { value: '12' } })
-      // Falsy branch: clear to ''
-      fireEvent.change(categorySelect, { target: { value: '' } })
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Food' } })
+      fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Food' }))
 
-      // Verify form renders without crashing
+      expect(categoryInput).toHaveValue('Food')
       expect(screen.getByText('Set Budget')).toBeInTheDocument()
     })
 
@@ -1930,10 +1929,12 @@ describe('SummariesPage', () => {
 
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
 
-      const categorySelect = screen.getByLabelText('Category')
-      expect(categorySelect).toHaveTextContent('Savings')
-      expect(categorySelect).toHaveTextContent('Credit')
-      expect(categorySelect).not.toHaveTextContent('archived')
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      const listbox = screen.getByRole('listbox')
+      expect(listbox).toHaveTextContent('Savings')
+      expect(listbox).toHaveTextContent('Credit')
+      expect(listbox).not.toHaveTextContent('archived')
     })
 
     it('creates a credit refund budget from the system credit tag', async () => {
@@ -1951,7 +1952,10 @@ describe('SummariesPage', () => {
       fireEvent.click(screen.getByTestId('test-fab'))
       await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
 
-      fireEvent.change(screen.getByLabelText('Category'), { target: { value: '22:' } })
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Credit' } })
+      fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'Credit' }))
       fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '300' } })
       fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -1962,6 +1966,77 @@ describe('SummariesPage', () => {
             tag_context_id: null,
             type: 'expense',
             amount_int: 300,
+          })
+        )
+      })
+    })
+
+    it('switches budget type and does not offer category creation', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+
+      const listbox = screen.getByRole('listbox')
+      expect(listbox).toHaveTextContent('Consulting')
+      expect(listbox).not.toHaveTextContent('Food')
+
+      fireEvent.change(categoryInput, { target: { value: 'Not a category' } })
+      expect(screen.queryByText('Create "Not a category"')).not.toBeInTheDocument()
+    })
+
+    it('submits contextual category selections from the budget category search', async () => {
+      mockTagRepository.getContextOptions?.mockImplementation((type: 'income' | 'expense') => Promise.resolve(
+        type === 'expense'
+          ? [
+              { tag_id: 50, tag_name: 'Coffee', context_id: 12, context_name: 'Food', label: 'Coffee Food', type: 'expense' },
+            ]
+          : [
+              { tag_id: 24, tag_name: 'Consulting', context_id: null, context_name: null, label: 'Consulting', type: 'income' },
+            ]
+      ))
+
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => expect(screen.getByTestId('test-fab')).toBeInTheDocument())
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const categoryInput = screen.getByLabelText('Category')
+      fireEvent.focus(categoryInput)
+      fireEvent.change(categoryInput, { target: { value: 'Coffee' } })
+      fireEvent.click(within(screen.getByRole('listbox')).getByRole('option', { name: 'CoffeeFood' }))
+      fireEvent.change(screen.getByLabelText(/Amount/), { target: { value: '75' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        expect(mockBudgetRepository.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tag_id: 50,
+            tag_context_id: 12,
+            type: 'expense',
+            amount_int: 75,
           })
         )
       })

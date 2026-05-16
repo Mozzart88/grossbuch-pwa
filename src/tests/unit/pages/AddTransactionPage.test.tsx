@@ -210,6 +210,17 @@ describe('AddTransactionPage', () => {
     expect(recurringButton.className).toContain('text-gray-400')
   })
 
+  it('renders add another action before recurring transaction in the page header', async () => {
+    renderPage()
+
+    const addAnotherButton = await screen.findByRole('button', { name: /add another/i })
+    const recurringButton = await screen.findByRole('button', { name: /recurring transaction/i })
+    expect(addAnotherButton.closest('header')).toBeInTheDocument()
+    expect(addAnotherButton.compareDocumentPosition(recurringButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(addAnotherButton.className).toContain('p-2')
+    expect(addAnotherButton.className).toContain('text-gray-400')
+  })
+
   it('toggles recurring transaction action without opening setup immediately', async () => {
     renderPage()
 
@@ -328,15 +339,16 @@ describe('AddTransactionPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith(-1)
   })
 
-  it('keeps add form open and resets entry fields when Add another is checked', async () => {
+  it('keeps add form open and resets entry fields when Add another is enabled', async () => {
     renderPage()
 
     await waitFor(() => {
       expect(screen.getByText('Account')).toBeInTheDocument()
     })
 
-    const addAnother = screen.getByRole('checkbox', { name: /add another/i })
+    const addAnother = screen.getByRole('button', { name: /add another/i })
     fireEvent.click(addAnother)
+    expect(addAnother).toHaveAttribute('aria-pressed', 'true')
 
     const amountInput = screen.getByPlaceholderText('0.00')
     fireEvent.change(amountInput, { target: { value: '50' } })
@@ -360,7 +372,7 @@ describe('AddTransactionPage', () => {
     })
 
     expect(mockNavigate).not.toHaveBeenCalled()
-    expect(addAnother).toBeChecked()
+    expect(addAnother).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('combobox', { name: /wallet/i })).toHaveValue('1')
     expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('1')
   })

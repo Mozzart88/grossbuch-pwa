@@ -135,6 +135,13 @@ describe('SettingsPage', () => {
       expect(screen.queryByText('Exchange Rates')).not.toBeInTheDocument()
       expect(screen.queryByText('Set currency exchange rates')).not.toBeInTheDocument()
     })
+
+    it('does not render Recurring Transactions link', () => {
+      renderPage()
+
+      expect(screen.queryByText('Recurring Transactions')).not.toBeInTheDocument()
+      expect(screen.queryByText('Manage planned repeated transactions')).not.toBeInTheDocument()
+    })
   })
 
   describe('Settings links — present items', () => {

@@ -19,6 +19,8 @@ interface ExchangeTransactionFormProps {
   onCancel: () => void
   useActionBar?: boolean
   showAddAnother?: boolean
+  addAnother?: boolean
+  onAddAnotherChange?: (checked: boolean) => void
   onBeforeCreate?: TransactionSubmitInterceptor
 }
 
@@ -41,6 +43,8 @@ export function ExchangeTransactionForm({
   onCancel,
   useActionBar = false,
   showAddAnother = false,
+  addAnother: controlledAddAnother,
+  onAddAnotherChange,
   onBeforeCreate,
 }: ExchangeTransactionFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
@@ -56,8 +60,10 @@ export function ExchangeTransactionForm({
   const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [addAnother, setAddAnother] = useState(false)
+  const [localAddAnother, setLocalAddAnother] = useState(false)
   const isEditing = !!initialData && !createFromInitialData
+  const addAnother = controlledAddAnother ?? localAddAnother
+  const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
 
   // Populate from initial data
   useEffect(() => {
@@ -344,7 +350,7 @@ export function ExchangeTransactionForm({
       </div>
 
       {/* Actions */}
-      {showAddAnother && !isEditing && (
+      {showAddAnother && !isEditing && !onAddAnotherChange && (
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"

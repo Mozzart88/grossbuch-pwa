@@ -4,12 +4,12 @@ import { useLayoutContext } from '../store/LayoutContext'
 import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
-import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast, ChevronIcon } from '../components/ui'
+import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast, ChevronIcon, LiveSearch, Badge } from '../components/ui'
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrencyValue } from '../utils/formatters'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
-import { encodeTagSelection, parseTagSelection } from '../components/transactions/transactionFormShared'
+import { encodeTagSelection, parseTagSelection, toTagLiveSearchOptions, type TagLiveSearchOption } from '../components/transactions/transactionFormShared'
 import type {
   MonthSummary as MonthSummaryType,
   MonthlyTagSummary,
@@ -495,6 +495,19 @@ export function SummariesPage() {
   const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
   const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
   const typeTagOptions = selectedBudgetType === 'income' ? incomeTagOptions : expenseTagOptions
+  const budgetCategoryOptions = toTagLiveSearchOptions(typeTagOptions).map(option => {
+    const source = typeTagOptions.find(tag => encodeTagSelection(tag.tag_id, tag.context_id) === String(option.value))
+    if (!source?.label || source.context_name) return option
+    return {
+      ...option,
+      label: source.label,
+      tagName: source.label,
+    }
+  })
+  const budgetTypeButtonClass = (active: boolean) => `rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${active
+    ? 'bg-primary-100 border-primary-500 text-primary-700 dark:bg-primary-900 dark:text-primary-300'
+    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+  }`
 
   const buildFlatTagSummaryRows = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
     const byTagId = new Map<number, MonthlyTagSummary>()
@@ -979,32 +992,48 @@ export function SummariesPage() {
       {/* Budget Modal */}
       <Modal isOpen={modalOpen} onClose={closeBudgetModal} title={editingBudget ? 'Edit Budget' : 'Set Budget'}>
         <form onSubmit={handleBudgetSubmit} className="space-y-4">
-          <Select
-            label="Type"
-            value={selectedBudgetType}
-            onChange={(e) => {
-              setSelectedBudgetType(e.target.value as 'income' | 'expense')
-              setSelectedTagSelection('')
-            }}
-            required
-            disabled={!!editingBudget}
-            options={[
-              { value: 'income', label: 'Income' },
-              { value: 'expense', label: 'Expense' },
-            ]}
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['expense', 'income'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    if (editingBudget) return
+                    setSelectedBudgetType(type)
+                    setSelectedTagSelection('')
+                  }}
+                  disabled={!!editingBudget}
+                  className={budgetTypeButtonClass(selectedBudgetType === type)}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <Select
+          <LiveSearch
             label="Category"
             value={selectedTagSelection}
-            onChange={(e) => setSelectedTagSelection(e.target.value)}
-            required
+            onChange={(value) => setSelectedTagSelection(`${value}`)}
             disabled={!!editingBudget || selectedTagSelection !== ''}
             placeholder="Select a category"
-            options={typeTagOptions.map((tag) => ({
-              value: encodeTagSelection(tag.tag_id, tag.context_id),
-              label: tag.label,
-            }))}
+            options={budgetCategoryOptions}
+            renderOption={(option) => {
+              const tagOption = option as TagLiveSearchOption
+              return (
+                <span className="inline-flex items-center">
+                  <span>{tagOption.tagName ?? option.label}</span>
+                  {tagOption.contextName && <Badge variant="secondary">{tagOption.contextName}</Badge>}
+                </span>
+              )
+            }}
+            getDisplayValue={(option) => (option as TagLiveSearchOption).tagName ?? option.label}
+            renderSelectedBadge={(option) => {
+              const contextName = (option as TagLiveSearchOption).contextName
+              return contextName ? <Badge variant="secondary" className="ml-0">{contextName}</Badge> : null
+            }}
           />
 
           <AmountInput
