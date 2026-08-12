@@ -131,8 +131,8 @@ export function PinLoginPage() {
   )
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center p-4">
+      <div className="flex-1 w-full max-w-sm flex flex-col justify-center">
         <div className="text-center mb-8">
           <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center">
             <svg className="w-10 h-10 text-primary-600 dark:text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -201,6 +201,10 @@ export function PinLoginPage() {
           Your data is encrypted with your PIN
         </p>
       </div>
+
+      <p className="shrink-0 text-center text-xs text-gray-400 dark:text-gray-500">
+        GrossBuh v{__APP_VERSION__}
+      </p>
 
       <WipeConfirmModal
         isOpen={showWipeModal}

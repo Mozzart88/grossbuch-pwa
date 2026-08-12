@@ -101,6 +101,12 @@ describe('NavDrawer', () => {
 
       expect(screen.getByText('Settings')).toBeInTheDocument()
     })
+
+    it('renders app version', () => {
+      renderDrawer(true)
+
+      expect(screen.getByText(`GrossBuh v${__APP_VERSION__}`)).toBeInTheDocument()
+    })
   })
 
   describe('Navigation', () => {

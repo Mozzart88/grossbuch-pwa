@@ -389,6 +389,11 @@ describe('PinLoginPage', () => {
     expect(screen.getByText('Forgot PIN?')).toBeInTheDocument()
   })
 
+  it('shows app version', () => {
+    render(<PinLoginPage />)
+    expect(screen.getByText(`GrossBuh v${__APP_VERSION__}`)).toBeInTheDocument()
+  })
+
   it('disables unlock button when PIN too short', () => {
     render(<PinLoginPage />)
     expect(screen.getByText('Unlock')).toBeDisabled()

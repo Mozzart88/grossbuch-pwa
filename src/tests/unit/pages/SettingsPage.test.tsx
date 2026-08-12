@@ -236,10 +236,10 @@ describe('SettingsPage', () => {
   })
 
   describe('App info', () => {
-    it('renders app version', () => {
+    it('does not render app version', () => {
       renderPage()
 
-      expect(screen.getByText(`GrossBuh v${__APP_VERSION__}`)).toBeInTheDocument()
+      expect(screen.queryByText(`GrossBuh v${__APP_VERSION__}`)).not.toBeInTheDocument()
     })
 
     it('renders data storage info', () => {
