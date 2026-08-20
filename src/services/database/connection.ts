@@ -67,6 +67,7 @@ interface SendMessageOptions {
   key?: string
   newKey?: string
   filename?: string
+  schema?: string
 }
 
 function sendMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
@@ -115,6 +116,34 @@ export async function rekeyDatabase(key: string, newKey: string): Promise<void> 
 export async function wipeDatabase(): Promise<void> {
   await sendMessage('wipe')
   initPromise = null
+}
+
+export async function attachDatabase(schema: string, filename: string, key: string): Promise<void> {
+  await sendMessage('attach', { schema, filename, key })
+}
+
+export async function detachDatabase(schema: string): Promise<void> {
+  await sendMessage('detach', { schema })
+}
+
+export async function rekeySchema(schema: string, newKey: string): Promise<void> {
+  await sendMessage('rekey_schema', { schema, newKey })
+}
+
+export async function finalizeMainRebuild(tempFilename: string, key: string): Promise<void> {
+  await sendMessage('finalize_main_rebuild', { filename: tempFilename, key })
+}
+
+export async function deleteFile(filename: string): Promise<void> {
+  await sendMessage('delete_file', { filename })
+}
+
+export async function validateReferenceExists(qualifiedTable: string, idColumn: string, id: unknown): Promise<boolean> {
+  const row = await queryOne<Record<string, unknown>>(
+    `SELECT 1 FROM ${qualifiedTable} WHERE ${idColumn} = ?`,
+    [id]
+  )
+  return row !== null
 }
 
 export async function exportDecryptedDatabase(filename: string, key: string): Promise<ArrayBuffer> {

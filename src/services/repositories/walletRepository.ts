@@ -2,6 +2,8 @@ import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Wallet, WalletInput, Account, AccountType } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { transactionRepository } from './transactionRepository'
+import { tagReferences } from './tagReferences'
+import { inheritWalletTypeTags } from './accountTypeTags'
 import { toIntFrac } from '../../utils/amount'
 
 function accountTypeSelect(alias = 'a') {
@@ -26,6 +28,22 @@ async function getAccountTypeTagId(accountType: AccountType): Promise<number | n
   return row?.id ?? null
 }
 
+async function clearAccountTypeTagsForWallet(walletId: number): Promise<void> {
+  const oldAccountTypeTags = await querySQL<{ tag_id: number }>(`
+    SELECT tag_id FROM account_to_tags
+    WHERE account_id IN (SELECT id FROM account WHERE wallet_id = ?)
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [walletId])
+  await execSQL(`
+    DELETE FROM account_to_tags
+    WHERE account_id IN (SELECT id FROM account WHERE wallet_id = ?)
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [walletId])
+  for (const tag of oldAccountTypeTags) {
+    await tagReferences.decrement(tag.tag_id)
+  }
+}
+
 async function syncWalletType(walletId: number, accountType: AccountType): Promise<void> {
   if (accountType !== 'plain') {
     const duplicate = await queryOne<{ currency_id: number; count: number }>(`
@@ -41,34 +59,57 @@ async function syncWalletType(walletId: number, accountType: AccountType): Promi
     }
   }
 
+  const oldWalletTypeTags = await querySQL<{ tag_id: number }>(`
+    SELECT tag_id FROM wallet_to_tags
+    WHERE wallet_id = ?
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [walletId])
   await execSQL(`
     DELETE FROM wallet_to_tags
     WHERE wallet_id = ?
       AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
   `, [walletId])
+  for (const tag of oldWalletTypeTags) {
+    await tagReferences.decrement(tag.tag_id)
+  }
 
   const typeTagId = await getAccountTypeTagId(accountType)
   if (typeTagId) {
     await execSQL('INSERT OR IGNORE INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [walletId, typeTagId])
+    await tagReferences.increment(typeTagId)
+
+    // Propagate the wallet's type onto all its accounts.
+    // Ported from trg_wallet_type_propagate_insert (see design.md).
+    await clearAccountTypeTagsForWallet(walletId)
+    const accounts = await querySQL<{ id: number }>('SELECT id FROM account WHERE wallet_id = ?', [walletId])
+    for (const account of accounts) {
+      await execSQL('INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [account.id, typeTagId])
+      await tagReferences.increment(typeTagId)
+    }
   } else {
-    await execSQL(`
-      DELETE FROM account_to_tags
-      WHERE account_id IN (SELECT id FROM account WHERE wallet_id = ?)
-        AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
-    `, [walletId])
+    await clearAccountTypeTagsForWallet(walletId)
   }
 }
 
 async function syncAccountType(accountId: number, accountType: AccountType): Promise<void> {
+  const oldTags = await querySQL<{ tag_id: number }>(`
+    SELECT tag_id FROM account_to_tags
+    WHERE account_id = ?
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [accountId])
   await execSQL(`
     DELETE FROM account_to_tags
     WHERE account_id = ?
       AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
   `, [accountId])
+  for (const tag of oldTags) {
+    await tagReferences.decrement(tag.tag_id)
+  }
 
   const typeTagId = await getAccountTypeTagId(accountType)
   if (typeTagId) {
     await execSQL('INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [accountId, typeTagId])
+    await tagReferences.increment(typeTagId)
   }
 }
 
@@ -262,14 +303,17 @@ export const walletRepository = {
   async setDefault(id: number): Promise<void> {
     // The trigger will remove default from other wallets
     await execSQL('INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
+    await tagReferences.increment(SYSTEM_TAGS.DEFAULT)
   },
 
   async archive(id: number): Promise<void> {
     await execSQL('INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.ARCHIVED])
+    await tagReferences.increment(SYSTEM_TAGS.ARCHIVED)
   },
 
   async unarchive(id: number): Promise<void> {
     await execSQL('DELETE FROM wallet_to_tags WHERE wallet_id = ? AND tag_id = ?', [id, SYSTEM_TAGS.ARCHIVED])
+    await tagReferences.decrement(SYSTEM_TAGS.ARCHIVED)
   },
 
   async delete(id: number): Promise<void> {
@@ -284,8 +328,26 @@ export const walletRepository = {
       throw new Error(`Cannot delete: ${txCount.count} transactions linked to accounts in this wallet`)
     }
 
+    // wallet_to_tags and account_to_tags rows cascade-delete with the wallet/accounts;
+    // decrement their tag references first since the cascade bypasses application code
+    const walletTags = await querySQL<{ tag_id: number }>(
+      'SELECT tag_id FROM wallet_to_tags WHERE wallet_id = ?',
+      [id]
+    )
+    const accountTags = await querySQL<{ tag_id: number }>(
+      'SELECT tag_id FROM account_to_tags WHERE account_id IN (SELECT id FROM account WHERE wallet_id = ?)',
+      [id]
+    )
+
     // Accounts will be deleted by CASCADE
     await execSQL('DELETE FROM wallet WHERE id = ?', [id])
+
+    for (const tag of walletTags) {
+      await tagReferences.decrement(tag.tag_id)
+    }
+    for (const tag of accountTags) {
+      await tagReferences.decrement(tag.tag_id)
+    }
   },
 
   // Add an account (currency) to the wallet
@@ -305,6 +367,7 @@ export const walletRepository = {
       [walletId, currencyId]
     )
     const id = await getLastInsertId()
+    await inheritWalletTypeTags(id, walletId)
     if (accountType !== undefined) {
       await syncAccountType(id, finalType)
     }
@@ -370,6 +433,7 @@ export const walletRepository = {
       await execSQL('INSERT INTO wallet (name, color) VALUES (?, ?)', ['Virtual', '#808080'])
       const walletId = await getLastInsertId()
       await execSQL('INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)', [walletId, SYSTEM_TAGS.SYSTEM])
+      await tagReferences.increment(SYSTEM_TAGS.SYSTEM)
       virtualWallet = await this.findById(walletId)
       if (!virtualWallet) throw new Error('Failed to create virtual wallet')
     }
@@ -395,6 +459,7 @@ export const walletRepository = {
       'INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
       [accountId, SYSTEM_TAGS.SYSTEM]
     )
+    await tagReferences.increment(SYSTEM_TAGS.SYSTEM)
 
     const account = await queryOne<Account>(`
       SELECT

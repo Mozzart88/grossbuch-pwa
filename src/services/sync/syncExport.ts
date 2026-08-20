@@ -124,7 +124,7 @@ export async function exportSyncPackage(
 
 async function exportIcons(since: number): Promise<SyncIcon[]> {
   return querySQL<SyncIcon>(
-    `SELECT id, value, updated_at FROM icon WHERE updated_at >= ?`,
+    `SELECT id, value, updated_at FROM shared.icon WHERE updated_at >= ?`,
     [since]
   )
 }
@@ -139,18 +139,18 @@ async function exportTags(since: number): Promise<SyncTag[]> {
       t.updated_at,
       COALESCE(
         (SELECT GROUP_CONCAT(parent_id, ',')
-         FROM tag_to_tag
+         FROM shared.tag_to_tag
          WHERE child_id = t.id AND parent_id > 1),
         ''
       ) as parents,
       COALESCE(
         (SELECT GROUP_CONCAT(child_id, ',')
-         FROM tag_to_tag
+         FROM shared.tag_to_tag
          WHERE parent_id = t.id),
         ''
       ) as children,
-      (SELECT icon_id FROM tag_icon WHERE tag_id = t.id) as icon
-    FROM tag t
+      (SELECT icon_id FROM shared.tag_icon WHERE tag_id = t.id) as icon
+    FROM shared.tag t
     WHERE t.updated_at >= ?
       AND ((t.id BETWEEN 11 AND 21) OR t.id > 23)`,
     [since]
@@ -170,11 +170,11 @@ async function exportWallets(since: number): Promise<SyncWallet[]> {
       w.updated_at,
       COALESCE(
         (SELECT GROUP_CONCAT(tag_id, ',')
-         FROM wallet_to_tags w2t
+         FROM workspace.wallet_to_tags w2t
          WHERE w2t.wallet_id = w.id),
         ''
       ) as tags
-    FROM wallet w
+    FROM workspace.wallet w
     WHERE w.updated_at >= ?`,
     [since]
   ).then(rows => rows.map(r => ({
@@ -192,15 +192,15 @@ async function exportAccounts(since: number): Promise<SyncAccount[]> {
       a.updated_at,
       COALESCE(
         (SELECT GROUP_CONCAT(tag_id, ',')
-         FROM account_to_tags a2t
+         FROM workspace.account_to_tags a2t
          WHERE a2t.account_id = a.id),
         ''
       ) as tags,
       ad.note,
       ad.due_date,
       ad.rate
-    FROM account a
-    LEFT JOIN account_data ad ON ad.account_id = a.id
+    FROM workspace.account a
+    LEFT JOIN workspace.account_data ad ON ad.account_id = a.id
     WHERE a.updated_at >= ?`,
     [since]
   ).then(rows => rows.map(r => ({
@@ -215,14 +215,14 @@ async function exportCounterparties(since: number): Promise<SyncCounterparty[]> 
       cp.id,
       cp.name,
       cp.updated_at,
-      (SELECT cn.note FROM counterparty_note cn WHERE cn.counterparty_id = cp.id) as note,
+      (SELECT cn.note FROM shared.counterparty_note cn WHERE cn.counterparty_id = cp.id) as note,
       COALESCE(
         (SELECT GROUP_CONCAT(c2t.tag_id, ',')
-         FROM counterparty_to_tags c2t
+         FROM shared.counterparty_to_tags c2t
          WHERE c2t.counterparty_id = cp.id),
         ''
       ) as tags
-    FROM counterparty cp
+    FROM shared.counterparty cp
     WHERE cp.updated_at >= ?`,
     [since]
   ).then(rows => rows.map(r => ({
@@ -235,21 +235,22 @@ async function exportCurrencies(since: number): Promise<SyncCurrency[]> {
   return querySQL<SyncCurrency>(
     `SELECT
       c.id,
+      c.code,
       c.decimal_places,
       c.updated_at,
       COALESCE(
         (SELECT GROUP_CONCAT(c2t.tag_id, ',')
-         FROM currency_to_tags c2t
+         FROM shared.currency_to_tags c2t
          WHERE c2t.currency_id = c.id),
         ''
       ) as tags,
-      (SELECT er.rate_int FROM exchange_rate er
+      (SELECT er.rate_int FROM shared.exchange_rate er
        WHERE er.currency_id = c.id
        ORDER BY er.updated_at DESC LIMIT 1) as rate_int,
-      (SELECT er.rate_frac FROM exchange_rate er
+      (SELECT er.rate_frac FROM shared.exchange_rate er
        WHERE er.currency_id = c.id
        ORDER BY er.updated_at DESC LIMIT 1) as rate_frac
-    FROM currency c
+    FROM shared.currency c
     WHERE c.updated_at >= ?`,
     [since]
   ).then(rows => rows.map(r => ({
@@ -288,9 +289,9 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
       hex(t.id) as id,
       t.timestamp,
       t.updated_at,
-      (SELECT t2c.counterparty_id FROM trx_to_counterparty t2c WHERE t2c.trx_id = t.id) as counterparty,
-      (SELECT tn.note FROM trx_note tn WHERE tn.trx_id = t.id) as note
-    FROM trx t
+      (SELECT t2c.counterparty_id FROM workspace.trx_to_counterparty t2c WHERE t2c.trx_id = t.id) as counterparty,
+      (SELECT tn.note FROM workspace.trx_note tn WHERE tn.trx_id = t.id) as note
+    FROM workspace.trx t
     WHERE t.updated_at >= ?`,
     [since]
   )
@@ -313,8 +314,8 @@ async function exportTransactions(since: number): Promise<SyncTransaction[]> {
       tb.amount_frac,
       tb.rate_int,
       tb.rate_frac
-    FROM trx_base tb
-    LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+    FROM workspace.trx_base tb
+    LEFT JOIN workspace.trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
     WHERE hex(tb.trx_id) IN (${placeholders})`,
     trxIds
   )
@@ -359,8 +360,8 @@ async function exportBudgets(since: number): Promise<SyncBudget[]> {
       b.amount_int,
       b.amount_frac,
       b.updated_at
-    FROM budget b
-    LEFT JOIN budget_tag_context bctx ON bctx.budget_id = b.id
+    FROM workspace.budget b
+    LEFT JOIN workspace.budget_tag_context bctx ON bctx.budget_id = b.id
     WHERE b.updated_at >= ?`,
     [since]
   )
@@ -376,7 +377,7 @@ async function exportNotifications(since: number): Promise<SyncNotification[]> {
       readed_at,
       updated_at,
       payload
-    FROM notification
+    FROM shared.notification
     WHERE updated_at >= ?`,
     [since]
   )
@@ -396,7 +397,7 @@ async function exportRecurringPlans(since: number): Promise<SyncRecurringPlan[]>
       status,
       created_at,
       updated_at
-    FROM recurring_plan
+    FROM workspace.recurring_plan
     WHERE updated_at >= ?`,
     [since]
   )
@@ -411,7 +412,7 @@ async function exportRecurringOccurrences(since: number): Promise<SyncRecurringO
       CASE WHEN notification_id IS NULL THEN NULL ELSE hex(notification_id) END as notification_id,
       created_at,
       updated_at
-    FROM recurring_occurrence
+    FROM workspace.recurring_occurrence
     WHERE updated_at >= ?`,
     [since]
   )
@@ -424,7 +425,7 @@ async function exportRecurringBudgets(since: number): Promise<SyncRecurringBudge
       hex(plan_id) as plan_id,
       due_month,
       updated_at
-    FROM recurring_budget
+    FROM workspace.recurring_budget
     WHERE updated_at >= ?`,
     [since]
   )

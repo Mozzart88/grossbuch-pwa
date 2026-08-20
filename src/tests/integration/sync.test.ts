@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest'
+import initSqlJs from 'sql.js'
 import { SYSTEM_TAGS } from '../../types'
 import {
   setupTestDatabase,
@@ -102,6 +103,7 @@ describe('Sync Integration', () => {
       const usd = pkg.currencies.find(c => c.id === usdId)
       expect(usd).toBeDefined()
       expect(usd!.decimal_places).toBe(2)
+      expect(usd!.code).toBe('USD')
     })
 
     it('exports transactions with lines and counterparty', async () => {
@@ -1595,32 +1597,68 @@ describe('Sync Integration', () => {
       expect(result.errors.length).toBeGreaterThan(0)
     })
 
-    it('migration v17 removes orphan transaction children and recalculates balances', () => {
-      const db = getTestDatabase()
-      const walletId = insertWallet({ name: 'V17Wallet' })
-      const usdId = getCurrencyIdByCode('USD')
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
-      const recalculatedAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
-      const manyFractionAccountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
-      const cpId = insertCounterparty({ name: 'V17CP' })
+    // v17 is a `main`-schema-hardcoded historical repair migration (it contains
+    // `CREATE TRIGGER trg_account_update ... ON account`, unqualified DDL that
+    // defaults to `main`). It only ever runs pre-split, during the initial v1-v24
+    // replay inside setupTestDatabase() — by the time any test body runs, that
+    // replay has already happened and legacyMigration.ts has moved account/trx_base/
+    // etc. out of `main` into shared/workspace and dropped them. So this test can't
+    // reuse the shared post-split `db`; it gets its own isolated pre-split database
+    // (replaying only migrations 1-17) to test what v17 actually runs against in production.
+    it('migration v17 removes orphan transaction children and recalculates balances', async () => {
+      const SQL = await initSqlJs()
+      const db = new SQL.Database()
+      db.run('PRAGMA foreign_keys = ON')
+      // migrations[N] arrays are mutated in place with BEGIN/COMMIT wrappers the
+      // first time any setupTestDatabase() call replays them (module-level shared
+      // object) — this file's own beforeAll already did that, so don't wrap again here.
+      for (let version = 1; version <= 17; version++) {
+        const statements = migrations[version]
+        if (!statements) continue
+        for (const sql of statements) {
+          try {
+            db.run(sql)
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error)
+            if (!msg.includes('no such table') && !msg.includes('no such column') && !msg.includes('UNIQUE constraint failed')) {
+              throw error
+            }
+          }
+        }
+      }
+
+      // v4 already seeds the full currency list (including USD) during the replay above
+      const usdId = Number(db.exec(`SELECT id FROM currency WHERE code = 'USD'`)[0].values[0][0])
+      db.run(`INSERT INTO wallet (name) VALUES ('V17Wallet')`)
+      const walletId = Number(db.exec(`SELECT id FROM wallet WHERE name = 'V17Wallet'`)[0].values[0][0])
+      db.run(`INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)`, [walletId, usdId])
+      const accountId = Number(db.exec('SELECT last_insert_rowid()')[0].values[0][0])
+      db.run(`INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)`, [walletId, usdId])
+      const recalculatedAccountId = Number(db.exec('SELECT last_insert_rowid()')[0].values[0][0])
+      db.run(`INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)`, [walletId, usdId])
+      const manyFractionAccountId = Number(db.exec('SELECT last_insert_rowid()')[0].values[0][0])
+      db.run(`INSERT INTO counterparty (name) VALUES ('V17CP')`)
+      const cpId = Number(db.exec(`SELECT id FROM counterparty WHERE name = 'V17CP'`)[0].values[0][0])
+
+      function insertTrx(accountId: number, tagId: number, sign: '+' | '-', amountInt: number, amountFrac: number) {
+        const trxId = new Uint8Array(8)
+        crypto.getRandomValues(trxId)
+        const trxBaseId = new Uint8Array(8)
+        crypto.getRandomValues(trxBaseId)
+        db.run('INSERT INTO trx (id) VALUES (?)', [trxId])
+        db.run(
+          'INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)',
+          [trxBaseId, trxId, accountId, tagId, sign, amountInt, amountFrac]
+        )
+      }
+
+      insertTrx(recalculatedAccountId, SYSTEM_TAGS.INCOME, '+', 2, 250000000000000000)
+      for (let i = 0; i < 20; i++) {
+        insertTrx(manyFractionAccountId, SYSTEM_TAGS.INCOME, '+', 0, 900000000000000000)
+      }
+
       const orphanTrxId = new Uint8Array([0xcd, 0x67, 0x72, 0x14, 0xc6, 0x9f, 0xa7, 0x43])
       const orphanLineId = new Uint8Array([0x43, 0xa7, 0x9f, 0xc6, 0x14, 0x72, 0x67, 0xcd])
-      insertTransaction({
-        account_id: recalculatedAccountId,
-        tag_id: SYSTEM_TAGS.INCOME,
-        sign: '+',
-        amount_int: 2,
-        amount_frac: 250000000000000000,
-      })
-      for (let i = 0; i < 20; i++) {
-        insertTransaction({
-          account_id: manyFractionAccountId,
-          tag_id: SYSTEM_TAGS.INCOME,
-          sign: '+',
-          amount_int: 0,
-          amount_frac: 900000000000000000,
-        })
-      }
 
       db.run('PRAGMA foreign_keys = OFF')
       db.run(
@@ -1658,6 +1696,8 @@ describe('Sync Integration', () => {
       expect(after[0]?.values[0]).toEqual(['0', '0'])
       expect(recalculated[0]?.values[0]).toEqual(['2', '250000000000000000'])
       expect(manyFractionRecalculated[0]?.values[0]).toEqual(['18', '0'])
+
+      db.close()
     })
   })
 

@@ -77,7 +77,10 @@ export function DownloadPage() {
 
     // Create blob and download
     const blob = new Blob([decryptedData], { type: 'application/x-sqlite3' })
-    const decryptedFilename = pinPromptModal.filename.replace('.sqlite3', '-decrypted.sqlite3')
+    // Extension-agnostic (main.db/shared.db/workspace-N.db as well as any
+    // legacy .sqlite3 file still lingering in OPFS) — inserts "-decrypted"
+    // before the last extension rather than assuming '.sqlite3' specifically.
+    const decryptedFilename = pinPromptModal.filename.replace(/(\.[^.]+)$/, '-decrypted$1')
     downloadFile(blob, decryptedFilename)
 
     showToast('Decrypted export successful', 'success')

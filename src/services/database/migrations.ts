@@ -1,8 +1,8 @@
 import { execSQL, queryOne } from './connection'
 import { CURRENCIES } from './currencyData'
-import { v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23 } from './versions'
+import { v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24 } from './versions'
 
-export const CURRENT_VERSION = 23
+export const CURRENT_VERSION = 24
 
 // Generate currency INSERT statements for migration v4
 function generateCurrencyInsertSQL(): string {
@@ -1445,7 +1445,13 @@ ORDER BY id
   21: [v21],
   22: [v22],
   23: [v23],
+  24: [v24],
 }
+
+// Version 24 renames the version-tracking row's home from `settings` to
+// `app_settings` (see v24.ts). Below that version `settings` is authoritative;
+// from 24 on, `app_settings` is (and `settings` no longer exists).
+const APP_SETTINGS_VERSION = 24
 
 export async function runMigrations(): Promise<void> {
   // Check current version
@@ -1453,12 +1459,20 @@ export async function runMigrations(): Promise<void> {
 
   try {
     const result = await queryOne<{ value: string }>(
-      `SELECT value FROM settings WHERE key = 'db_version'`
+      `SELECT value FROM app_settings WHERE key = 'db_version'`
     )
-    currentVersion = result ? parseInt(result.value, 10) : 0
+    if (result === null) throw new Error('app_settings not populated yet')
+    currentVersion = parseInt(result.value, 10)
   } catch {
-    // Table doesn't exist yet, version is 0
-    currentVersion = 0
+    try {
+      const result = await queryOne<{ value: string }>(
+        `SELECT value FROM settings WHERE key = 'db_version'`
+      )
+      currentVersion = result ? parseInt(result.value, 10) : 0
+    } catch {
+      // Neither table exists yet, version is 0
+      currentVersion = 0
+    }
   }
 
   // Run migrations
@@ -1470,9 +1484,15 @@ export async function runMigrations(): Promise<void> {
       await execSQL(statements.join(' '))
       // Update version
       if (version > 1) {
-        await execSQL(`UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'db_version'`, [
-          version.toString(),
-        ])
+        if (version >= APP_SETTINGS_VERSION) {
+          await execSQL(`UPDATE app_settings SET value = ?, updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE key = 'db_version'`, [
+            version.toString(),
+          ])
+        } else {
+          await execSQL(`UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'db_version'`, [
+            version.toString(),
+          ])
+        }
       }
     }
   }

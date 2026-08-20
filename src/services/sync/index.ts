@@ -1,5 +1,6 @@
 import { queryOne, setSuppressWriteNotifications } from '../database/connection'
 import { settingsRepository } from '../repositories/settingsRepository'
+import { linkedDeviceRepository } from '../repositories/linkedDeviceRepository'
 import { exportSyncPackage, exportChunkedSyncPackages } from './syncExport'
 import { importSyncPackage } from './syncImport'
 import { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } from './syncTriggers'
@@ -33,23 +34,16 @@ export async function getInstallationData(): Promise<InstallationData | null> {
 
 export async function getPrivateKey(): Promise<string | null> {
   const row = await queryOne<{ value: string }>(
-    `SELECT value FROM auth_settings WHERE key = 'private_key'`
+    `SELECT value FROM app_settings WHERE key = 'private_key'`
   )
   return row?.value ?? null
 }
 
 export async function getLinkedInstallations(): Promise<Array<{ installation_id: string; public_key: string }>> {
-  const raw = await settingsRepository.get('linked_installations')
-  if (!raw) return []
-  try {
-    const parsed = JSON.parse(String(raw))
-    if (typeof parsed !== 'object' || parsed === null) return []
-    return Object.entries(parsed)
-      .filter(([, pk]) => typeof pk === 'string' && pk.length > 0)
-      .map(([id, pk]) => ({ installation_id: id, public_key: pk as string }))
-  } catch {
-    return []
-  }
+  const devices = await linkedDeviceRepository.findAll()
+  return devices
+    .filter(d => d.public_key.length > 0)
+    .map(d => ({ installation_id: d.id, public_key: d.public_key }))
 }
 
 interface PushSyncOptions {

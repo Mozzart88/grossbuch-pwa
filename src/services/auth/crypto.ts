@@ -112,6 +112,78 @@ export function generateJwtSalt(): string {
 }
 
 /**
+ * Generate a new 256-bit database encryption key (hex-encoded), independent
+ * of any PIN derivation. Used as DEK_shared.
+ */
+export function generateDEK(): string {
+  return bytesToHex(generateRandomBytes(32))
+}
+
+export interface WrappedSharedKey {
+  ciphertext: string // hex-encoded AES-GCM ciphertext
+  iv: string          // hex-encoded 12-byte GCM IV
+}
+
+const SHARED_KEY_WRAP_INFO = new TextEncoder().encode('GrossBuh-Shared-DEK-Wrap')
+const SHARED_KEY_WRAP_SALT = new Uint8Array(32) // 32 zero bytes
+
+/**
+ * Derive a 256-bit AES-GCM key-encryption-key from DEK_app via HKDF-SHA256,
+ * so DEK_app is never used directly as an AES key.
+ */
+async function deriveSharedKeyKEK(dekAppHex: string): Promise<CryptoKey> {
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    hexToBytes(dekAppHex) as BufferSource,
+    'HKDF',
+    false,
+    ['deriveKey']
+  )
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: SHARED_KEY_WRAP_SALT,
+      info: SHARED_KEY_WRAP_INFO,
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  )
+}
+
+/**
+ * Wrap DEK_shared under DEK_app for storage in the App DB
+ */
+export async function wrapSharedDEK(dekSharedHex: string, dekAppHex: string): Promise<WrappedSharedKey> {
+  const kek = await deriveSharedKeyKEK(dekAppHex)
+  const iv = generateRandomBytes(12)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv as BufferSource },
+    kek,
+    hexToBytes(dekSharedHex) as BufferSource
+  )
+  return {
+    ciphertext: bytesToHex(new Uint8Array(ciphertext)),
+    iv: bytesToHex(iv),
+  }
+}
+
+/**
+ * Unwrap DEK_shared using DEK_app. Throws if dekAppHex is wrong (GCM auth tag mismatch).
+ */
+export async function unwrapSharedDEK(wrapped: WrappedSharedKey, dekAppHex: string): Promise<string> {
+  const kek = await deriveSharedKeyKEK(dekAppHex)
+  const plaintext = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: hexToBytes(wrapped.iv) as BufferSource },
+    kek,
+    hexToBytes(wrapped.ciphertext) as BufferSource
+  )
+  return bytesToHex(new Uint8Array(plaintext))
+}
+
+/**
  * Create HMAC-SHA256 signature
  */
 export async function createHmacSignature(

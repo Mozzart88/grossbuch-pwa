@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { onDbWrite, wipeDatabase } from '../services/database/connection'
 import { settingsRepository } from '../services/repositories/settingsRepository'
+import { linkedDeviceRepository } from '../services/repositories/linkedDeviceRepository'
 import { sendUnlinkConfirmation } from '../services/sync'
 import { deleteInstallation } from '../services/installation/installationApi'
 
@@ -54,7 +55,7 @@ export function useSelfUnlinkHandler() {
       }
 
       // Clear all linked devices and the pending flag
-      await settingsRepository.set('linked_installations', '{}')
+      await linkedDeviceRepository.removeAll()
       await settingsRepository.delete('pending_self_unlink')
 
       // Wipe local DB first (credentials remain in memory variables above)

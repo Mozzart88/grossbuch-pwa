@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, useToast } from '../components/ui'
-import { settingsRepository } from '../services/repositories'
+import { settingsRepository, linkedDeviceRepository, type LinkedDevice } from '../services/repositories'
 import { onDbWrite } from '../services/database/connection'
 import { sendUnlinkCommand } from '../services/sync'
 
@@ -13,7 +13,7 @@ interface PendingRequest {
 
 export function LinkedDevicesPage() {
   const { showToast } = useToast()
-  const [installations, setInstallations] = useState<Record<string, string>>({})
+  const [devices, setDevices] = useState<LinkedDevice[]>([])
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [unlinkDialogId, setUnlinkDialogId] = useState<string | null>(null)
@@ -21,15 +21,15 @@ export function LinkedDevicesPage() {
 
   const loadInstallations = useCallback(async () => {
     try {
-      const [rawInstalls, rawPending] = await Promise.all([
-        settingsRepository.get('linked_installations'),
+      const [linkedDevices, rawPending] = await Promise.all([
+        linkedDeviceRepository.findAll(),
         settingsRepository.get('pending_unlink_requests'),
       ])
-      setInstallations(rawInstalls ? JSON.parse(rawInstalls) : {})
+      setDevices(linkedDevices)
       setPendingRequests(rawPending ? (JSON.parse(rawPending) as PendingRequest[]) : [])
     } catch (error) {
       console.error('Failed to load linked installations:', error)
-      setInstallations({})
+      setDevices([])
       setPendingRequests([])
     } finally {
       setLoading(false)
@@ -76,9 +76,7 @@ export function LinkedDevicesPage() {
 
   const handleForceUnlink = async (installationId: string) => {
     try {
-      const updatedInstalls = { ...installations }
-      delete updatedInstalls[installationId]
-      await settingsRepository.set('linked_installations', JSON.stringify(updatedInstalls))
+      await linkedDeviceRepository.remove(installationId)
 
       const updatedPending = pendingRequests.filter(p => p.target_id !== installationId)
       if (updatedPending.length === 0) {
@@ -87,7 +85,7 @@ export function LinkedDevicesPage() {
         await settingsRepository.set('pending_unlink_requests', JSON.stringify(updatedPending))
       }
 
-      setInstallations(updatedInstalls)
+      setDevices(devices.filter(d => d.id !== installationId))
       setPendingRequests(updatedPending)
       showToast('Device unlinked', 'success')
     } catch (error) {
@@ -96,8 +94,6 @@ export function LinkedDevicesPage() {
     }
   }
 
-  const installationIds = Object.keys(installations)
-
   return (
     <div>
       <PageHeader title="Linked Devices" showBack />
@@ -105,7 +101,7 @@ export function LinkedDevicesPage() {
       <div className="p-4 space-y-4">
         {loading ? (
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">Loading...</p>
-        ) : installationIds.length === 0 ? (
+        ) : devices.length === 0 ? (
           <Card className="p-6">
             <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
               No linked devices. Use the Share feature to pair another device.
@@ -113,17 +109,22 @@ export function LinkedDevicesPage() {
           </Card>
         ) : (
           <Card className="divide-y divide-gray-200 dark:divide-gray-700">
-            {installationIds.map((id) => {
+            {devices.map(({ id, name }) => {
               const isPending = pendingRequests.some(p => p.target_id === id)
               return (
                 <div key={id} className="flex items-center justify-between p-4">
                   <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 font-mono">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {name}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">
                       {id.slice(0, 8)}…
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {isPending ? 'Waiting for confirmation…' : 'Installation ID'}
-                    </p>
+                    {isPending && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Waiting for confirmation…
+                      </p>
+                    )}
                   </div>
                   {isPending ? (
                     <Button

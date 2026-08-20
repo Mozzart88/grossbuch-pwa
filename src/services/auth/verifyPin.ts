@@ -11,7 +11,7 @@ export async function verifyPin(pin: string): Promise<void> {
   const { key: pinHash } = await hashPin(pin, salt)
 
   const stored = await queryOne<{ value: string }>(
-    `SELECT value FROM auth_settings WHERE key = 'pin_hash'`
+    `SELECT value FROM app_settings WHERE key = 'pin_hash'`
   )
   if (!stored) {
     throw new Error('Auth settings not found')

@@ -19,8 +19,8 @@ describe('migrations', () => {
   })
 
   describe('runMigrations', () => {
-    it('sets current version to 23', () => {
-      expect(CURRENT_VERSION).toBe(23)
+    it('sets current version to 24', () => {
+      expect(CURRENT_VERSION).toBe(24)
     })
 
     it('runs all migrations when db_version is 0', async () => {
@@ -231,7 +231,7 @@ describe('migrations', () => {
 
     it('parses db_version correctly', async () => {
       // Already at current version
-      mockQueryOne.mockResolvedValue({ value: '23' })
+      mockQueryOne.mockResolvedValue({ value: '24' })
 
       await runMigrations()
 
@@ -244,9 +244,9 @@ describe('migrations', () => {
 
       await runMigrations()
 
-      // Full migration (v1-v23): each migration joins statements into one execSQL call
-      // v1 = 1 call, v2-v23 = 2 calls each (migration + version update) = 1 + 22*2 = 45
-      expect(mockExecSQL.mock.calls.length).toEqual(45)
+      // Full migration (v1-v24): each migration joins statements into one execSQL call
+      // v1 = 1 call, v2-v24 = 2 calls each (migration + version update) = 1 + 23*2 = 47
+      expect(mockExecSQL.mock.calls.length).toEqual(47)
     })
 
     it('creates recurring tables and recurent tag in migration v23', async () => {

@@ -44,6 +44,7 @@ export interface SyncCounterparty {
 
 export interface SyncCurrency {
   id: number
+  code?: string // absent on packages from senders predating currency code-based reconciliation
   decimal_places: number
   updated_at: number
   tags: number[]

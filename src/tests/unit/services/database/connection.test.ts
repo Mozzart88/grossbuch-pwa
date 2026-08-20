@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // Create mock worker
 const mockPostMessage = vi.fn()
 const mockTerminate = vi.fn()
+let latestWorkerInstance: MockWorker | null = null
 
 class MockWorker {
   onmessage: ((event: { data: unknown }) => void) | null = null
@@ -10,6 +11,10 @@ class MockWorker {
 
   postMessage = mockPostMessage
   terminate = mockTerminate
+
+  constructor() {
+    latestWorkerInstance = this
+  }
 }
 
 // Store original Worker
@@ -18,6 +23,7 @@ const OriginalWorker = global.Worker
 beforeEach(() => {
   // Mock Worker globally
   global.Worker = MockWorker as unknown as typeof Worker
+  latestWorkerInstance = null
   vi.resetModules()
 })
 
@@ -125,6 +131,96 @@ describe('database connection', () => {
       const { closeDatabase } = await import('../../../../services/database/connection')
 
       expect(typeof closeDatabase).toBe('function')
+    })
+  })
+
+  describe('attachDatabase', () => {
+    it('sends attach message with schema, filename, and key', async () => {
+      const { attachDatabase } = await import('../../../../services/database/connection')
+
+      const postMessagePromise = new Promise<void>((resolve) => {
+        mockPostMessage.mockImplementation((message) => {
+          if (message.type === 'attach') resolve()
+        })
+      })
+
+      attachDatabase('shared', '/shared.sqlite3', 'abc123')
+      await postMessagePromise
+
+      expect(mockPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'attach',
+          schema: 'shared',
+          filename: '/shared.sqlite3',
+          key: 'abc123',
+        })
+      )
+    })
+  })
+
+  describe('detachDatabase', () => {
+    it('sends detach message with schema', async () => {
+      const { detachDatabase } = await import('../../../../services/database/connection')
+
+      const postMessagePromise = new Promise<void>((resolve) => {
+        mockPostMessage.mockImplementation((message) => {
+          if (message.type === 'detach') resolve()
+        })
+      })
+
+      detachDatabase('shared')
+      await postMessagePromise
+
+      expect(mockPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'detach', schema: 'shared' })
+      )
+    })
+  })
+
+  describe('rekeySchema', () => {
+    it('sends rekey_schema message with schema and newKey', async () => {
+      const { rekeySchema } = await import('../../../../services/database/connection')
+
+      const postMessagePromise = new Promise<void>((resolve) => {
+        mockPostMessage.mockImplementation((message) => {
+          if (message.type === 'rekey_schema') resolve()
+        })
+      })
+
+      rekeySchema('shared', 'newkey456')
+      await postMessagePromise
+
+      expect(mockPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'rekey_schema', schema: 'shared', newKey: 'newkey456' })
+      )
+    })
+  })
+
+  describe('validateReferenceExists', () => {
+    it('returns true when a matching row is found', async () => {
+      const { validateReferenceExists } = await import('../../../../services/database/connection')
+
+      mockPostMessage.mockImplementation((message) => {
+        setTimeout(() => {
+          latestWorkerInstance?.onmessage?.({ data: { id: message.id, success: true, data: [{ 1: 1 }] } })
+        }, 0)
+      })
+
+      const result = await validateReferenceExists('shared.workspace', 'id', 1)
+      expect(result).toBe(true)
+    })
+
+    it('returns false when no matching row is found', async () => {
+      const { validateReferenceExists } = await import('../../../../services/database/connection')
+
+      mockPostMessage.mockImplementation((message) => {
+        setTimeout(() => {
+          latestWorkerInstance?.onmessage?.({ data: { id: message.id, success: true, data: [] } })
+        }, 0)
+      })
+
+      const result = await validateReferenceExists('shared.workspace', 'id', 999)
+      expect(result).toBe(false)
     })
   })
 })

@@ -15,6 +15,31 @@ import type {
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository } from './currencyRepository'
 import { accountRepository } from './accountRepository'
+import { tagReferences } from './tagReferences'
+import { sortOrder } from './sortOrder'
+
+async function decrementLineTagReferences(lineId: Uint8Array): Promise<void> {
+  const line = await queryOne<{ tag_id: number }>('SELECT tag_id FROM trx_base WHERE id = ?', [lineId])
+  if (line) {
+    await tagReferences.decrement(line.tag_id)
+    await sortOrder.decrementTag(line.tag_id)
+  }
+
+  const contexts = await querySQL<{ tag_id: number }>(
+    'SELECT tag_id FROM trx_base_tag_context WHERE trx_base_id = ?',
+    [lineId]
+  )
+  for (const ctx of contexts) {
+    await tagReferences.decrement(ctx.tag_id)
+  }
+}
+
+async function decrementTrxTagReferences(trxId: Uint8Array): Promise<void> {
+  const lines = await querySQL<{ id: Uint8Array }>('SELECT id FROM trx_base WHERE trx_id = ?', [trxId])
+  for (const line of lines) {
+    await decrementLineTagReferences(line.id)
+  }
+}
 
 export const transactionRepository = {
   // Get transactions for a month using the view
@@ -603,6 +628,7 @@ export const transactionRepository = {
         'INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)',
         [trxId, input.counterparty_id]
       )
+      await sortOrder.incrementCounterparty(input.counterparty_id)
     }
 
     // Insert note at transaction level if provided
@@ -642,6 +668,8 @@ export const transactionRepository = {
       INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac)
       VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?)
     `, [trxId, line.account_id, line.tag_id, line.sign, line.amount_int, line.amount_frac, rateInt, rateFrac])
+    await tagReferences.increment(line.tag_id)
+    await sortOrder.incrementTag(line.tag_id)
 
     // Get the created line ID
     const lineResult = await queryOne<{ id: Uint8Array }>(
@@ -654,6 +682,7 @@ export const transactionRepository = {
         'INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
         [lineResult.id, line.tag_context_id]
       )
+      await tagReferences.increment(line.tag_context_id)
     }
 
     const result = await queryOne<TransactionLine>(`
@@ -683,6 +712,12 @@ export const transactionRepository = {
   ): Promise<TransactionLine> {
     const fields: string[] = []
     const values: unknown[] = []
+
+    let oldTagId: number | null = null
+    if (input.tag_id !== undefined) {
+      const current = await queryOne<{ tag_id: number }>('SELECT tag_id FROM trx_base WHERE id = ?', [lineId])
+      oldTagId = current?.tag_id ?? null
+    }
 
     if (input.account_id !== undefined) {
       fields.push('account_id = ?')
@@ -720,13 +755,26 @@ export const transactionRepository = {
       )
     }
 
+    if (input.tag_id !== undefined && oldTagId !== null && oldTagId !== input.tag_id) {
+      await tagReferences.move(oldTagId, input.tag_id)
+      await sortOrder.moveTag(oldTagId, input.tag_id)
+    }
+
     if (input.tag_context_id !== undefined) {
+      const oldContexts = await querySQL<{ tag_id: number }>(
+        'SELECT tag_id FROM trx_base_tag_context WHERE trx_base_id = ?',
+        [lineId]
+      )
       await execSQL('DELETE FROM trx_base_tag_context WHERE trx_base_id = ?', [lineId])
+      for (const ctx of oldContexts) {
+        await tagReferences.decrement(ctx.tag_id)
+      }
       if (input.tag_context_id) {
         await execSQL(
           'INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
           [lineId, input.tag_context_id]
         )
+        await tagReferences.increment(input.tag_context_id)
       }
     }
 
@@ -752,12 +800,26 @@ export const transactionRepository = {
 
   // Delete a transaction line
   async deleteLine(lineId: Uint8Array): Promise<void> {
+    await decrementLineTagReferences(lineId)
     await execSQL('DELETE FROM trx_base WHERE id = ?', [lineId])
   },
 
   // Delete entire transaction
   async delete(id: Uint8Array): Promise<void> {
+    await decrementTrxTagReferences(id)
+
+    // trx_to_counterparty cascade-deletes with the trx; decrement first
+    // since the cascade bypasses application code
+    const counterparties = await querySQL<{ counterparty_id: number }>(
+      'SELECT counterparty_id FROM trx_to_counterparty WHERE trx_id = ?',
+      [id]
+    )
+
     await execSQL('DELETE FROM trx WHERE id = ?', [id])
+
+    for (const cp of counterparties) {
+      await sortOrder.decrementCounterparty(cp.counterparty_id)
+    }
   },
 
   // Update an existing transaction
@@ -771,12 +833,20 @@ export const transactionRepository = {
     )
 
     // Manage counterparty
+    const oldCounterparties = await querySQL<{ counterparty_id: number }>(
+      'SELECT counterparty_id FROM trx_to_counterparty WHERE trx_id = ?',
+      [id]
+    )
     await execSQL('DELETE FROM trx_to_counterparty WHERE trx_id = ?', [id])
+    for (const cp of oldCounterparties) {
+      await sortOrder.decrementCounterparty(cp.counterparty_id)
+    }
     if (input.counterparty_id) {
       await execSQL(
         'INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)',
         [id, input.counterparty_id]
       )
+      await sortOrder.incrementCounterparty(input.counterparty_id)
     } else if (input.counterparty_name) {
       // Auto-create counterparty if name provided
       await execSQL(`
@@ -789,6 +859,9 @@ export const transactionRepository = {
         INSERT INTO trx_to_counterparty (trx_id, counterparty_id)
         VALUES (?, (SELECT id FROM counterparty WHERE name = ?))
       `, [id, input.counterparty_name])
+
+      const linked = await queryOne<{ id: number }>('SELECT id FROM counterparty WHERE name = ?', [input.counterparty_name])
+      if (linked) await sortOrder.incrementCounterparty(linked.id)
     }
 
     // Update note at transaction level
@@ -801,6 +874,7 @@ export const transactionRepository = {
     }
 
     // Wipe and recreate transaction lines
+    await decrementTrxTagReferences(id)
     await execSQL('DELETE FROM trx_base WHERE trx_id = ?', [id])
     for (const line of input.lines) {
       await this.addLine(id, line)
@@ -972,6 +1046,8 @@ export const transactionRepository = {
       INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac)
       VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?)
     `, [trxId, line.account_id, line.tag_id, line.sign, line.amount_int, line.amount_frac, line.rate_int ?? 0, line.rate_frac ?? 0])
+    await tagReferences.increment(line.tag_id)
+    await sortOrder.incrementTag(line.tag_id)
     if (line.tag_context_id) {
       const lineResult = await queryOne<{ id: Uint8Array }>('SELECT id FROM trx_base ORDER BY rowid DESC LIMIT 1')
       if (lineResult) {
@@ -979,6 +1055,7 @@ export const transactionRepository = {
           'INSERT OR IGNORE INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)',
           [lineResult.id, line.tag_context_id]
         )
+        await tagReferences.increment(line.tag_context_id)
       }
     }
   },

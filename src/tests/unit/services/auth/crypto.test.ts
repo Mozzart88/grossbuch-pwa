@@ -13,6 +13,9 @@ import {
   generateRSAKeyPair,
   rsaEncrypt,
   rsaDecrypt,
+  generateDEK,
+  wrapSharedDEK,
+  unwrapSharedDEK,
 } from '../../../../services/auth/crypto'
 
 // Mock crypto.subtle for tests
@@ -24,6 +27,7 @@ const mockGenerateKey = vi.fn()
 const mockExportKey = vi.fn()
 const mockEncrypt = vi.fn()
 const mockDecrypt = vi.fn()
+const mockDeriveKey = vi.fn()
 
 vi.stubGlobal('crypto', {
   getRandomValues: vi.fn((array: Uint8Array) => {
@@ -35,6 +39,7 @@ vi.stubGlobal('crypto', {
   subtle: {
     importKey: mockImportKey,
     deriveBits: mockDeriveBits,
+    deriveKey: mockDeriveKey,
     sign: mockSign,
     verify: mockVerify,
     generateKey: mockGenerateKey,
@@ -405,6 +410,69 @@ describe('crypto', () => {
         data
       )
       expect(result).toBeInstanceOf(ArrayBuffer)
+    })
+  })
+
+  describe('generateDEK', () => {
+    it('returns a 64-char hex string (256-bit key)', () => {
+      const dek = generateDEK()
+      expect(typeof dek).toBe('string')
+      expect(dek.length).toBe(64)
+      expect(dek).toMatch(/^[0-9a-f]+$/)
+    })
+
+    it('returns different values on each call', () => {
+      expect(generateDEK()).not.toBe(generateDEK())
+    })
+  })
+
+  describe('wrapSharedDEK / unwrapSharedDEK', () => {
+    beforeEach(() => {
+      mockImportKey.mockResolvedValue({ type: 'secret' })
+      mockDeriveKey.mockResolvedValue({ type: 'secret', name: 'kek' })
+    })
+
+    it('derives the KEK via HKDF from DEK_app', async () => {
+      mockEncrypt.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer)
+
+      await wrapSharedDEK('aa'.repeat(32), 'bb'.repeat(32))
+
+      expect(mockImportKey).toHaveBeenCalledWith(
+        'raw',
+        expect.anything(),
+        'HKDF',
+        false,
+        ['deriveKey']
+      )
+      expect(mockDeriveKey).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'HKDF', hash: 'SHA-256' }),
+        expect.anything(),
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      )
+    })
+
+    it('encrypts DEK_shared and returns hex ciphertext + iv', async () => {
+      mockEncrypt.mockResolvedValue(new Uint8Array([9, 9, 9]).buffer)
+
+      const wrapped = await wrapSharedDEK('aa'.repeat(32), 'bb'.repeat(32))
+
+      expect(wrapped.ciphertext).toBe('090909')
+      expect(wrapped.iv).toHaveLength(24) // 12 bytes hex-encoded
+    })
+
+    it('unwraps by decrypting with the same KEK derivation', async () => {
+      mockDecrypt.mockResolvedValue(new Uint8Array([0xaa, 0xbb]).buffer)
+
+      const result = await unwrapSharedDEK({ ciphertext: '0102', iv: '030405060708090a0b0c' }, 'bb'.repeat(32))
+
+      expect(mockDecrypt).toHaveBeenCalledWith(
+        { name: 'AES-GCM', iv: expect.anything() },
+        expect.anything(),
+        expect.anything()
+      )
+      expect(result).toBe('aabb')
     })
   })
 })

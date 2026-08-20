@@ -2,6 +2,8 @@ import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Account, AccountInput, AccountType } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository } from './currencyRepository'
+import { tagReferences } from './tagReferences'
+import { inheritWalletTypeTags } from './accountTypeTags'
 
 // Interface for the 'accounts' view
 interface AccountView {
@@ -68,15 +70,24 @@ async function validateUniqueAccountType(accountId: number, accountType: Account
 async function syncAccountType(accountId: number, accountType: AccountType): Promise<void> {
   await validateUniqueAccountType(accountId, accountType)
 
+  const oldTags = await querySQL<{ tag_id: number }>(`
+    SELECT tag_id FROM account_to_tags
+    WHERE account_id = ?
+      AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
+  `, [accountId])
   await execSQL(`
     DELETE FROM account_to_tags
     WHERE account_id = ?
       AND tag_id IN (SELECT id FROM tag WHERE name IN ('savings', 'credits'))
   `, [accountId])
+  for (const tag of oldTags) {
+    await tagReferences.decrement(tag.tag_id)
+  }
 
   const typeTagId = await getAccountTypeTagId(accountType)
   if (typeTagId) {
     await execSQL('INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [accountId, typeTagId])
+    await tagReferences.increment(typeTagId)
   }
 }
 
@@ -213,6 +224,7 @@ export const accountRepository = {
       [input.wallet_id, input.currency_id]
     )
     const id = await getLastInsertId()
+    await inheritWalletTypeTags(id, input.wallet_id)
     if (input.account_type !== undefined) {
       await syncAccountType(id, accountType)
     }
@@ -236,6 +248,7 @@ export const accountRepository = {
   async setDefault(id: number): Promise<void> {
     // The trigger handles removing default from other accounts in same wallet
     await execSQL('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
+    await tagReferences.increment(SYSTEM_TAGS.DEFAULT)
   },
 
   async delete(id: number): Promise<void> {
@@ -254,11 +267,23 @@ export const accountRepository = {
       [id, SYSTEM_TAGS.INITIAL]
     )
     for (const { trx_id } of initialTrxIds) {
+      await tagReferences.decrement(SYSTEM_TAGS.INITIAL)
       await execSQL('DELETE FROM trx WHERE id = ?', [trx_id])
     }
 
+    // account_to_tags rows cascade-delete with the account; decrement first
+    // since the cascade bypasses application code
+    const accountTags = await querySQL<{ tag_id: number }>(
+      'SELECT tag_id FROM account_to_tags WHERE account_id = ?',
+      [id]
+    )
+
     // Triggers handle: setting new default, deleting wallet if last account
     await execSQL('DELETE FROM account WHERE id = ?', [id])
+
+    for (const tag of accountTags) {
+      await tagReferences.decrement(tag.tag_id)
+    }
   },
 
   // Calculate total balance across all accounts in default currency

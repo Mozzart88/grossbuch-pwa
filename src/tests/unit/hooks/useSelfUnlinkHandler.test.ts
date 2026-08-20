@@ -28,6 +28,13 @@ vi.mock('../../../services/repositories/settingsRepository', () => ({
   },
 }))
 
+const mockLinkedDeviceRemoveAll = vi.fn()
+vi.mock('../../../services/repositories/linkedDeviceRepository', () => ({
+  linkedDeviceRepository: {
+    removeAll: (...args: unknown[]) => mockLinkedDeviceRemoveAll(...args),
+  },
+}))
+
 const mockSendUnlinkConfirmation = vi.fn()
 vi.mock('../../../services/sync', () => ({
   sendUnlinkConfirmation: (...args: unknown[]) => mockSendUnlinkConfirmation(...args),
@@ -70,6 +77,7 @@ describe('useSelfUnlinkHandler', () => {
     mockSettingsGet.mockResolvedValue(null)
     mockSettingsSet.mockResolvedValue(undefined)
     mockSettingsDelete.mockResolvedValue(undefined)
+    mockLinkedDeviceRemoveAll.mockResolvedValue(undefined)
     mockWipeDatabase.mockResolvedValue(undefined)
     mockSendUnlinkConfirmation.mockResolvedValue(undefined)
     mockDeleteInstallation.mockResolvedValue(undefined)
@@ -91,13 +99,13 @@ describe('useSelfUnlinkHandler', () => {
     expect(mockReload).not.toHaveBeenCalled()
   })
 
-  it('clears linked_installations and pending_self_unlink flag on unlink', async () => {
+  it('clears all linked devices and pending_self_unlink flag on unlink', async () => {
     mockInstallationSettings(true)
     renderHook(() => useSelfUnlinkHandler())
 
     await act(async () => { onDbWriteCallback?.() })
 
-    expect(mockSettingsSet).toHaveBeenCalledWith('linked_installations', '{}')
+    expect(mockLinkedDeviceRemoveAll).toHaveBeenCalled()
     expect(mockSettingsDelete).toHaveBeenCalledWith('pending_self_unlink')
   })
 

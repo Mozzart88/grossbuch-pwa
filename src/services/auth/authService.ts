@@ -5,6 +5,10 @@ import {
   hashPin,
   generateJwtSalt,
   generateRSAKeyPair,
+  generateDEK,
+  wrapSharedDEK,
+  unwrapSharedDEK,
+  type WrappedSharedKey,
 } from './crypto'
 import {
   createSessionToken,
@@ -22,8 +26,15 @@ import {
   wipeDatabase,
   execSQL,
   queryOne,
+  attachDatabase,
+  rekeySchema,
+  deleteFile,
 } from '../database/connection'
+import { SHARED_DB_FILENAME, workspaceDbFilename } from '../database/paths'
 import { runMigrations } from '../database/migrations'
+import { runSharedMigrations } from '../database/sharedMigrations'
+import { attachActiveWorkspace, setSessionDekShared, clearWorkspaceSession, getActiveWorkspaceId } from '../database/workspace'
+import { needsLegacyMigration, migrateLegacyInstallation } from '../database/legacyMigration'
 import {
   authenticateWithWebAuthn,
   registerWebAuthn,
@@ -64,13 +75,13 @@ function clearStoredSalt(): void {
 async function getAuthSettings(): Promise<AuthSettings | null> {
   try {
     const pinHash = await queryOne<{ value: string }>(
-      `SELECT value FROM auth_settings WHERE key = 'pin_hash'`
+      `SELECT value FROM app_settings WHERE key = 'pin_hash'`
     )
     const jwtSalt = await queryOne<{ value: string }>(
-      `SELECT value FROM auth_settings WHERE key = 'jwt_salt'`
+      `SELECT value FROM app_settings WHERE key = 'jwt_salt'`
     )
     const pbkdf2Salt = await queryOne<{ value: string }>(
-      `SELECT value FROM auth_settings WHERE key = 'pbkdf2_salt'`
+      `SELECT value FROM app_settings WHERE key = 'pbkdf2_salt'`
     )
 
     if (!pinHash || !jwtSalt || !pbkdf2Salt) {
@@ -94,41 +105,119 @@ async function saveAuthSettings(settings: AuthSettings): Promise<void> {
   const now = Math.floor(Date.now() / 1000)
 
   await execSQL(
-    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('pin_hash', ?, ?)`,
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pin_hash', ?, ?)`,
     [settings.pin_hash, now]
   )
   await execSQL(
-    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('jwt_salt', ?, ?)`,
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('jwt_salt', ?, ?)`,
     [settings.jwt_salt, now]
   )
   await execSQL(
-    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('pbkdf2_salt', ?, ?)`,
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('pbkdf2_salt', ?, ?)`,
     [settings.pbkdf2_salt, now]
   )
 }
 
 /**
- * Save RSA key pair to auth_settings
+ * Save RSA key pair to app_settings
  */
 async function saveKeyPair(publicKey: string, privateKey: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000)
   await execSQL(
-    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('public_key', ?, ?)`,
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('public_key', ?, ?)`,
     [publicKey, now]
   )
   await execSQL(
-    `INSERT OR REPLACE INTO auth_settings (key, value, updated_at) VALUES ('private_key', ?, ?)`,
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('private_key', ?, ?)`,
     [privateKey, now]
   )
 }
 
 /**
- * Get public key from auth_settings
+ * Get the wrapped DEK_shared from app_settings, or null if not yet created
+ */
+async function getWrappedSharedDEK(): Promise<WrappedSharedKey | null> {
+  const ciphertext = await queryOne<{ value: string }>(
+    `SELECT value FROM app_settings WHERE key = 'shared_dek_wrapped'`
+  )
+  const iv = await queryOne<{ value: string }>(
+    `SELECT value FROM app_settings WHERE key = 'shared_dek_iv'`
+  )
+  if (!ciphertext || !iv) return null
+  return { ciphertext: ciphertext.value, iv: iv.value }
+}
+
+/**
+ * Persist the wrapped DEK_shared in app_settings
+ */
+async function saveWrappedSharedDEK(wrapped: WrappedSharedKey): Promise<void> {
+  const now = Math.floor(Date.now() / 1000)
+  await execSQL(
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('shared_dek_wrapped', ?, ?)`,
+    [wrapped.ciphertext, now]
+  )
+  await execSQL(
+    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('shared_dek_iv', ?, ?)`,
+    [wrapped.iv, now]
+  )
+}
+
+/**
+ * Unwrap DEK_shared using the given DEK_app and attach the Shared DB.
+ * If no wrapped DEK_shared exists yet (e.g. first unlock after this feature
+ * shipped), generates one, wraps it, attaches, and creates the shared schema.
+ * If this installation still has its financial/shared data sitting in `main`
+ * (pre-split topology), runs the one-time legacy migration to move it into
+ * `shared`/`workspace` once both are attached.
+ */
+async function unwrapAndAttachSharedDatabase(dekApp: string): Promise<void> {
+  const wrapped = await getWrappedSharedDEK()
+  let dekShared: string
+
+  if (!wrapped) {
+    dekShared = generateDEK()
+    await saveWrappedSharedDEK(await wrapSharedDEK(dekShared, dekApp))
+  } else {
+    dekShared = await unwrapSharedDEK(wrapped, dekApp)
+  }
+
+  // Checked before attaching: while `main` is still below TOPOLOGY_VERSION,
+  // nothing legitimate can have written to `shared`/the default workspace
+  // yet (the app never switches over to them as the live topology until
+  // migrateLegacyInstallation() flips topology_version, at the very end of
+  // its temp-build-and-swap). A pre-existing file here can only be a
+  // leftover from an earlier attempt that crashed between that migration's
+  // SQL commit and its (non-transactional) file swap — delete and rebuild
+  // from scratch rather than risk resuming into duplicate-key failures (see
+  // design.md's "Retried migration deletes and rebuilds shared/workspace"
+  // decision). A freshly (re)created shared.db always seeds its one default
+  // workspace as id 1 (AUTOINCREMENT on an empty table), so workspace-1 is
+  // the only file that can possibly hold partial data at this point.
+  const pendingLegacyMigration = await needsLegacyMigration()
+  if (pendingLegacyMigration) {
+    await deleteFile(SHARED_DB_FILENAME)
+    await deleteFile(workspaceDbFilename(1))
+  }
+
+  await attachDatabase('shared', SHARED_DB_FILENAME, dekShared)
+  await runSharedMigrations()
+
+  await attachActiveWorkspace(dekShared)
+
+  if (pendingLegacyMigration) {
+    const activeWorkspaceId = getActiveWorkspaceId()
+    if (activeWorkspaceId === null) throw new Error('No active workspace after attach')
+    await migrateLegacyInstallation(activeWorkspaceId, dekApp, dekShared)
+  }
+}
+
+/**
+ * Get public key from app_settings
  */
 export async function getPublicKey(): Promise<string | null> {
   try {
     const row = await queryOne<{ value: string }>(
-      `SELECT value FROM auth_settings WHERE key = 'public_key'`
+      `SELECT value FROM app_settings WHERE key = 'public_key'`
     )
     return row?.value ?? null
   } catch {
@@ -170,12 +259,15 @@ export async function migrateDatabase(pin: string): Promise<void> {
   // Initialize the newly encrypted database
   await initEncryptedDatabase(encryptionKey)
 
-  // Check if auth_settings table exists, run migrations if needed
+  // Check if app_settings table exists, run migrations if needed
   if (await queryOne<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='auth_settings'"
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='app_settings'"
   ) === null) {
     await runMigrations()
   }
+
+  // Generate DEK_shared, wrap it under DEK_app, and attach the Shared DB
+  await unwrapAndAttachSharedDatabase(encryptionKey)
 
   // Generate PIN hash for verification (with same salt for simplicity)
   const { key: pinHash } = await hashPin(pin, pbkdf2Salt)
@@ -243,6 +335,9 @@ export async function setupPin(pin: string): Promise<void> {
   // Run migrations to create tables (includes currency seeding in v4)
   await runMigrations()
 
+  // Generate DEK_shared, wrap it under DEK_app, and attach the Shared DB
+  await unwrapAndAttachSharedDatabase(encryptionKey)
+
   // Save auth settings to database
   await saveAuthSettings({
     pin_hash: pinHash,
@@ -295,6 +390,9 @@ export async function login(pin: string): Promise<boolean> {
       throw new Error('PIN verification failed')
     }
 
+    // Unwrap (or create) DEK_shared and attach the Shared DB
+    await unwrapAndAttachSharedDatabase(encryptionKey)
+
     // Generate key pair if not present (for existing installations)
     const existingPublicKey = await getPublicKey()
     if (!existingPublicKey) {
@@ -322,6 +420,7 @@ export async function login(pin: string): Promise<boolean> {
 export function logout(): void {
   clearSessionToken()
   sessionDEK = null
+  clearWorkspaceSession()
 }
 
 /**
@@ -346,9 +445,19 @@ export async function changePin(oldPin: string, newPin: string): Promise<boolean
   // Generate new JWT salt
   const newJwtSalt = generateJwtSalt()
 
+  // Generate a fresh DEK_shared — the Shared DB is physically rekeyed below
+  const newDekShared = generateDEK()
+
   try {
-    // Rekey the database
+    // Rekey the App DB
     await rekeyDatabase(oldKey, newKey)
+
+    // Physically rekey the attached Shared DB to the freshly generated key
+    await rekeySchema('shared', newDekShared)
+
+    // Workspace files share DEK_shared (see design.md) — rekey the attached one too
+    await rekeySchema('workspace', newDekShared)
+    setSessionDekShared(newDekShared)
 
     // Update auth settings in database
     await saveAuthSettings({
@@ -356,6 +465,9 @@ export async function changePin(oldPin: string, newPin: string): Promise<boolean
       jwt_salt: newJwtSalt,
       pbkdf2_salt: newSalt,
     })
+
+    // Re-wrap DEK_shared under the new DEK_app
+    await saveWrappedSharedDEK(await wrapSharedDEK(newDekShared, newKey))
 
     // Update localStorage salt
     storeSalt(newSalt)
@@ -389,6 +501,7 @@ export async function wipeAndReset(): Promise<void> {
   clearWebAuthnCredential()
   clearPRFUnsupportedFlag()
   sessionDEK = null
+  clearWorkspaceSession()
 
   // Delete database file
   await wipeDatabase()
@@ -407,6 +520,8 @@ export async function loginWithBiometrics(): Promise<boolean> {
 
   const settings = await getAuthSettings()
   if (!settings) return false
+
+  await unwrapAndAttachSharedDatabase(dek)
 
   const sessionToken = await createSessionToken(settings.jwt_salt)
   storeSessionToken(sessionToken)

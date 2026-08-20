@@ -293,6 +293,24 @@ describe('walletRepository', () => {
       expect(result).toBeDefined()
     })
 
+    it('propagates a new wallet type onto every account in the wallet', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce(null) // duplicate-currency check -> none
+        .mockResolvedValue({ id: 21 }) // getAccountTypeTagId('savings') + any later lookups
+      mockQuerySQL.mockResolvedValue([{ id: 5 }, { id: 6 }]) // accounts in the wallet
+
+      await walletRepository.update(1, { account_type: 'savings' })
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [5, 21]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [6, 21]
+      )
+    })
+
     it('throws error when wallet not found', async () => {
       mockQueryOne
         .mockResolvedValueOnce(null) // findByName

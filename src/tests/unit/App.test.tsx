@@ -127,6 +127,17 @@ vi.mock('../../services/repositories/settingsRepository', () => ({
   },
 }))
 
+// Mock linkedDeviceRepository so SyncProvider's getLinkedInstallations() doesn't touch the DB
+vi.mock('../../services/repositories/linkedDeviceRepository', () => ({
+  linkedDeviceRepository: {
+    findAll: vi.fn().mockResolvedValue([]),
+    findById: vi.fn().mockResolvedValue(null),
+    upsert: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+    removeAll: vi.fn().mockResolvedValue(undefined),
+  },
+}))
+
 // Mock theme context
 vi.mock('../../store/ThemeContext', () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,

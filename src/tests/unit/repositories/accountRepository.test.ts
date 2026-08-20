@@ -244,12 +244,33 @@ describe('accountRepository', () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2 })
       mockGetLastInsertId.mockResolvedValue(2)
+      mockQuerySQL.mockResolvedValueOnce([]) // wallet has no type tags to inherit
 
       await accountRepository.create(input)
 
       expect(mockExecSQL).not.toHaveBeenCalledWith(
         'INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
         expect.anything()
+      )
+    })
+
+    it('inherits the wallet type tag when account_type is omitted but the wallet has one', async () => {
+      const input: AccountInput = {
+        wallet_id: 1,
+        currency_id: 2,
+      }
+
+      mockQueryOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ ...sampleAccount, id: 2, currency_id: 2 })
+      mockGetLastInsertId.mockResolvedValue(2)
+      mockQuerySQL.mockResolvedValueOnce([{ tag_id: 21 }]) // wallet has 'savings' type tag
+
+      await accountRepository.create(input)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT OR IGNORE INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [2, 21]
       )
     })
   })
