@@ -58,6 +58,8 @@ interface ExpenseTransactionFormProps {
   counterparties: Counterparty[]
   defaultAccountId: string
   defaultPaymentCurrencyId: number | null
+  datetime: number
+  onDateTimeChange: (value: number) => void
   initialData?: Transaction
   createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
@@ -90,6 +92,8 @@ export function ExpenseTransactionForm({
   counterparties,
   defaultAccountId,
   defaultPaymentCurrencyId,
+  datetime,
+  onDateTimeChange,
   initialData,
   createFromInitialData = false,
   onSubmit,
@@ -114,7 +118,6 @@ export function ExpenseTransactionForm({
   const [showTagModal, setShowTagModal] = useState(false)
   const [modalTargetEntryId, setModalTargetEntryId] = useState<string>('main')
   const [note, setNote] = useState('')
-  const [datetime, setDateTime] = useState(Date.now())
   const [subEntries, setSubEntries] = useState<SubEntry[]>([
     { id: 'sub-1', tagId: '', newTagName: '', newTagType: 'expense', amount: '' },
   ])
@@ -125,14 +128,31 @@ export function ExpenseTransactionForm({
   const isEditing = !!initialData && !createFromInitialData
   const addAnother = controlledAddAnother ?? localAddAnother
   const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   // Populate from initial data
+  // Deliberately depends on [initialData] only, not [accounts, currencies]: those lists can now
+  // change reference at any time (TransactionForm refreshes them via onDbWrite on any DB write,
+  // e.g. a background sync pull), and re-running this effect would silently discard any unsaved
+  // in-progress edits by re-hydrating from the original transaction. `accounts`/`currencies` are
+  // already populated by the time this component mounts (TransactionForm gates rendering on its
+  // own `loading` state), so the values read here via closure on the one necessary run are correct.
   useEffect(() => {
     if (!initialData || !initialData.lines || initialData.lines.length === 0) return
     const lines = initialData.lines as TransactionLine[]
-    setDateTime(new Date(initialData.timestamp * 1000).getTime())
-    setNote(initialData.note || '')
-    if (initialData.counterparty_id) setCounterpartyId(initialData.counterparty_id.toString())
+    const noteValue = initialData.note || ''
+    const counterpartyIdValue = initialData.counterparty_id ? initialData.counterparty_id.toString() : ''
+    setNote(noteValue)
+    if (initialData.counterparty_id) setCounterpartyId(counterpartyIdValue)
+
+    let accountIdValue: string
+    let paymentCurrencyIdValue: number | null = defaultPaymentCurrencyId
+    let amountValue = ''
+    let paymentAmountValue = ''
+    let subEntriesValue: SubEntry[] = [
+      { id: 'sub-1', tagId: '', newTagName: '', newTagType: 'expense', amount: '' },
+    ]
+    let activeCommonsValue: CommonEntry[] = []
 
     if (isMultiCurrencyExpense(lines)) {
       const exchangeOut = lines.find(l => l.tag_id === SYSTEM_TAGS.EXCHANGE && l.sign === '-')!
@@ -144,29 +164,29 @@ export function ExpenseTransactionForm({
       )
       const commonLines = lines.filter(l => l.is_common)
 
-      setAccountId(exchangeOut.account_id.toString())
-      setPaymentAmount(fromIntFrac(exchangeOut.amount_int, exchangeOut.amount_frac).toString())
+      accountIdValue = exchangeOut.account_id.toString()
+      paymentAmountValue = fromIntFrac(exchangeOut.amount_int, exchangeOut.amount_frac).toString()
 
       const targetAccount = accounts.find(a => a.id === expenseLines[0]?.account_id)
       const targetCurrency = targetAccount
         ? currencies.find(c => c.id === targetAccount.currency_id)
         : currencies.find(c => c.code === expenseLines[0]?.currency)
-      if (targetCurrency) setPaymentCurrencyId(targetCurrency.id)
+      if (targetCurrency) paymentCurrencyIdValue = targetCurrency.id
 
       if (expenseLines.length === 1) {
-        setAmount(fromIntFrac(expenseLines[0].amount_int, expenseLines[0].amount_frac).toString())
+        amountValue = fromIntFrac(expenseLines[0].amount_int, expenseLines[0].amount_frac).toString()
       }
-      setSubEntries(expenseLines.map((l, i) => ({
+      subEntriesValue = expenseLines.map((l, i) => ({
         id: `sub-${i + 1}`,
         tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
         newTagName: '',
         newTagType: 'expense' as const,
         amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
-      })))
+      }))
 
       if (commonLines.length > 0) {
         const baseAmt = expenseLines.reduce((s, l) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
-        setActiveCommons(commonLines.map(l => {
+        activeCommonsValue = commonLines.map(l => {
           const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
           const absStr = commonAmt.toString()
           const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
@@ -180,52 +200,83 @@ export function ExpenseTransactionForm({
             abs: absStr,
             lockedAbs: absStr,
           }
+        })
+      }
+    } else {
+      // Plain expense
+      const plainLines = lines.filter((l: TransactionLine) => !l.is_common)
+      const commonLines = lines.filter((l: TransactionLine) => l.is_common)
+      const firstPlainLine = plainLines[0] || lines[0]
+
+      accountIdValue = firstPlainLine.account_id.toString()
+      const acc = accounts.find(a => a.id === firstPlainLine.account_id)
+      if (acc) paymentCurrencyIdValue = acc.currency_id
+
+      if (plainLines.length > 0) {
+        subEntriesValue = plainLines.map((l: TransactionLine, i: number) => ({
+          id: `sub-${i + 1}`,
+          tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
+          newTagName: '',
+          newTagType: 'expense' as const,
+          amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
         }))
-      }
-      return
-    }
-
-    // Plain expense
-    const plainLines = lines.filter((l: TransactionLine) => !l.is_common)
-    const commonLines = lines.filter((l: TransactionLine) => l.is_common)
-    const firstPlainLine = plainLines[0] || lines[0]
-
-    setAccountId(firstPlainLine.account_id.toString())
-    const acc = accounts.find(a => a.id === firstPlainLine.account_id)
-    if (acc) setPaymentCurrencyId(acc.currency_id)
-
-    if (plainLines.length > 0) {
-      setSubEntries(plainLines.map((l: TransactionLine, i: number) => ({
-        id: `sub-${i + 1}`,
-        tagId: encodeTagSelection(l.tag_id, l.tag_context_id),
-        newTagName: '',
-        newTagType: 'expense' as const,
-        amount: fromIntFrac(l.amount_int, l.amount_frac).toString(),
-      })))
-      if (plainLines.length === 1) {
-        setAmount(fromIntFrac(plainLines[0].amount_int, plainLines[0].amount_frac).toString())
-      }
-    }
-
-    if (commonLines.length > 0) {
-      const baseAmt = plainLines.reduce((s: number, l: TransactionLine) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
-      setActiveCommons(commonLines.map((l: TransactionLine) => {
-        const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
-        const absStr = commonAmt.toString()
-        const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
-        const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
-        return {
-          tagId: l.tag_id,
-          tagName: l.tag || '',
-          isIncome: l.sign === '+',
-          amtType: 'abs' as const,
-          pct: pctStr,
-          abs: absStr,
-          lockedAbs: absStr,
+        if (plainLines.length === 1) {
+          amountValue = fromIntFrac(plainLines[0].amount_int, plainLines[0].amount_frac).toString()
         }
-      }))
+      }
+
+      if (commonLines.length > 0) {
+        const baseAmt = plainLines.reduce((s: number, l: TransactionLine) => s + fromIntFrac(l.amount_int, l.amount_frac), 0)
+        activeCommonsValue = commonLines.map((l: TransactionLine) => {
+          const commonAmt = fromIntFrac(l.amount_int, l.amount_frac)
+          const absStr = commonAmt.toString()
+          const computedPct = baseAmt > 0 ? (commonAmt / baseAmt) * 100 : 0
+          const pctStr = computedPct > 0 ? String(computedPct.toFixed(2).replace(/\.?0+$/, '')) : ''
+          return {
+            tagId: l.tag_id,
+            tagName: l.tag || '',
+            isIncome: l.sign === '+',
+            amtType: 'abs' as const,
+            pct: pctStr,
+            abs: absStr,
+            lockedAbs: absStr,
+          }
+        })
+      }
     }
-  }, [initialData, accounts, currencies])
+
+    setAccountId(accountIdValue)
+    setPaymentCurrencyId(paymentCurrencyIdValue)
+    setAmount(amountValue)
+    setPaymentAmount(paymentAmountValue)
+    setSubEntries(subEntriesValue)
+    setActiveCommons(activeCommonsValue)
+
+    // Snapshot the hydrated values (built from the same local values just applied above, not
+    // read back from state) so "has this transaction actually changed?" can be checked by value
+    setInitialSnapshot(JSON.stringify({
+      accountId: accountIdValue,
+      paymentCurrencyId: paymentCurrencyIdValue,
+      amount: amountValue,
+      paymentAmount: paymentAmountValue,
+      counterpartyId: counterpartyIdValue,
+      counterpartyName: '',
+      note: noteValue,
+      subEntries: subEntriesValue,
+      activeCommons: activeCommonsValue,
+      datetime: initialData.timestamp * 1000,
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- accounts/currencies deliberately excluded, see comment above
+  }, [initialData])
+
+  const hasChanges = useMemo(() => {
+    if (!isEditing) return true
+    if (initialSnapshot === null) return false
+    return JSON.stringify({
+      accountId, paymentCurrencyId, amount, paymentAmount, counterpartyId, counterpartyName,
+      note, subEntries, activeCommons, datetime,
+    }) !== initialSnapshot
+  }, [isEditing, initialSnapshot, accountId, paymentCurrencyId, amount, paymentAmount, counterpartyId, counterpartyName, note, subEntries, activeCommons, datetime])
 
   // Action bar setup
   useEffect(() => {
@@ -236,10 +287,10 @@ export function ExpenseTransactionForm({
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
-      disabled: submitting,
+      disabled: submitting || (isEditing && !hasChanges),
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting, hasChanges])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const walletOptions = getWalletOptions(accounts)
@@ -884,7 +935,7 @@ export function ExpenseTransactionForm({
       {/* Date/Time */}
       <DateTimeUI
         type="datetime-local"
-        onChange={e => setDateTime(new Date(e.target.value).getTime())}
+        onChange={e => onDateTimeChange(new Date(e.target.value).getTime())}
         value={toDateTimeLocal(new Date(datetime))}
       />
 
@@ -920,7 +971,7 @@ export function ExpenseTransactionForm({
           <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting} className="flex-1">
+          <Button type="submit" disabled={submitting || (isEditing && !hasChanges)} className="flex-1">
             {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>

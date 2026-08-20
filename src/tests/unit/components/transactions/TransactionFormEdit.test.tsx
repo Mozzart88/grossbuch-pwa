@@ -9,6 +9,17 @@ vi.mock('../../../../services/exchangeRate/historicalRateService', () => ({
   getRateForDate: vi.fn().mockResolvedValue({ int: 1, frac: 0 }),
 }))
 
+const dbWriteListeners: Array<() => void> = []
+vi.mock('../../../../services/database/connection', () => ({
+  onDbWrite: vi.fn((listener: () => void) => {
+    dbWriteListeners.push(listener)
+    return () => {
+      const index = dbWriteListeners.indexOf(listener)
+      if (index !== -1) dbWriteListeners.splice(index, 1)
+    }
+  }),
+}))
+
 // Mock repositories
 vi.mock('../../../../services/repositories', () => ({
   walletRepository: {
@@ -141,6 +152,7 @@ describe('TransactionForm Editing mode', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    dbWriteListeners.length = 0
     mockWalletRepository.findActive.mockResolvedValue(mockWallets)
     mockWalletRepository.findOrCreateAccountForCurrency.mockResolvedValue(mockAccount2)
     mockTagRepository.findExpenseTags.mockResolvedValue(mockExpenseTags)
@@ -223,7 +235,8 @@ describe('TransactionForm Editing mode', () => {
     renderForm(incomeData)
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Income' }).className).toContain('shadow')
+      // Mode toggle is hidden while editing; correct mode is confirmed by which fields render
+      expect(screen.queryByRole('button', { name: 'Income' })).not.toBeInTheDocument()
       expect(screen.getByLabelText(/^Amount/i)).toHaveValue((1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       // LiveSearch shows the label (category name) not the value (ID)
       expect(screen.getByRole('combobox', { name: /category/i })).toHaveValue('Salary')
@@ -263,7 +276,8 @@ describe('TransactionForm Editing mode', () => {
     renderForm(transferData)
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Transfer' }).className).toContain('shadow')
+      // Mode toggle is hidden while editing; correct mode is confirmed by which fields render
+      expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
       expect(document.getElementById('amount')).toHaveValue((20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
   })
@@ -293,6 +307,10 @@ describe('TransactionForm Editing mode', () => {
       expect(screen.getByLabelText(/^Amount/i)).toHaveValue((50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
     })
+
+    // Update starts disabled until something actually changes
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '60' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).not.toBeDisabled())
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
 
@@ -325,6 +343,9 @@ describe('TransactionForm Editing mode', () => {
     await waitFor(() => {
       expect(screen.getByLabelText(/^Amount/i)).toHaveValue((1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
+
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '1100' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).not.toBeDisabled())
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
@@ -367,6 +388,9 @@ describe('TransactionForm Editing mode', () => {
       expect(document.getElementById('amount')).toHaveValue((20).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '25' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).not.toBeDisabled())
+
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
@@ -408,6 +432,9 @@ describe('TransactionForm Editing mode', () => {
       expect(document.getElementById('amount')).toHaveValue((100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
     })
 
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '110' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).not.toBeDisabled())
+
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
@@ -446,8 +473,10 @@ describe('TransactionForm Editing mode', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
-      // Should stay in default (expense) mode
-      expect(screen.getByRole('button', { name: 'Expense' }).className).toContain('shadow')
+      // Mode toggle is hidden while editing; should stay in default (expense) mode,
+      // confirmed via an expense-only field ("+ Add category" is unique to ExpenseTransactionForm)
+      expect(screen.queryByRole('button', { name: 'Expense' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '+ Add category' })).toBeInTheDocument()
     })
   })
 
@@ -505,5 +534,50 @@ describe('TransactionForm Editing mode', () => {
       expect(screen.getByRole('combobox', { name: /^Account$/i })).toHaveValue('2')
     })
 
+  })
+
+  it('shows the mode toggle when creating a new transaction', async () => {
+    render(<TransactionForm onSubmit={mockOnSubmit} onCancel={mockOnCancel} />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Expense' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Income' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Transfer' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Exchange' })).toBeInTheDocument()
+    })
+  })
+
+  it('preserves datetime when switching mode without submitting', async () => {
+    render(<TransactionForm onSubmit={mockOnSubmit} onCancel={mockOnCancel} />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Expense' })).toBeInTheDocument()
+    })
+
+    const getDtInput = () => document.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    fireEvent.change(getDtInput(), { target: { value: '2024-03-10T14:00' } })
+    expect(getDtInput()).toHaveValue('2024-03-10T14:00')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exchange' }))
+
+    await waitFor(() => {
+      expect(getDtInput()).toHaveValue('2024-03-10T14:00')
+    })
+  })
+
+  it('reloads accounts, tags, and counterparties when a write happens elsewhere', async () => {
+    render(<TransactionForm onSubmit={mockOnSubmit} onCancel={mockOnCancel} />)
+
+    await waitFor(() => {
+      expect(mockWalletRepository.findActive).toHaveBeenCalledTimes(1)
+    })
+
+    expect(dbWriteListeners.length).toBeGreaterThan(0)
+    dbWriteListeners.forEach(listener => listener())
+
+    await waitFor(() => {
+      expect(mockWalletRepository.findActive).toHaveBeenCalledTimes(2)
+      expect(mockCounterpartyRepository.findAll).toHaveBeenCalledTimes(2)
+    })
   })
 })

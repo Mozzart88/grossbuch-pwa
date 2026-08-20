@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { Tag, TagContextOption, Counterparty, Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { tagRepository, counterpartyRepository, currencyRepository, transactionRepository } from '../../services/repositories'
@@ -31,6 +31,8 @@ interface IncomeTransactionFormProps {
   incomeTagOptions?: TagContextOption[]
   counterparties: Counterparty[]
   defaultAccountId: string
+  datetime: number
+  onDateTimeChange: (value: number) => void
   initialData?: Transaction
   createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
@@ -48,6 +50,8 @@ export function IncomeTransactionForm({
   incomeTagOptions,
   counterparties,
   defaultAccountId,
+  datetime,
+  onDateTimeChange,
   initialData,
   createFromInitialData = false,
   onSubmit,
@@ -70,28 +74,50 @@ export function IncomeTransactionForm({
   const [newTagType, setNewTagType] = useState<'expense' | 'income' | 'both'>('income')
   const [showTagModal, setShowTagModal] = useState(false)
   const [note, setNote] = useState('')
-  const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [localAddAnother, setLocalAddAnother] = useState(false)
   const isEditing = !!initialData && !createFromInitialData
   const addAnother = controlledAddAnother ?? localAddAnother
   const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   // Populate from initial data
   useEffect(() => {
     if (!initialData || !initialData.lines || initialData.lines.length === 0) return
     const lines = initialData.lines as TransactionLine[]
     const firstLine = lines[0]
-    setDateTime(new Date(initialData.timestamp * 1000).getTime())
-    setAccountId(firstLine.account_id.toString())
-    setTagId(encodeTagSelection(firstLine.tag_id, firstLine.tag_context_id))
-    setNote(initialData.note || '')
-    setAmount(fromIntFrac(firstLine.amount_int, firstLine.amount_frac).toString())
-    if (initialData.counterparty_id) {
-      setCounterpartyId(initialData.counterparty_id.toString())
-    }
+    const accountIdValue = firstLine.account_id.toString()
+    const tagIdValue = encodeTagSelection(firstLine.tag_id, firstLine.tag_context_id)
+    const noteValue = initialData.note || ''
+    const amountValue = fromIntFrac(firstLine.amount_int, firstLine.amount_frac).toString()
+    const counterpartyIdValue = initialData.counterparty_id ? initialData.counterparty_id.toString() : ''
+    setAccountId(accountIdValue)
+    setTagId(tagIdValue)
+    setNote(noteValue)
+    setAmount(amountValue)
+    setCounterpartyId(counterpartyIdValue)
+    // Snapshot the hydrated values (built from the same local values just applied above, not
+    // read back from state) so "has this transaction actually changed?" can be checked by value
+    setInitialSnapshot(JSON.stringify({
+      accountId: accountIdValue,
+      tagId: tagIdValue,
+      note: noteValue,
+      amount: amountValue,
+      counterpartyId: counterpartyIdValue,
+      counterpartyName: '',
+      newTagName: '',
+      datetime: initialData.timestamp * 1000,
+    }))
   }, [initialData])
+
+  const hasChanges = useMemo(() => {
+    if (!isEditing) return true
+    if (initialSnapshot === null) return false
+    return JSON.stringify({
+      accountId, tagId, note, amount, counterpartyId, counterpartyName, newTagName, datetime,
+    }) !== initialSnapshot
+  }, [isEditing, initialSnapshot, accountId, tagId, note, amount, counterpartyId, counterpartyName, newTagName, datetime])
 
   // Action bar setup
   useEffect(() => {
@@ -102,10 +128,10 @@ export function IncomeTransactionForm({
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
-      disabled: submitting,
+      disabled: submitting || (isEditing && !hasChanges),
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting, hasChanges])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const walletOptions = getWalletOptions(accounts)
@@ -355,7 +381,7 @@ export function IncomeTransactionForm({
       {/* Date/Time */}
       <DateTimeUI
         type="datetime-local"
-        onChange={e => setDateTime(new Date(e.target.value).getTime())}
+        onChange={e => onDateTimeChange(new Date(e.target.value).getTime())}
         value={toDateTimeLocal(new Date(datetime))}
       />
 
@@ -391,7 +417,7 @@ export function IncomeTransactionForm({
           <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting} className="flex-1">
+          <Button type="submit" disabled={submitting || (isEditing && !hasChanges)} className="flex-1">
             {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>
