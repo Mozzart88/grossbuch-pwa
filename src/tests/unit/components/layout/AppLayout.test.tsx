@@ -161,18 +161,19 @@ describe('AppLayout', () => {
       expect(wrapper.className).toContain('flex-col')
     })
 
-    it('has min-height full', () => {
+    it('is capped to viewport height so main can scroll internally', () => {
       const { container } = renderLayout()
 
       const wrapper = container.firstChild as HTMLElement
-      expect(wrapper.className).toContain('min-h-full')
+      expect(wrapper.className).toContain('h-dvh')
     })
 
-    it('main has flex-1 for flexible content area', () => {
+    it('main has flex-1 and min-h-0 for flexible, scrollable content area', () => {
       renderLayout()
 
       const main = screen.getByRole('main')
       expect(main.className).toContain('flex-1')
+      expect(main.className).toContain('min-h-0')
     })
 
     it('main has bottom padding for TabBar', () => {
