@@ -261,4 +261,239 @@ describe('Legacy Migration Integration (real migrateLegacyInstallation against s
     // the linked_device conversion (unaffected by this fix), but no drops:
     expect(scalar(db, `SELECT value FROM main.app_settings WHERE key = 'linked_installations'`)).toBeNull()
   })
+
+  it('skips an orphaned tag_sort_order row (tag_id no longer in tag) without failing the migration', async () => {
+    db.run(`INSERT INTO tag (name) VALUES ('Groceries')`)
+    const groceriesTagId = lastId(db)
+
+    // Simulates a legacy delete path that removed the tag without cleaning up
+    // its sort-order row (real-world repro: tag_id = 12 in an exported main.db).
+    // FK enforcement must be dropped to construct this already-invalid state —
+    // main.tag_sort_order.tag_id REFERENCES tag(id) would otherwise reject it.
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO tag_sort_order (tag_id, count) VALUES (999999, 7)`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO shared.workspace (name) VALUES ('Personal')`)
+    const workspaceId = lastId(db)
+
+    const { migrateLegacyInstallation } = await import('../../services/database/legacyMigration')
+    await expect(migrateLegacyInstallation(workspaceId, 'dek-app', 'dek-shared')).resolves.toBeUndefined()
+
+    expect(rows(db, `SELECT 1 FROM shared.tag_sort_order WHERE tag_id = 999999`)).toHaveLength(0)
+    expect(rows(db, `SELECT 1 FROM shared.tag_sort_order WHERE tag_id = ?`, [groceriesTagId])).toHaveLength(1)
+  })
+
+  it('skips an orphaned counterparty_sort_order row (counterparty_id no longer in counterparty) without failing the migration', async () => {
+    db.run(`INSERT INTO counterparty (name) VALUES ('Corner Shop')`)
+    const counterpartyId = lastId(db)
+
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO counterparty_sort_order (counterparty_id, count) VALUES (999999, 4)`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO shared.workspace (name) VALUES ('Personal')`)
+    const workspaceId = lastId(db)
+
+    const { migrateLegacyInstallation } = await import('../../services/database/legacyMigration')
+    await expect(migrateLegacyInstallation(workspaceId, 'dek-app', 'dek-shared')).resolves.toBeUndefined()
+
+    expect(rows(db, `SELECT 1 FROM shared.counterparty_sort_order WHERE counterparty_id = 999999`)).toHaveLength(0)
+    expect(rows(db, `SELECT 1 FROM shared.counterparty_sort_order WHERE counterparty_id = ?`, [counterpartyId])).toHaveLength(1)
+  })
+
+  it('skips orphaned rows across every guarded same-database FK table in SHARED_ENTITY_COPY_SQL/WORKSPACE_ENTITY_COPY_SQL without failing the migration', async () => {
+    // Sentinel "missing parent" ids: 999999 for INTEGER FK columns, an all-zero
+    // 8-byte blob for BLOB FK columns — neither can collide with real
+    // AUTOINCREMENT ids or randomblob(8) output.
+    const ORPHAN_INT = 999999
+    const ORPHAN_BLOB = `X'0000000000000000'`
+
+    // ── shared-scope fixtures: one valid row + one orphan row per guarded table ──
+    db.run(`INSERT INTO tag (name) VALUES ('Root')`)
+    const rootTagId = lastId(db)
+    db.run(`INSERT INTO tag (name) VALUES ('Child')`)
+    const childTagId = lastId(db)
+
+    db.run(`INSERT INTO tag_to_tag (child_id, parent_id) VALUES (?, ?)`, [childTagId, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO tag_to_tag (child_id, parent_id) VALUES (${ORPHAN_INT}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO icon (value) VALUES ('icon1')`)
+    const iconId = lastId(db)
+    db.run(`INSERT INTO tag_icon (tag_id, icon_id) VALUES (?, ?)`, [rootTagId, iconId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO tag_icon (tag_id, icon_id) VALUES (${ORPHAN_INT}, ?)`, [iconId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO currency (code, name, symbol, decimal_places) VALUES ('TST', 'Test', 'T', 2)`)
+    const testCurrencyId = lastId(db)
+    db.run(`INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (?, ?)`, [testCurrencyId, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO currency_to_tags (currency_id, tag_id) VALUES (${ORPHAN_INT}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO exchange_rate (currency_id, updated_at, rate_int, rate_frac) VALUES (?, unixepoch(), 1, 0)`, [testCurrencyId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO exchange_rate (currency_id, updated_at, rate_int, rate_frac) VALUES (${ORPHAN_INT}, unixepoch(), 1, 0)`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO counterparty (name) VALUES ('Shop1')`)
+    const counterpartyId = lastId(db)
+    db.run(`INSERT INTO counterparty_note (counterparty_id, note) VALUES (?, 'note1')`, [counterpartyId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO counterparty_note (counterparty_id, note) VALUES (${ORPHAN_INT}, 'orphan-note')`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO counterparty_to_tags (counterparty_id, tag_id) VALUES (?, ?)`, [counterpartyId, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO counterparty_to_tags (counterparty_id, tag_id) VALUES (${ORPHAN_INT}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    // ── workspace-scope fixtures ──
+    db.run(`INSERT INTO wallet (name) VALUES ('Cash')`)
+    const walletId = lastId(db)
+    db.run(`INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (?, ?)`, [walletId, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO wallet_to_tags (wallet_id, tag_id) VALUES (${ORPHAN_INT}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(
+      `INSERT INTO account (wallet_id, currency_id, balance_int, balance_frac) VALUES (?, ?, ?, ?)`,
+      [walletId, testCurrencyId, 100, 0]
+    )
+    const accountId = lastId(db)
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(
+      `INSERT INTO account (wallet_id, currency_id, balance_int, balance_frac) VALUES (${ORPHAN_INT}, ?, 0, 0)`,
+      [testCurrencyId]
+    )
+    const orphanAccountId = lastId(db)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)`, [accountId, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO account_to_tags (account_id, tag_id) VALUES (${ORPHAN_INT}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO account_data (account_id, note) VALUES (?, 'meta')`, [accountId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO account_data (account_id, note) VALUES (${ORPHAN_INT}, 'orphan-meta')`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO trx (id, timestamp) VALUES (randomblob(8), unixepoch())`)
+    const trx = scalar<{ id: Uint8Array }>(db, `SELECT id FROM trx ORDER BY rowid DESC LIMIT 1`)!
+
+    db.run(`INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (?, ?)`, [trx.id, counterpartyId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO trx_to_counterparty (trx_id, counterparty_id) VALUES (${ORPHAN_BLOB}, ?)`, [counterpartyId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO trx_note (trx_id, note) VALUES (?, 'note')`, [trx.id])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO trx_note (trx_id, note) VALUES (${ORPHAN_BLOB}, 'orphan-note')`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(
+      `INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac) VALUES (randomblob(8), ?, ?, ?, '-', 10, 0)`,
+      [trx.id, accountId, rootTagId]
+    )
+    const trxBase = scalar<{ id: Uint8Array }>(db, `SELECT id FROM trx_base ORDER BY rowid DESC LIMIT 1`)!
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(
+      `INSERT INTO trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac) VALUES (randomblob(8), ${ORPHAN_BLOB}, ?, ?, '-', 5, 0)`,
+      [accountId, rootTagId]
+    )
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (?, ?)`, [trxBase.id, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO trx_base_tag_context (trx_base_id, tag_id) VALUES (${ORPHAN_BLOB}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(
+      `INSERT INTO budget (id, start, end, tag_id, type, amount_int, amount_frac) VALUES (randomblob(8), 0, 2592000, ?, 'expense', 20, 0)`,
+      [rootTagId]
+    )
+    const budget = scalar<{ id: Uint8Array }>(db, `SELECT id FROM budget ORDER BY rowid DESC LIMIT 1`)!
+
+    db.run(`INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`, [budget.id, rootTagId])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (${ORPHAN_BLOB}, ?)`, [rootTagId])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(
+      `INSERT INTO recurring_plan (id, schedule, transaction_draft, mode, start_date, until_policy) VALUES (randomblob(8), '{}', '{}', 'expense', '2024-01-01', '{}')`
+    )
+    const plan = scalar<{ id: Uint8Array }>(db, `SELECT id FROM recurring_plan ORDER BY rowid DESC LIMIT 1`)!
+
+    db.run(`INSERT INTO recurring_occurrence (id, plan_id, due_date) VALUES (randomblob(8), ?, '2024-02-01')`, [plan.id])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO recurring_occurrence (id, plan_id, due_date) VALUES (randomblob(8), ${ORPHAN_BLOB}, '2024-03-01')`)
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO recurring_budget (budget_id, plan_id, due_month) VALUES (?, ?, '2024-02')`, [budget.id, plan.id])
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO recurring_budget (budget_id, plan_id, due_month) VALUES (${ORPHAN_BLOB}, ?, '2024-03')`, [plan.id])
+    db.run('PRAGMA foreign_keys = ON')
+
+    db.run(`INSERT INTO shared.workspace (name) VALUES ('Personal')`)
+    const workspaceId = lastId(db)
+
+    const { migrateLegacyInstallation } = await import('../../services/database/legacyMigration')
+    await expect(migrateLegacyInstallation(workspaceId, 'dek-app', 'dek-shared')).resolves.toBeUndefined()
+
+    // Every valid row survives, every orphan row is gone.
+    expect(rows(db, `SELECT 1 FROM shared.tag_to_tag WHERE child_id = ? AND parent_id = ?`, [childTagId, rootTagId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM shared.tag_to_tag WHERE child_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM shared.tag_icon WHERE tag_id = ? AND icon_id = ?`, [rootTagId, iconId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM shared.tag_icon WHERE tag_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM shared.currency_to_tags WHERE currency_id = ? AND tag_id = ?`, [testCurrencyId, rootTagId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM shared.currency_to_tags WHERE currency_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM shared.exchange_rate WHERE currency_id = ?`, [testCurrencyId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM shared.exchange_rate WHERE currency_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM shared.counterparty_note WHERE counterparty_id = ?`, [counterpartyId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM shared.counterparty_note WHERE counterparty_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM shared.counterparty_to_tags WHERE counterparty_id = ? AND tag_id = ?`, [counterpartyId, rootTagId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM shared.counterparty_to_tags WHERE counterparty_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.wallet_to_tags WHERE wallet_id = ? AND tag_id = ?`, [walletId, rootTagId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.wallet_to_tags WHERE wallet_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.account WHERE id = ?`, [accountId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.account WHERE id = ?`, [orphanAccountId])).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.account_to_tags WHERE account_id = ? AND tag_id = ?`, [accountId, rootTagId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.account_to_tags WHERE account_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.account_data WHERE account_id = ?`, [accountId])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.account_data WHERE account_id = ${ORPHAN_INT}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.trx_to_counterparty WHERE trx_id = ?`, [trx.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.trx_to_counterparty WHERE trx_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.trx_note WHERE trx_id = ?`, [trx.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.trx_note WHERE trx_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.trx_base WHERE id = ?`, [trxBase.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.trx_base WHERE trx_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.trx_base_tag_context WHERE trx_base_id = ?`, [trxBase.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.trx_base_tag_context WHERE trx_base_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.budget_tag_context WHERE budget_id = ?`, [budget.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.budget_tag_context WHERE budget_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.recurring_occurrence WHERE plan_id = ?`, [plan.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.recurring_occurrence WHERE plan_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+
+    expect(rows(db, `SELECT 1 FROM workspace.recurring_budget WHERE budget_id = ?`, [budget.id])).toHaveLength(1)
+    expect(rows(db, `SELECT 1 FROM workspace.recurring_budget WHERE budget_id = ${ORPHAN_BLOB}`)).toHaveLength(0)
+  })
 })

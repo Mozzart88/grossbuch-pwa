@@ -408,8 +408,11 @@ export async function login(pin: string): Promise<boolean> {
     sessionDEK = encryptionKey
 
     return true
-  } catch {
-    // Invalid key - wrong PIN
+  } catch (error) {
+    // Could be a genuinely wrong PIN, but could also be a downstream failure
+    // (e.g. legacy migration hitting SQLITE_CONSTRAINT_FOREIGNKEY) — log so
+    // the two are distinguishable in the console instead of looking identical.
+    console.error('Login failed:', error)
     return false
   }
 }

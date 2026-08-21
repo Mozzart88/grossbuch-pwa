@@ -512,6 +512,19 @@ describe('authService', () => {
       const result = await login('mypin123')
       expect(result).toBe(false)
     })
+
+    it('logs the underlying error when the post-auth chain throws for a reason other than PIN verification, while still returning false', async () => {
+      // Simulates a downstream failure (e.g. legacy migration hitting
+      // SQLITE_CONSTRAINT_FOREIGNKEY) happening after PIN verification already
+      // succeeded — this must be distinguishable in the console from a wrong PIN.
+      const migrationError = new Error('SQLITE_CONSTRAINT_FOREIGNKEY: FOREIGN KEY constraint failed')
+      mockAttachActiveWorkspace.mockRejectedValueOnce(migrationError)
+
+      const result = await login('mypin123')
+
+      expect(result).toBe(false)
+      expect(console.error).toHaveBeenCalledWith('Login failed:', migrationError)
+    })
   })
 
   describe('logout', () => {

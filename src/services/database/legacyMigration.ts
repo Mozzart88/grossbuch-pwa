@@ -29,6 +29,13 @@ export async function needsLegacyMigration(): Promise<boolean> {
 // (trg_tag_sort_order_new_tag, trg_system_currency, updated_at maintenance,
 // etc.) are all safe to leave live during this copy — none of them mutate a
 // second table the way the workspace "sensitive" triggers do.
+// Same-database FK copy statements are guarded with WHERE EXISTS against the
+// already-copied parent row: a legacy delete path that predates FK
+// enforcement mattering can leave a stale row behind (e.g. a tag_icon row
+// whose tag was deleted without cleanup) which would otherwise throw
+// SQLITE_CONSTRAINT_FOREIGNKEY and roll back the whole migration. Columns
+// that are cross-schema soft references (not declared as same-database FKs)
+// are intentionally left unguarded — see design.md.
 export const SHARED_ENTITY_COPY_SQL = `
   INSERT INTO shared.icon (id, value, updated_at)
   SELECT id, value, updated_at FROM main.icon;
@@ -37,28 +44,38 @@ export const SHARED_ENTITY_COPY_SQL = `
   SELECT id, name, updated_at FROM main.tag;
 
   INSERT INTO shared.tag_to_tag (child_id, parent_id)
-  SELECT child_id, parent_id FROM main.tag_to_tag;
+  SELECT child_id, parent_id FROM main.tag_to_tag t
+  WHERE EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.child_id)
+    AND EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.parent_id);
 
   INSERT INTO shared.tag_icon (tag_id, icon_id)
-  SELECT tag_id, icon_id FROM main.tag_icon;
+  SELECT tag_id, icon_id FROM main.tag_icon t
+  WHERE EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id)
+    AND EXISTS (SELECT 1 FROM shared.icon WHERE shared.icon.id = t.icon_id);
 
   INSERT INTO shared.currency (id, code, name, symbol, decimal_places, updated_at)
   SELECT id, code, name, symbol, decimal_places, updated_at FROM main.currency;
 
   INSERT INTO shared.currency_to_tags (currency_id, tag_id)
-  SELECT currency_id, tag_id FROM main.currency_to_tags;
+  SELECT currency_id, tag_id FROM main.currency_to_tags t
+  WHERE EXISTS (SELECT 1 FROM shared.currency WHERE shared.currency.id = t.currency_id)
+    AND EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id);
 
   INSERT INTO shared.exchange_rate (currency_id, updated_at, rate_int, rate_frac)
-  SELECT currency_id, updated_at, rate_int, rate_frac FROM main.exchange_rate;
+  SELECT currency_id, updated_at, rate_int, rate_frac FROM main.exchange_rate t
+  WHERE EXISTS (SELECT 1 FROM shared.currency WHERE shared.currency.id = t.currency_id);
 
   INSERT INTO shared.counterparty (id, name, updated_at)
   SELECT id, name, updated_at FROM main.counterparty;
 
   INSERT INTO shared.counterparty_note (counterparty_id, note)
-  SELECT counterparty_id, note FROM main.counterparty_note;
+  SELECT counterparty_id, note FROM main.counterparty_note t
+  WHERE EXISTS (SELECT 1 FROM shared.counterparty WHERE shared.counterparty.id = t.counterparty_id);
 
   INSERT INTO shared.counterparty_to_tags (counterparty_id, tag_id)
-  SELECT counterparty_id, tag_id FROM main.counterparty_to_tags;
+  SELECT counterparty_id, tag_id FROM main.counterparty_to_tags t
+  WHERE EXISTS (SELECT 1 FROM shared.counterparty WHERE shared.counterparty.id = t.counterparty_id)
+    AND EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id);
 `
 
 // tag_sort_order/counterparty_sort_order already hold correct historical
@@ -69,10 +86,12 @@ export const SHARED_ENTITY_COPY_SQL = `
 // upsert (INSERT OR REPLACE), not a plain insert.
 export const SORT_ORDER_COPY_SQL = `
   INSERT OR REPLACE INTO shared.tag_sort_order (tag_id, count)
-  SELECT tag_id, count FROM main.tag_sort_order;
+  SELECT tag_id, count FROM main.tag_sort_order t
+  WHERE EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id);
 
   INSERT OR REPLACE INTO shared.counterparty_sort_order (counterparty_id, count)
-  SELECT counterparty_id, count FROM main.counterparty_sort_order;
+  SELECT counterparty_id, count FROM main.counterparty_sort_order t
+  WHERE EXISTS (SELECT 1 FROM shared.counterparty WHERE shared.counterparty.id = t.counterparty_id);
 `
 
 // Workspace entities: main.X -> workspace.X, explicit column lists, FK order.
@@ -86,46 +105,59 @@ export const WORKSPACE_ENTITY_COPY_SQL = `
   SELECT id, name, color, updated_at FROM main.wallet;
 
   INSERT INTO workspace.wallet_to_tags (wallet_id, tag_id)
-  SELECT wallet_id, tag_id FROM main.wallet_to_tags;
+  SELECT wallet_id, tag_id FROM main.wallet_to_tags t
+  WHERE EXISTS (SELECT 1 FROM workspace.wallet WHERE workspace.wallet.id = t.wallet_id);
 
   INSERT INTO workspace.account (id, wallet_id, currency_id, updated_at, balance_int, balance_frac)
-  SELECT id, wallet_id, currency_id, updated_at, balance_int, balance_frac FROM main.account;
+  SELECT id, wallet_id, currency_id, updated_at, balance_int, balance_frac FROM main.account t
+  WHERE EXISTS (SELECT 1 FROM workspace.wallet WHERE workspace.wallet.id = t.wallet_id);
 
   INSERT INTO workspace.account_to_tags (account_id, tag_id)
-  SELECT account_id, tag_id FROM main.account_to_tags;
+  SELECT account_id, tag_id FROM main.account_to_tags t
+  WHERE EXISTS (SELECT 1 FROM workspace.account WHERE workspace.account.id = t.account_id);
 
   INSERT INTO workspace.account_data (account_id, note, due_date, rate, updated_at)
-  SELECT account_id, note, due_date, rate, updated_at FROM main.account_data;
+  SELECT account_id, note, due_date, rate, updated_at FROM main.account_data t
+  WHERE EXISTS (SELECT 1 FROM workspace.account WHERE workspace.account.id = t.account_id);
 
   INSERT INTO workspace.trx (id, timestamp, updated_at)
   SELECT id, timestamp, updated_at FROM main.trx;
 
   INSERT INTO workspace.trx_to_counterparty (trx_id, counterparty_id)
-  SELECT trx_id, counterparty_id FROM main.trx_to_counterparty;
+  SELECT trx_id, counterparty_id FROM main.trx_to_counterparty t
+  WHERE EXISTS (SELECT 1 FROM workspace.trx WHERE workspace.trx.id = t.trx_id);
 
   INSERT INTO workspace.trx_note (trx_id, note)
-  SELECT trx_id, note FROM main.trx_note;
+  SELECT trx_id, note FROM main.trx_note t
+  WHERE EXISTS (SELECT 1 FROM workspace.trx WHERE workspace.trx.id = t.trx_id);
 
   INSERT INTO workspace.trx_base (id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac)
-  SELECT id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac FROM main.trx_base;
+  SELECT id, trx_id, account_id, tag_id, sign, amount_int, amount_frac, rate_int, rate_frac FROM main.trx_base t
+  WHERE EXISTS (SELECT 1 FROM workspace.trx WHERE workspace.trx.id = t.trx_id)
+    AND EXISTS (SELECT 1 FROM workspace.account WHERE workspace.account.id = t.account_id);
 
   INSERT INTO workspace.trx_base_tag_context (trx_base_id, tag_id)
-  SELECT trx_base_id, tag_id FROM main.trx_base_tag_context;
+  SELECT trx_base_id, tag_id FROM main.trx_base_tag_context t
+  WHERE EXISTS (SELECT 1 FROM workspace.trx_base WHERE workspace.trx_base.id = t.trx_base_id);
 
   INSERT INTO workspace.budget (id, start, end, tag_id, updated_at, amount_int, amount_frac, type)
   SELECT id, start, end, tag_id, updated_at, amount_int, amount_frac, type FROM main.budget;
 
   INSERT INTO workspace.budget_tag_context (budget_id, tag_id)
-  SELECT budget_id, tag_id FROM main.budget_tag_context;
+  SELECT budget_id, tag_id FROM main.budget_tag_context t
+  WHERE EXISTS (SELECT 1 FROM workspace.budget WHERE workspace.budget.id = t.budget_id);
 
   INSERT INTO workspace.recurring_plan (id, schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status, created_at, updated_at)
   SELECT id, schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status, created_at, updated_at FROM main.recurring_plan;
 
   INSERT INTO workspace.recurring_occurrence (id, plan_id, due_date, notification_id, created_at, updated_at)
-  SELECT id, plan_id, due_date, notification_id, created_at, updated_at FROM main.recurring_occurrence;
+  SELECT id, plan_id, due_date, notification_id, created_at, updated_at FROM main.recurring_occurrence t
+  WHERE EXISTS (SELECT 1 FROM workspace.recurring_plan WHERE workspace.recurring_plan.id = t.plan_id);
 
   INSERT INTO workspace.recurring_budget (budget_id, plan_id, due_month, updated_at)
-  SELECT budget_id, plan_id, due_month, updated_at FROM main.recurring_budget;
+  SELECT budget_id, plan_id, due_month, updated_at FROM main.recurring_budget t
+  WHERE EXISTS (SELECT 1 FROM workspace.budget WHERE workspace.budget.id = t.budget_id)
+    AND EXISTS (SELECT 1 FROM workspace.recurring_plan WHERE workspace.recurring_plan.id = t.plan_id);
 `
 
 // Mirrors tagReferences.ts's increment/decrement call sites: every place a
@@ -284,6 +316,130 @@ const NEW_MAIN_KEEP_DATA_COPY_SQL = `
   SELECT table_name, entity_id, deleted_at FROM main.sync_deletions;
 `
 
+// Mirrors the WHERE EXISTS guards above: one count-of-skipped-rows query per
+// guarded table, run after its copy so a development console shows exactly
+// how much legacy inconsistency a given installation had (Decision 3,
+// design.md) instead of the orphaned rows silently vanishing.
+const SHARED_ORPHAN_CHECKS: { table: string; sql: string }[] = [
+  {
+    table: 'tag_to_tag',
+    sql: `SELECT COUNT(*) AS cnt FROM main.tag_to_tag t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.child_id)
+             OR NOT EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.parent_id)`,
+  },
+  {
+    table: 'tag_icon',
+    sql: `SELECT COUNT(*) AS cnt FROM main.tag_icon t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id)
+             OR NOT EXISTS (SELECT 1 FROM shared.icon WHERE shared.icon.id = t.icon_id)`,
+  },
+  {
+    table: 'currency_to_tags',
+    sql: `SELECT COUNT(*) AS cnt FROM main.currency_to_tags t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.currency WHERE shared.currency.id = t.currency_id)
+             OR NOT EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id)`,
+  },
+  {
+    table: 'exchange_rate',
+    sql: `SELECT COUNT(*) AS cnt FROM main.exchange_rate t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.currency WHERE shared.currency.id = t.currency_id)`,
+  },
+  {
+    table: 'counterparty_note',
+    sql: `SELECT COUNT(*) AS cnt FROM main.counterparty_note t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.counterparty WHERE shared.counterparty.id = t.counterparty_id)`,
+  },
+  {
+    table: 'counterparty_to_tags',
+    sql: `SELECT COUNT(*) AS cnt FROM main.counterparty_to_tags t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.counterparty WHERE shared.counterparty.id = t.counterparty_id)
+             OR NOT EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id)`,
+  },
+]
+
+const SORT_ORDER_ORPHAN_CHECKS: { table: string; sql: string }[] = [
+  {
+    table: 'tag_sort_order',
+    sql: `SELECT COUNT(*) AS cnt FROM main.tag_sort_order t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.tag WHERE shared.tag.id = t.tag_id)`,
+  },
+  {
+    table: 'counterparty_sort_order',
+    sql: `SELECT COUNT(*) AS cnt FROM main.counterparty_sort_order t
+          WHERE NOT EXISTS (SELECT 1 FROM shared.counterparty WHERE shared.counterparty.id = t.counterparty_id)`,
+  },
+]
+
+const WORKSPACE_ORPHAN_CHECKS: { table: string; sql: string }[] = [
+  {
+    table: 'wallet_to_tags',
+    sql: `SELECT COUNT(*) AS cnt FROM main.wallet_to_tags t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.wallet WHERE workspace.wallet.id = t.wallet_id)`,
+  },
+  {
+    table: 'account',
+    sql: `SELECT COUNT(*) AS cnt FROM main.account t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.wallet WHERE workspace.wallet.id = t.wallet_id)`,
+  },
+  {
+    table: 'account_to_tags',
+    sql: `SELECT COUNT(*) AS cnt FROM main.account_to_tags t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.account WHERE workspace.account.id = t.account_id)`,
+  },
+  {
+    table: 'account_data',
+    sql: `SELECT COUNT(*) AS cnt FROM main.account_data t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.account WHERE workspace.account.id = t.account_id)`,
+  },
+  {
+    table: 'trx_to_counterparty',
+    sql: `SELECT COUNT(*) AS cnt FROM main.trx_to_counterparty t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.trx WHERE workspace.trx.id = t.trx_id)`,
+  },
+  {
+    table: 'trx_note',
+    sql: `SELECT COUNT(*) AS cnt FROM main.trx_note t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.trx WHERE workspace.trx.id = t.trx_id)`,
+  },
+  {
+    table: 'trx_base',
+    sql: `SELECT COUNT(*) AS cnt FROM main.trx_base t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.trx WHERE workspace.trx.id = t.trx_id)
+             OR NOT EXISTS (SELECT 1 FROM workspace.account WHERE workspace.account.id = t.account_id)`,
+  },
+  {
+    table: 'trx_base_tag_context',
+    sql: `SELECT COUNT(*) AS cnt FROM main.trx_base_tag_context t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.trx_base WHERE workspace.trx_base.id = t.trx_base_id)`,
+  },
+  {
+    table: 'budget_tag_context',
+    sql: `SELECT COUNT(*) AS cnt FROM main.budget_tag_context t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.budget WHERE workspace.budget.id = t.budget_id)`,
+  },
+  {
+    table: 'recurring_occurrence',
+    sql: `SELECT COUNT(*) AS cnt FROM main.recurring_occurrence t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.recurring_plan WHERE workspace.recurring_plan.id = t.plan_id)`,
+  },
+  {
+    table: 'recurring_budget',
+    sql: `SELECT COUNT(*) AS cnt FROM main.recurring_budget t
+          WHERE NOT EXISTS (SELECT 1 FROM workspace.budget WHERE workspace.budget.id = t.budget_id)
+             OR NOT EXISTS (SELECT 1 FROM workspace.recurring_plan WHERE workspace.recurring_plan.id = t.plan_id)`,
+  },
+]
+
+async function warnAboutSkippedOrphans(checks: { table: string; sql: string }[]): Promise<void> {
+  for (const { table, sql } of checks) {
+    const row = await queryOne<{ cnt: number }>(sql)
+    const skipped = row?.cnt ?? 0
+    if (skipped > 0) {
+      console.warn(`[legacyMigration] Skipped ${skipped} orphaned row(s) from main.${table} (referenced row no longer exists)`)
+    }
+  }
+}
+
 interface ParsedInstallation {
   id: string
   publicKey: string
@@ -369,13 +525,17 @@ export async function migrateLegacyInstallation(
     await execSQL('BEGIN TRANSACTION')
     try {
       await execSQL(SHARED_ENTITY_COPY_SQL)
+      await warnAboutSkippedOrphans(SHARED_ORPHAN_CHECKS)
+
       await execSQL(SORT_ORDER_COPY_SQL)
+      await warnAboutSkippedOrphans(SORT_ORDER_ORPHAN_CHECKS)
 
       for (const trigger of WORKSPACE_BULK_COPY_SENSITIVE_TRIGGERS) {
         await execSQL(`DROP TRIGGER workspace.${trigger.name};`)
       }
 
       await execSQL(WORKSPACE_ENTITY_COPY_SQL)
+      await warnAboutSkippedOrphans(WORKSPACE_ORPHAN_CHECKS)
 
       for (const trigger of WORKSPACE_BULK_COPY_SENSITIVE_TRIGGERS) {
         await execSQL(trigger.sql)
