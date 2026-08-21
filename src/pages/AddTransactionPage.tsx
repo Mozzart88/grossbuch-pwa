@@ -26,6 +26,9 @@ export function AddTransactionPage() {
   const initialMode = (['expense', 'income', 'transfer', 'exchange'].includes(typeParam || '')
     ? typeParam as TransactionMode
     : notificationMode)
+  // Entry point from the Recurring Transactions page's Add button (?recurring=1):
+  // pre-enables recurrence and switches to a date-only (no time) entry mode.
+  const recurringEntryPoint = searchParams.get('recurring') === '1'
 
   useEffect(() => {
     async function loadNotification() {
@@ -78,8 +81,8 @@ export function AddTransactionPage() {
         showBack
         rightAction={
           <div className="flex items-center gap-1">
-            {addAnotherAction}
             {recurrenceAction}
+            {addAnotherAction}
           </div>
         }
       />
@@ -93,6 +96,8 @@ export function AddTransactionPage() {
           showAddAnother
           onAddAnotherActionChange={setAddAnotherAction}
           onRecurrenceActionChange={setRecurrenceAction}
+          recurringPreEnabled={recurringEntryPoint}
+          dateOnly={recurringEntryPoint}
         />
       </div>
     </div>

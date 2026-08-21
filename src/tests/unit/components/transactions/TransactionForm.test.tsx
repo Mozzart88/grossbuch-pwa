@@ -37,10 +37,14 @@ vi.mock('../../../../services/repositories', () => ({
     update: vi.fn(),
   },
   settingsRepository: {
-    get: vi.fn(),
+    get: vi.fn().mockResolvedValue(null),
     set: vi.fn(),
     delete: vi.fn(),
     getAll: vi.fn(),
+  },
+  recurringRepository: {
+    createPlanFromTransaction: vi.fn(),
+    derivePaymentPin: vi.fn().mockResolvedValue(null),
   },
 }))
 
@@ -250,6 +254,23 @@ describe('TransactionForm', () => {
         expect(screen.getByRole('button', { name: 'Transfer' })).toBeInTheDocument()
         expect(screen.getByRole('button', { name: 'Exchange' })).toBeInTheDocument()
       })
+    })
+
+    it('hides Transfer/Exchange when recurrence is pre-enabled (recurring plans are expense/income-only)', async () => {
+      render(
+        <TransactionForm
+          onSubmit={mockOnSubmit}
+          onCancel={mockOnCancel}
+          recurringPreEnabled
+        />
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Expense' })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Income' })).toBeInTheDocument()
+      })
+      expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Exchange' })).not.toBeInTheDocument()
     })
   })
 

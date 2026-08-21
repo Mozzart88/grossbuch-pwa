@@ -25,11 +25,23 @@ vi.mock('../../../services/repositories/currencyRepository', () => ({
   },
 }))
 
+vi.mock('../../../services/repositories/settingsRepository', () => ({
+  settingsRepository: {
+    get: vi.fn(),
+  },
+}))
+
+vi.mock('../../../services/exchangeRate/historicalRateService', () => ({
+  getRateForDate: vi.fn(),
+}))
+
 import { execSQL, queryOne, querySQL } from '../../../services/database'
 import { currencyRepository } from '../../../services/repositories/currencyRepository'
 import { notificationRepository } from '../../../services/repositories/notificationRepository'
 import { recurringRepository } from '../../../services/repositories/recurringRepository'
 import { transactionRepository } from '../../../services/repositories/transactionRepository'
+import { settingsRepository } from '../../../services/repositories/settingsRepository'
+import { getRateForDate } from '../../../services/exchangeRate/historicalRateService'
 
 const mockExecSQL = vi.mocked(execSQL)
 const mockQueryOne = vi.mocked(queryOne)
@@ -37,6 +49,8 @@ const mockQuerySQL = vi.mocked(querySQL)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockNotificationRepository = vi.mocked(notificationRepository)
 const mockTransactionRepository = vi.mocked(transactionRepository)
+const mockSettingsRepository = vi.mocked(settingsRepository)
+const mockGetRateForDate = vi.mocked(getRateForDate)
 
 const planId = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8])
 const notificationId = new Uint8Array([8, 7, 6, 5, 4, 3, 2, 1])
@@ -63,6 +77,8 @@ function planRow(overrides: Record<string, unknown> = {}) {
     until_policy: JSON.stringify({ type: 'count', count: 3 }),
     occurrence_count: 1,
     status: 'active',
+    payment_pin: null,
+    notify_days_before: null,
     created_at: 1,
     updated_at: 1,
     ...overrides,
@@ -74,6 +90,7 @@ describe('recurringRepository', () => {
     vi.clearAllMocks()
     mockQuerySQL.mockResolvedValue([])
     mockCurrencyRepository.getSystemRateInfo.mockResolvedValue({ rate: 1, currencyId: 1 })
+    mockSettingsRepository.get.mockResolvedValue(null)
     mockNotificationRepository.createTransactionDraft.mockResolvedValue({
       id: notificationId,
       title: 'Recurring expense due 2026-05-15',
@@ -114,6 +131,8 @@ describe('recurringRepository', () => {
           until_policy: storedUntil,
           occurrence_count: 0,
           status: 'active',
+          payment_pin: null,
+          notify_days_before: null,
           created_at: 1,
           updated_at: 1,
         }
@@ -149,6 +168,32 @@ describe('recurringRepository', () => {
     expect(parsed.lines[0].amount_int).toBe(12)
     expect(parsed.lines[0].amount_frac).toBe(345000000000000000)
     expect(typeof parsed.lines[0].amount_int).toBe('number')
+  })
+
+  it('rejects creating, updating, and pre-transacting recurring plans with mode transfer or exchange', async () => {
+    const draft = JSON.parse(planRow().transaction_draft) as TransactionInput
+
+    await expect(recurringRepository.create({
+      schedule: { frequency: 'daily', interval: 1 },
+      transaction_draft: draft,
+      mode: 'transfer',
+      start_date: '2026-05-01',
+      until_policy: { type: 'never' },
+    })).rejects.toThrow('Recurring plans are only supported for expense and income transactions')
+
+    mockQueryOne.mockImplementation(async (sql) => sql.includes('SELECT * FROM recurring_plan') ? planRow() : null)
+    await expect(recurringRepository.update(planId, { mode: 'exchange' })).rejects.toThrow(
+      'Recurring plans are only supported for expense and income transactions'
+    )
+
+    await expect(recurringRepository.createPlanFromTransaction({
+      schedule: { frequency: 'daily', interval: 1 },
+      transaction_draft: draft,
+      mode: 'transfer',
+      start_date: '2026-05-01',
+      until_policy: { type: 'never' },
+    }, 'add-now')).rejects.toThrow('Recurring plans are only supported for expense and income transactions')
+    expect(mockTransactionRepository.create).not.toHaveBeenCalled()
   })
 
   it('projects recurring budgets in display currency and includes already-added current-month occurrences', async () => {
@@ -188,6 +233,8 @@ describe('recurringRepository', () => {
           until_policy: storedUntil,
           occurrence_count: storedOccurrenceCount,
           status: 'active',
+          payment_pin: null,
+          notify_days_before: null,
           created_at: 1,
           updated_at: 1,
         }
@@ -307,11 +354,13 @@ describe('recurringRepository', () => {
     )).toBeNull()
   })
 
-  it('finds and maps recurring plans', async () => {
+  it('finds and maps recurring plans, including a payment pin when present', async () => {
     mockQuerySQL.mockResolvedValue([
       planRow({
         schedule: JSON.stringify({ frequency: 'yearly', interval: 0, months: [10, 2, 20], monthDays: [31, 2] }),
         until_policy: JSON.stringify({ type: 'never' }),
+        payment_pin: JSON.stringify({ currency_id: 2, amount_int: 100, amount_frac: 0 }),
+        notify_days_before: 5,
       }),
     ])
 
@@ -323,6 +372,16 @@ describe('recurringRepository', () => {
       months: [2, 10],
       monthDays: [2, 31],
     })
+    expect(plans[0].payment_pin).toEqual({ currency_id: 2, amount_int: 100, amount_frac: 0 })
+    expect(plans[0].notify_days_before).toBe(5)
+  })
+
+  it('maps a plan without a payment pin to null', async () => {
+    mockQuerySQL.mockResolvedValue([planRow()])
+
+    const plans = await recurringRepository.findAll()
+
+    expect(plans[0].payment_pin).toBeNull()
   })
 
   it('updates, pauses, resumes, and deletes plans', async () => {
@@ -370,6 +429,32 @@ describe('recurringRepository', () => {
     )
   })
 
+  it('updating repetitions only (schedule/until/notify_days_before) leaves an existing payment pin untouched, and can explicitly clear it', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-16T12:00:00'))
+    const existing = planRow({
+      schedule: JSON.stringify({ frequency: 'daily', interval: 1 }),
+      until_policy: JSON.stringify({ type: 'never' }),
+      payment_pin: JSON.stringify({ currency_id: 2, amount_int: 50, amount_frac: 0 }),
+    })
+    mockQueryOne.mockImplementation(async (sql) => sql.includes('SELECT * FROM recurring_plan') ? existing : null)
+
+    await recurringRepository.update(planId, { notify_days_before: 4 })
+
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE recurring_plan'),
+      expect.arrayContaining([JSON.stringify({ currency_id: 2, amount_int: 50, amount_frac: 0 }), 4, planId])
+    )
+
+    mockExecSQL.mockClear()
+    await recurringRepository.update(planId, { payment_pin: null })
+
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE recurring_plan'),
+      expect.arrayContaining([null])
+    )
+  })
+
   it('creates the first real transaction for add-now plans and schedules the next due date', async () => {
     let loadedPlan = planRow({ next_due_date: '2026-05-08', occurrence_count: 1 })
     mockQueryOne.mockImplementation(async (sql) => {
@@ -401,7 +486,7 @@ describe('recurringRepository', () => {
     expect(plan.next_due_date).toBe('2026-05-15')
   })
 
-  it('processes due plans into transaction draft notifications without duplicating existing occurrences', async () => {
+  it('processes due plans into hydrated transaction draft notifications without duplicating existing occurrences', async () => {
     let currentRow = planRow({ next_due_date: '2026-05-01', occurrence_count: 0 })
     mockQuerySQL.mockResolvedValue([currentRow])
     mockQueryOne.mockImplementation(async (sql) => {
@@ -423,7 +508,7 @@ describe('recurringRepository', () => {
     expect(created).toBe(2)
     expect(mockNotificationRepository.createTransactionDraft).toHaveBeenCalledTimes(2)
     expect(mockNotificationRepository.createTransactionDraft).toHaveBeenCalledWith(
-      'Recurring expense due 2026-05-01',
+      'You have upcoming payment transaction in 0 days',
       'expense',
       expect.objectContaining({
         timestamp: Math.floor(new Date('2026-05-01T09:30:00').getTime() / 1000),
@@ -461,6 +546,270 @@ describe('recurringRepository', () => {
       `UPDATE recurring_plan SET occurrence_count = ?, next_due_date = ? WHERE id = ?`,
       [3, null, planId]
     )
+  })
+
+  it('surfaces an occurrence lead-days ahead of its due date while the occurrence keeps the real due date', async () => {
+    const row = planRow({ next_due_date: '2026-05-15', occurrence_count: 0, notify_days_before: 3 })
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      return null
+    })
+
+    const tooEarly = await recurringRepository.processDue('2026-05-11', 1)
+    expect(tooEarly).toBe(0)
+    expect(mockNotificationRepository.createTransactionDraft).not.toHaveBeenCalled()
+
+    const created = await recurringRepository.processDue('2026-05-12', 1)
+    expect(created).toBe(1)
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO recurring_occurrence'),
+      [planId, '2026-05-15', notificationId]
+    )
+  })
+
+  it('falls back to the app-wide default lead time when a plan has none, and to zero when that is also unset', async () => {
+    const row = planRow({ next_due_date: '2026-05-15', occurrence_count: 0, notify_days_before: null })
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      return null
+    })
+
+    mockSettingsRepository.get.mockResolvedValueOnce(null)
+    const withNoDefault = await recurringRepository.processDue('2026-05-13', 1)
+    expect(withNoDefault).toBe(0)
+
+    mockSettingsRepository.get.mockResolvedValueOnce('2')
+    const withDefault = await recurringRepository.processDue('2026-05-13', 1)
+    expect(withDefault).toBe(1)
+  })
+
+  it('keeps the pinned account-currency amount fixed regardless of exchange-rate movement between creation and due date', async () => {
+    const sourceAccountId = 2
+    const targetAccountId = 3
+    const row = planRow({
+      next_due_date: '2026-06-01',
+      occurrence_count: 0,
+      payment_pin: JSON.stringify({ currency_id: 1, amount_int: 100, amount_frac: 0 }),
+      transaction_draft: JSON.stringify({
+        timestamp: Math.floor(new Date('2026-01-01T09:00:00').getTime() / 1000),
+        lines: [
+          { account_id: sourceAccountId, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '-', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+          { account_id: targetAccountId, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '+', amount_int: 90, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+          { account_id: targetAccountId, tag_id: 12, sign: '-', amount_int: 90, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+        ],
+      }),
+    })
+
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql, params = []) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      if (sql.includes('SELECT currency_id FROM account')) {
+        return { currency_id: params[0] === sourceAccountId ? 1 : 2 }
+      }
+      return null
+    })
+    // Rate for currency 1 (the pinned account currency) swings wildly by the due date —
+    // the pinned line must ignore it entirely and stay at the fixed amount.
+    mockGetRateForDate.mockImplementation(async (currencyId: number) => (
+      currencyId === 1 ? { int: 5, frac: 0 } : { int: 1, frac: 0 }
+    ))
+
+    await recurringRepository.processDue('2026-06-01', 1)
+
+    const draft = mockNotificationRepository.createTransactionDraft.mock.calls[0][2] as TransactionInput
+    const pinnedLine = draft.lines.find(l => l.account_id === sourceAccountId)!
+    expect(pinnedLine.amount_int).toBe(100)
+    expect(pinnedLine.amount_frac).toBe(0)
+  })
+
+  it('derives the payment-currency amount from a live rate at the due date, not the frozen creation-time rate', async () => {
+    const sourceAccountId = 2
+    const targetAccountId = 3
+    const row = planRow({
+      next_due_date: '2026-06-01',
+      occurrence_count: 0,
+      payment_pin: JSON.stringify({ currency_id: 2, amount_int: 100, amount_frac: 0 }),
+      transaction_draft: JSON.stringify({
+        timestamp: Math.floor(new Date('2026-01-01T09:00:00').getTime() / 1000),
+        lines: [
+          { account_id: sourceAccountId, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '-', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+          { account_id: targetAccountId, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '+', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+          { account_id: targetAccountId, tag_id: 12, sign: '-', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+        ],
+      }),
+    })
+
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql, params = []) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      if (sql.includes('SELECT currency_id FROM account')) {
+        return { currency_id: params[0] === sourceAccountId ? 1 : 2 }
+      }
+      return null
+    })
+    // Currency 1 (account currency, the derived side) moves from 1 at creation time to 2 by the due date.
+    mockGetRateForDate.mockImplementation(async (currencyId: number) => (
+      currencyId === 1 ? { int: 2, frac: 0 } : { int: 1, frac: 0 }
+    ))
+
+    await recurringRepository.processDue('2026-06-01', 1)
+
+    const draft = mockNotificationRepository.createTransactionDraft.mock.calls[0][2] as TransactionInput
+    const pinnedLine = draft.lines.find(l => l.account_id === targetAccountId && l.tag_id === SYSTEM_TAGS.EXCHANGE)!
+    const derivedLine = draft.lines.find(l => l.account_id === sourceAccountId)!
+    expect(pinnedLine.amount_int).toBe(100)
+    expect(derivedLine.amount_int).toBe(200)
+  })
+
+  it('normalizes BigInt rate fields from a live rate lookup before building the notification draft (regression: sqlite-wasm can return BigInt for INTEGER columns)', async () => {
+    const sourceAccountId = 2
+    const targetAccountId = 3
+    const row = planRow({
+      next_due_date: '2026-06-01',
+      occurrence_count: 0,
+      payment_pin: JSON.stringify({ currency_id: 2, amount_int: 100, amount_frac: 0 }),
+      transaction_draft: JSON.stringify({
+        timestamp: Math.floor(new Date('2026-01-01T09:00:00').getTime() / 1000),
+        lines: [
+          { account_id: sourceAccountId, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '-', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+          { account_id: targetAccountId, tag_id: SYSTEM_TAGS.EXCHANGE, sign: '+', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0 },
+        ],
+      }),
+    })
+
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql, params = []) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      if (sql.includes('SELECT currency_id FROM account')) {
+        return { currency_id: params[0] === sourceAccountId ? 1 : 2 }
+      }
+      return null
+    })
+    // Simulates sqlite-wasm returning BigInt for an INTEGER column value that
+    // exceeds Number.MAX_SAFE_INTEGER — routine for `rate_frac`, which is
+    // scaled by 10^18 (FRAC_SCALE) and so is BigInt for almost any nonzero
+    // fraction, while `rate_int` (whole units) typically stays a safe number.
+    mockGetRateForDate.mockResolvedValue({ int: 2, frac: 500000000000000000n } as unknown as { int: number; frac: number })
+
+    await expect(recurringRepository.processDue('2026-06-01', 1)).resolves.toBe(1)
+
+    const draft = mockNotificationRepository.createTransactionDraft.mock.calls[0][2] as TransactionInput
+    expect(() => JSON.stringify(draft)).not.toThrow()
+    for (const line of draft.lines) {
+      expect(typeof line.rate_int).toBe('number')
+      expect(typeof line.rate_frac).toBe('number')
+    }
+  })
+
+  it('builds the upcoming-payment notification title with counterparty, category, days remaining, and wallet:currency', async () => {
+    const draft = {
+      counterparty_id: 77,
+      timestamp: Math.floor(new Date('2026-05-18T09:00:00').getTime() / 1000),
+      lines: [{ account_id: 2, tag_id: 12, sign: '-', amount_int: 7, amount_frac: 0, rate_int: 1, rate_frac: 0 }],
+    }
+    const row = planRow({ next_due_date: '2026-05-18', occurrence_count: 0, notify_days_before: 3, transaction_draft: JSON.stringify(draft) })
+
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      if (sql.includes('SELECT name FROM tag WHERE id')) return { name: 'Rent' }
+      if (sql.includes('SELECT wallet_id, currency_id FROM account')) return { wallet_id: 5, currency_id: 9 }
+      if (sql.includes('SELECT name FROM wallet')) return { name: 'Checking' }
+      if (sql.includes('SELECT code, symbol, decimal_places FROM currency')) return { code: 'USD', symbol: '$', decimal_places: 2 }
+      if (sql.includes('SELECT name FROM counterparty')) return { name: 'Landlord' }
+      return null
+    })
+
+    await recurringRepository.processDue('2026-05-15', 1)
+
+    expect(mockNotificationRepository.createTransactionDraft).toHaveBeenCalledWith(
+      'You have upcoming payment to Landlord Rent in 3 days from Checking:USD',
+      'expense',
+      expect.anything(),
+      expect.any(Number)
+    )
+  })
+
+  it('omits the counterparty segment when the plan has no counterparty, showing same-day due as 0 days', async () => {
+    const draft = {
+      timestamp: Math.floor(new Date('2026-05-15T09:00:00').getTime() / 1000),
+      lines: [{ account_id: 2, tag_id: 12, sign: '-', amount_int: 7, amount_frac: 0, rate_int: 1, rate_frac: 0 }],
+    }
+    const row = planRow({ next_due_date: '2026-05-15', occurrence_count: 0, notify_days_before: 0, transaction_draft: JSON.stringify(draft) })
+
+    mockQuerySQL.mockResolvedValue([row])
+    mockQueryOne.mockImplementation(async (sql) => {
+      if (sql.includes('SELECT id FROM recurring_occurrence')) return null
+      if (sql.includes('SELECT * FROM recurring_plan')) return row
+      if (sql.includes('SELECT name FROM tag WHERE id')) return { name: 'Groceries' }
+      if (sql.includes('SELECT wallet_id, currency_id FROM account')) return { wallet_id: 5, currency_id: 9 }
+      if (sql.includes('SELECT name FROM wallet')) return { name: 'Checking' }
+      if (sql.includes('SELECT code, symbol, decimal_places FROM currency')) return { code: 'USD', symbol: '$', decimal_places: 2 }
+      return null
+    })
+
+    await recurringRepository.processDue('2026-05-15', 1)
+
+    expect(mockNotificationRepository.createTransactionDraft).toHaveBeenCalledWith(
+      'You have upcoming payment Groceries in 0 days from Checking:USD',
+      'expense',
+      expect.anything(),
+      expect.any(Number)
+    )
+  })
+
+  it('hydrates a draft against current tag/account/wallet/currency/counterparty data', async () => {
+    mockQueryOne.mockImplementation(async (sql, params = []) => {
+      if (sql.includes('SELECT name FROM tag WHERE id')) return { name: 'Rent' }
+      if (sql.includes('SELECT wallet_id, currency_id FROM account')) return { wallet_id: 5, currency_id: 9 }
+      if (sql.includes('SELECT name FROM wallet')) return { name: 'Checking' }
+      if (sql.includes('SELECT code, symbol, decimal_places FROM currency')) return { code: 'USD', symbol: '$', decimal_places: 2 }
+      if (sql.includes('SELECT name FROM counterparty')) { expect(params).toEqual([77]); return { name: 'Landlord' } }
+      return null
+    })
+
+    const hydration = await recurringRepository.hydrateDraft({
+      counterparty_id: 77,
+      timestamp: 1,
+      lines: [{ account_id: 2, tag_id: 12, sign: '-', amount_int: 7, amount_frac: 500000000000000000, rate_int: 1, rate_frac: 0 }],
+    })
+
+    expect(hydration).toEqual({
+      categoryName: 'Rent',
+      counterpartyName: 'Landlord',
+      walletName: 'Checking',
+      currencyCode: 'USD',
+      currencySymbol: '$',
+      decimalPlaces: 2,
+      amount: 7.5,
+    })
+  })
+
+  it('hydrates a draft with no counterparty and unresolved account to nulls', async () => {
+    mockQueryOne.mockResolvedValue(null)
+
+    const hydration = await recurringRepository.hydrateDraft({
+      timestamp: 1,
+      lines: [],
+    })
+
+    expect(hydration).toEqual({
+      categoryName: null,
+      counterpartyName: null,
+      walletName: null,
+      currencyCode: null,
+      currencySymbol: null,
+      decimalPlaces: 2,
+      amount: 0,
+    })
   })
 
   it('syncs generated budget edits back into matching recurring draft lines', async () => {

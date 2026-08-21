@@ -41,6 +41,14 @@ async function buildPreMigrationDatabase(): Promise<Database> {
   for (let version = 1; version <= CURRENT_WORKSPACE_VERSION; version++) {
     for (const sql of workspaceMigrations[version] ?? []) db.run(sql)
   }
+  // Record the schema version the real runWorkspaceMigrations() (invoked below via
+  // migrateLegacyInstallation() -> attachActiveWorkspace()) would leave behind, so it
+  // doesn't try to re-run non-idempotent statements (like an ALTER TABLE ADD COLUMN)
+  // from version 1 again against a workspace already built at the current version.
+  db.run(
+    `INSERT OR REPLACE INTO workspace.workspace_meta (key, value, updated_at) VALUES ('schema_version', ?, unixepoch())`,
+    [CURRENT_WORKSPACE_VERSION.toString()]
+  )
 
   // Mirrors production ordering: attachActiveWorkspace() creates the TEMP
   // views *before* needsLegacyMigration()/migrateLegacyInstallation() runs.

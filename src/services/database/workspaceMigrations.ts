@@ -6,7 +6,7 @@ import { execSQL, queryOne } from './connection'
 // currency, counterparty, notification) keep the column but drop the FK
 // clause: cross-database FK enforcement doesn't work, so these are soft
 // references, validated at the application level (see design.md).
-export const CURRENT_WORKSPACE_VERSION = 2
+export const CURRENT_WORKSPACE_VERSION = 3
 
 // Triggers that auto-write to a table this migration also bulk-copies directly
 // (account_to_tags/wallet_to_tags default-tag assignment, account balance from
@@ -624,6 +624,15 @@ export const workspaceMigrations: Record<number, string[]> = {
     // trx.timestamp range filter (budget start/end) used on every query.
     `CREATE INDEX IF NOT EXISTS workspace.idx_trx_base_tag ON trx_base(tag_id);`,
     `CREATE INDEX IF NOT EXISTS workspace.idx_trx_timestamp ON trx(timestamp);`,
+  ],
+
+  3: [
+    // Pinned-side amount model (payment_pin) and reminder lead time
+    // (notify_days_before) for recurring plans — see openspec change
+    // recurring-transactions-rework. Nullable: NULL means "no currency-
+    // conversion pin" / "use the app-wide default lead time" respectively.
+    `ALTER TABLE workspace.recurring_plan ADD COLUMN payment_pin TEXT;`,
+    `ALTER TABLE workspace.recurring_plan ADD COLUMN notify_days_before INTEGER;`,
   ],
 }
 

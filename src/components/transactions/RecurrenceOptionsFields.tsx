@@ -7,6 +7,9 @@ interface RecurrenceOptionsFieldsProps {
   today: string
   onScheduleChange: (schedule: SetStateAction<RecurringSchedule>) => void
   onUntilChange: (until: RecurringUntilPolicy) => void
+  notifyDaysBefore?: number | null
+  onNotifyDaysBeforeChange?: (notifyDaysBefore: number | null) => void
+  defaultNotifyDaysBefore?: number
 }
 
 const frequencyOptions: Array<{ value: RecurringSchedule['frequency']; label: string }> = [
@@ -59,6 +62,9 @@ export function RecurrenceOptionsFields({
   today,
   onScheduleChange,
   onUntilChange,
+  notifyDaysBefore,
+  onNotifyDaysBeforeChange,
+  defaultNotifyDaysBefore = 0,
 }: RecurrenceOptionsFieldsProps) {
   const setFrequency = (frequency: RecurringSchedule['frequency']) => {
     onScheduleChange(prev => ({
@@ -165,15 +171,15 @@ export function RecurrenceOptionsFields({
 
       <div className="space-y-3">
         <label className="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-300">
-          <span className="w-20 font-medium">Until</span>
+          <span className="w-20 font-medium">Ends</span>
           <select
             value={until.type}
             onChange={(event) => onUntilChange({ type: event.target.value as RecurringUntilPolicy['type'] })}
             className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-800"
           >
             <option value="never">Never</option>
-            <option value="date">Date</option>
-            <option value="count">Repetitions</option>
+            <option value="date">On date</option>
+            <option value="count">After N occurrences</option>
           </select>
         </label>
         {until.type === 'date' && (
@@ -189,7 +195,7 @@ export function RecurrenceOptionsFields({
         )}
         {until.type === 'count' && (
           <label className="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-300">
-            <span className="font-medium">Stop after</span>
+            <span className="font-medium">After</span>
             <input
               type="number"
               min="1"
@@ -197,10 +203,29 @@ export function RecurrenceOptionsFields({
               onChange={(event) => onUntilChange({ type: 'count', count: Math.max(1, parseInt(event.target.value) || 1) })}
               className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-center dark:border-gray-600 dark:bg-gray-800"
             />
-            <span>repetitions</span>
+            <span>occurrences</span>
           </label>
         )}
       </div>
+
+      {onNotifyDaysBeforeChange && (
+        <label className="flex items-center gap-3 text-sm text-gray-700 dark:text-gray-300">
+          <span className="w-32 font-medium">Remind me</span>
+          <input
+            type="number"
+            min="0"
+            aria-label="Remind me N days before"
+            value={notifyDaysBefore ?? ''}
+            placeholder={String(defaultNotifyDaysBefore)}
+            onChange={(event) => {
+              const raw = event.target.value
+              onNotifyDaysBeforeChange(raw === '' ? null : Math.max(0, parseInt(raw) || 0))
+            }}
+            className="w-20 rounded-lg border border-gray-300 bg-white px-3 py-2 text-center dark:border-gray-600 dark:bg-gray-800"
+          />
+          <span>day{notifyDaysBefore === 1 ? '' : 's'} before (default: {defaultNotifyDaysBefore})</span>
+        </label>
+      )}
     </>
   )
 }

@@ -1,6 +1,7 @@
 import { execSQL, queryOne, querySQL } from '../database'
 import type {
   NotificationTransactionMode,
+  RecurringPaymentPin,
   RecurringPlan,
   RecurringPlanInput,
   RecurringPlanStatus,
@@ -14,7 +15,9 @@ import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { notificationRepository } from './notificationRepository'
 import { transactionRepository } from './transactionRepository'
 import { currencyRepository } from './currencyRepository'
+import { settingsRepository } from './settingsRepository'
 import { tagReferences } from './tagReferences'
+import { getRateForDate } from '../exchangeRate/historicalRateService'
 
 interface RecurringPlanRow {
   id: Uint8Array
@@ -26,11 +29,24 @@ interface RecurringPlanRow {
   until_policy: string
   occurrence_count: number
   status: RecurringPlanStatus
+  payment_pin: string | null
+  notify_days_before: number | null
   created_at: number
   updated_at: number
 }
 
+export interface RecurringPlanHydration {
+  categoryName: string | null
+  counterpartyName: string | null
+  walletName: string | null
+  currencyCode: string | null
+  currencySymbol: string | null
+  decimalPlaces: number
+  amount: number
+}
+
 const MAX_DUE_PER_RUN = 24
+const DISALLOWED_RECURRING_MODES = new Set<NotificationTransactionMode>(['transfer', 'exchange'])
 
 function todayLocal(): string {
   const now = new Date()
@@ -70,6 +86,25 @@ function addMonthsClamped(date: Date, months: number, targetDay = date.getDate()
   next.setMonth(next.getMonth() + months)
   next.setDate(Math.min(targetDay, daysInMonth(next.getFullYear(), next.getMonth())))
   return next
+}
+
+function daysBetween(fromDate: string, toDate: string): number {
+  return Math.round((parseDate(toDate).getTime() - parseDate(fromDate).getTime()) / 86400000)
+}
+
+// A plan is surfaced once `today` reaches its lead-time window before the real
+// due date; `recurring_occurrence.due_date` always stores the real due date
+// regardless of when it was surfaced (design.md Decision 4).
+function isSurfaced(dueDate: string, leadDays: number, today: string): boolean {
+  if (leadDays <= 0) return dueDate <= today
+  const surfaceDate = formatDate(addDays(parseDate(dueDate), -leadDays))
+  return surfaceDate <= today
+}
+
+function assertRecurrenceAllowedMode(mode: NotificationTransactionMode): void {
+  if (DISALLOWED_RECURRING_MODES.has(mode)) {
+    throw new Error('Recurring plans are only supported for expense and income transactions')
+  }
 }
 
 function normalizeSchedule(schedule: RecurringSchedule): RecurringSchedule {
@@ -140,6 +175,7 @@ function mapPlan(row: RecurringPlanRow): RecurringPlan {
     schedule: normalizeSchedule(JSON.parse(row.schedule) as RecurringSchedule),
     transaction_draft: JSON.parse(row.transaction_draft) as TransactionInput,
     until_policy: JSON.parse(row.until_policy) as RecurringUntilPolicy,
+    payment_pin: row.payment_pin ? (JSON.parse(row.payment_pin) as RecurringPaymentPin) : null,
   }
 }
 
@@ -154,8 +190,68 @@ function draftForDate(draft: TransactionInput, date: string): TransactionInput {
   })
 }
 
-function notificationTitle(mode: NotificationTransactionMode, dueDate: string): string {
-  return `Recurring ${mode} due ${dueDate}`
+// Recomputes the two SYSTEM_TAGS.EXCHANGE-tagged lines of a draft against a
+// live exchange rate for `dueDate`: the line whose account is denominated in
+// `pin.currency_id` keeps the pinned amount fixed, the other line's amount is
+// derived from it via that day's rate. All other lines pass through untouched.
+// See design.md Decision 1/2.
+async function resolvePinnedExchangePair(
+  lines: TransactionInput['lines'],
+  pin: RecurringPaymentPin,
+  dueDate: string
+): Promise<TransactionInput['lines']> {
+  const exchangeLines = lines.filter(line => line.tag_id === SYSTEM_TAGS.EXCHANGE)
+  if (exchangeLines.length !== 2) return lines
+
+  const currencyIds = await Promise.all(exchangeLines.map(async line => {
+    const account = await queryOne<{ currency_id: number }>(
+      `SELECT currency_id FROM account WHERE id = ?`,
+      [line.account_id]
+    )
+    return account?.currency_id ?? null
+  }))
+
+  const pinnedIndex = currencyIds.findIndex(id => id === pin.currency_id)
+  if (pinnedIndex === -1) return lines
+  const otherIndex = pinnedIndex === 0 ? 1 : 0
+  const otherCurrencyId = currencyIds[otherIndex]
+  if (otherCurrencyId === null) return lines
+
+  const [pinnedRate, otherRate] = await Promise.all([
+    getRateForDate(pin.currency_id, dueDate),
+    getRateForDate(otherCurrencyId, dueDate),
+  ])
+
+  const pinnedRateValue = fromIntFrac(pinnedRate.int, pinnedRate.frac)
+  const otherRateValue = fromIntFrac(otherRate.int, otherRate.frac)
+  const pinnedAmountValue = fromIntFrac(pin.amount_int, pin.amount_frac)
+  const otherAmountValue = pinnedRateValue > 0
+    ? (pinnedAmountValue / pinnedRateValue) * otherRateValue
+    : pinnedAmountValue
+  const otherAmount = toIntFrac(otherAmountValue)
+
+  const pinnedLine = exchangeLines[pinnedIndex]
+  const otherLine = exchangeLines[otherIndex]
+
+  return lines.map(line => {
+    if (line === pinnedLine) {
+      return { ...line, amount_int: pin.amount_int, amount_frac: pin.amount_frac, rate_int: pinnedRate.int, rate_frac: pinnedRate.frac }
+    }
+    if (line === otherLine) {
+      return { ...line, amount_int: otherAmount.int, amount_frac: otherAmount.frac, rate_int: otherRate.int, rate_frac: otherRate.frac }
+    }
+    return line
+  })
+}
+
+function buildNotificationTitle(hydration: RecurringPlanHydration, daysRemaining: number): string {
+  const parts = ['You have upcoming payment']
+  if (hydration.counterpartyName) parts.push(`to ${hydration.counterpartyName}`)
+  parts.push(hydration.categoryName ?? 'transaction')
+  parts.push(`in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}`)
+  const walletCurrency = [hydration.walletName, hydration.currencyCode].filter(Boolean).join(':')
+  if (walletCurrency) parts.push(`from ${walletCurrency}`)
+  return parts.join(' ')
 }
 
 function monthRange(month: string): { start: number; end: number } {
@@ -351,15 +447,86 @@ export const recurringRepository = {
     return this.findById(hexToBlob(id))
   },
 
+  // Read-only projection of a draft's category/counterparty/wallet/currency/amount,
+  // resolved against current data (not stored denormalized). Shared by the
+  // Recurring Transactions list card and the due-occurrence notification title
+  // (design.md Decision 7), so the two surfaces can't drift apart.
+  async hydrateDraft(draft: TransactionInput): Promise<RecurringPlanHydration> {
+    // `is_common` is only ever computed at read time (via a tags_hierarchy JOIN,
+    // see transactionRepository) and never persisted on a draft's lines, so it
+    // can't be used to filter add-on lines out here. Category sub-entries are
+    // always pushed before common add-ons when a draft is built (see
+    // ExpenseTransactionForm), so the first non-exchange/transfer line is
+    // reliably the real category — and summing the rest in too gives the
+    // plan's actual total (base amount plus any add-ons), which is what the
+    // card/notification should show anyway.
+    const primaryLines = draft.lines.filter(line =>
+      line.tag_id !== SYSTEM_TAGS.EXCHANGE &&
+      line.tag_id !== SYSTEM_TAGS.TRANSFER
+    )
+    const displayAccountId = primaryLines[0]?.account_id ?? draft.lines[0]?.account_id ?? null
+
+    const [tag, account, counterparty] = await Promise.all([
+      primaryLines[0]
+        ? queryOne<{ name: string }>(`SELECT name FROM tag WHERE id = ?`, [primaryLines[0].tag_id])
+        : Promise.resolve(null),
+      displayAccountId !== null
+        ? queryOne<{ wallet_id: number; currency_id: number }>(`SELECT wallet_id, currency_id FROM account WHERE id = ?`, [displayAccountId])
+        : Promise.resolve(null),
+      draft.counterparty_id
+        ? queryOne<{ name: string }>(`SELECT name FROM counterparty WHERE id = ?`, [draft.counterparty_id])
+        : Promise.resolve(null),
+    ])
+
+    const [wallet, currency] = await Promise.all([
+      account
+        ? queryOne<{ name: string }>(`SELECT name FROM wallet WHERE id = ?`, [account.wallet_id])
+        : Promise.resolve(null),
+      account
+        ? queryOne<{ code: string; symbol: string; decimal_places: number }>(`SELECT code, symbol, decimal_places FROM currency WHERE id = ?`, [account.currency_id])
+        : Promise.resolve(null),
+    ])
+
+    const amount = primaryLines.reduce((sum, line) => sum + fromIntFrac(line.amount_int, line.amount_frac), 0)
+
+    return {
+      categoryName: tag?.name ?? null,
+      counterpartyName: counterparty?.name ?? null,
+      walletName: wallet?.name ?? null,
+      currencyCode: currency?.code ?? null,
+      currencySymbol: currency?.symbol ?? null,
+      decimalPlaces: currency?.decimal_places ?? 2,
+      amount,
+    }
+  },
+
+  // Default pin for a submitted draft: when it contains a payment-currency
+  // exchange pair (see design.md Context — ExpenseTransactionForm's synthetic
+  // EXCHANGE lines), pin the payment-currency side (the '+' line), since
+  // that's the amount the user is actually thinking of ("$9.99 subscription")
+  // regardless of which account currency pays it. A single-currency draft has
+  // nothing to pin.
+  async derivePaymentPin(draft: TransactionInput): Promise<RecurringPaymentPin | null> {
+    const paymentLine = draft.lines.find(line => line.tag_id === SYSTEM_TAGS.EXCHANGE && line.sign === '+')
+    if (!paymentLine) return null
+    const account = await queryOne<{ currency_id: number }>(
+      `SELECT currency_id FROM account WHERE id = ?`,
+      [paymentLine.account_id]
+    )
+    if (!account) return null
+    return { currency_id: account.currency_id, amount_int: paymentLine.amount_int, amount_frac: paymentLine.amount_frac }
+  },
+
   async create(input: RecurringPlanInput): Promise<RecurringPlan> {
+    assertRecurrenceAllowedMode(input.mode)
     const schedule = normalizeSchedule(input.schedule)
     const transactionDraft = normalizeDraft(input.transaction_draft)
     const until = input.until_policy
     const firstDue = this.getFirstDueDate(schedule, input.start_date, until)
     await execSQL(
       `INSERT INTO recurring_plan
-       (id, schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status)
-       VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, schedule, transaction_draft, mode, start_date, next_due_date, until_policy, occurrence_count, status, payment_pin, notify_days_before)
+       VALUES (randomblob(8), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         jsonStringify(schedule),
         jsonStringify(transactionDraft),
@@ -369,6 +536,8 @@ export const recurringRepository = {
         jsonStringify(until),
         input.occurrence_count ?? 0,
         input.status ?? 'active',
+        input.payment_pin ? jsonStringify(input.payment_pin) : null,
+        input.notify_days_before ?? null,
       ]
     )
     const row = await queryOne<{ id: Uint8Array }>('SELECT id FROM recurring_plan ORDER BY rowid DESC LIMIT 1')
@@ -390,14 +559,17 @@ export const recurringRepository = {
       until_policy: input.until_policy ?? existing.until_policy,
       occurrence_count: input.occurrence_count ?? existing.occurrence_count,
       status: input.status ?? existing.status,
+      payment_pin: input.payment_pin !== undefined ? input.payment_pin : existing.payment_pin,
+      notify_days_before: input.notify_days_before !== undefined ? input.notify_days_before : existing.notify_days_before,
     }
+    assertRecurrenceAllowedMode(nextInput.mode)
     const nextDue = nextInput.status === 'active'
       ? this.getFirstDueDate(nextInput.schedule, nextInput.start_date, nextInput.until_policy)
       : existing.next_due_date
     await execSQL(
       `UPDATE recurring_plan
        SET schedule = ?, transaction_draft = ?, mode = ?, start_date = ?, next_due_date = ?,
-           until_policy = ?, occurrence_count = ?, status = ?
+           until_policy = ?, occurrence_count = ?, status = ?, payment_pin = ?, notify_days_before = ?
       WHERE id = ?`,
       [
         jsonStringify(normalizeSchedule(nextInput.schedule)),
@@ -408,6 +580,8 @@ export const recurringRepository = {
         jsonStringify(nextInput.until_policy),
         nextInput.occurrence_count,
         nextInput.status,
+        nextInput.payment_pin ? jsonStringify(nextInput.payment_pin) : null,
+        nextInput.notify_days_before ?? null,
         id,
       ]
     )
@@ -438,6 +612,7 @@ export const recurringRepository = {
     input: RecurringPlanInput,
     firstAction: 'plan-only' | 'add-now' | 'add-past' = 'plan-only'
   ): Promise<RecurringPlan> {
+    assertRecurrenceAllowedMode(input.mode)
     const sanitizedInput = {
       ...input,
       transaction_draft: normalizeDraft(input.transaction_draft),
@@ -465,24 +640,37 @@ export const recurringRepository = {
   async processDue(today = todayLocal(), max = MAX_DUE_PER_RUN): Promise<number> {
     const plans = await querySQL<RecurringPlanRow>(
       `SELECT * FROM recurring_plan
-       WHERE status = 'active' AND next_due_date IS NOT NULL AND next_due_date <= ?
-       ORDER BY next_due_date ASC`,
-      [today]
+       WHERE status = 'active' AND next_due_date IS NOT NULL
+       ORDER BY next_due_date ASC`
     )
+    const globalDefaultLeadDaysRaw = await settingsRepository.get('recurring_default_notify_days_before')
+    const globalDefaultLeadDays = Number(globalDefaultLeadDaysRaw ?? 0) || 0
+
     let created = 0
     for (const row of plans) {
       let plan = mapPlan(row)
-      while (plan.next_due_date && plan.next_due_date <= today && created < max) {
+      const leadDays = plan.notify_days_before ?? globalDefaultLeadDays
+      while (plan.next_due_date && isSurfaced(plan.next_due_date, leadDays, today) && created < max) {
         const dueDate = plan.next_due_date
         const existing = await queryOne<{ id: Uint8Array }>(
           `SELECT id FROM recurring_occurrence WHERE plan_id = ? AND due_date = ?`,
           [plan.id, dueDate]
         )
         if (!existing) {
+          let draft = draftForDate(plan.transaction_draft, dueDate)
+          if (plan.payment_pin) {
+            // Re-normalize: the resolved rate/amount fields come straight from a
+            // fresh SQLite read (getRateForDate), which can return BigInt for
+            // INTEGER columns — normalizeDraft converts those back to plain
+            // numbers so the notification payload can be JSON.stringify'd.
+            draft = normalizeDraft({ ...draft, lines: await resolvePinnedExchangePair(draft.lines, plan.payment_pin, dueDate) })
+          }
+          const hydration = await this.hydrateDraft(draft)
+          const title = buildNotificationTitle(hydration, Math.max(0, daysBetween(today, dueDate)))
           const notification = await notificationRepository.createTransactionDraft(
-            notificationTitle(plan.mode, dueDate),
+            title,
             plan.mode,
-            draftForDate(plan.transaction_draft, dueDate),
+            draft,
             Math.floor(parseDate(dueDate).getTime() / 1000)
           )
           await execSQL(
