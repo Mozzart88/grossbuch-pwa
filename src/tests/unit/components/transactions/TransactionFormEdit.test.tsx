@@ -50,10 +50,14 @@ vi.mock('../../../../services/repositories', () => ({
     update: vi.fn(),
   },
   settingsRepository: {
-    get: vi.fn(),
+    get: vi.fn().mockResolvedValue(null),
     set: vi.fn(),
     delete: vi.fn(),
     getAll: vi.fn(),
+  },
+  recurringRepository: {
+    createPlanFromTransaction: vi.fn(),
+    derivePaymentPin: vi.fn().mockResolvedValue(null),
   },
 }))
 

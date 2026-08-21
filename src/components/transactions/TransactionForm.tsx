@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { NotificationTransactionMode, RecurringSchedule, RecurringUntilPolicy, Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionInput, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
-import { walletRepository, tagRepository, counterpartyRepository, currencyRepository, recurringRepository } from '../../services/repositories'
+import { walletRepository, tagRepository, counterpartyRepository, currencyRepository, recurringRepository, settingsRepository } from '../../services/repositories'
 import { onDbWrite } from '../../services/database/connection'
+import { draftToTransaction } from './transactionFormShared'
 import type { TransactionMode, AccountOption, SubmitOptions } from './transactionFormShared'
 import { IncomeTransactionForm } from './IncomeTransactionForm'
 import { ExpenseTransactionForm } from './ExpenseTransactionForm'
@@ -22,6 +23,8 @@ interface TransactionFormProps {
   showAddAnother?: boolean
   onRecurrenceActionChange?: (action: ReactNode | null) => void
   onAddAnotherActionChange?: (action: ReactNode | null) => void
+  recurringPreEnabled?: boolean
+  dateOnly?: boolean
 }
 
 const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
@@ -35,22 +38,7 @@ const isMultiCurrencyExpense = (lines: TransactionLine[]): boolean => {
   return exchangeLines.length === 2 && expenseLines.length >= 1
 }
 
-function draftToTransaction(draft: TransactionInput): Transaction {
-  const trxId = new Uint8Array(8)
-  return {
-    id: trxId,
-    timestamp: draft.timestamp ?? Math.floor(Date.now() / 1000),
-    counterparty_id: draft.counterparty_id ?? null,
-    note: draft.note ?? null,
-    lines: draft.lines.map((line, index) => ({
-      id: new Uint8Array([index + 1, 0, 0, 0, 0, 0, 0, 0]),
-      trx_id: trxId,
-      ...line,
-    })),
-  }
-}
-
-export function TransactionForm({ initialData, initialDraft, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false, onRecurrenceActionChange, onAddAnotherActionChange }: TransactionFormProps) {
+export function TransactionForm({ initialData, initialDraft, initialMode, onSubmit, onCancel, useActionBar = false, showAddAnother = false, onRecurrenceActionChange, onAddAnotherActionChange, recurringPreEnabled = false, dateOnly = false }: TransactionFormProps) {
   const { showToast } = useToast()
   const prefillData = useMemo(
     () => initialData ?? (initialDraft ? draftToTransaction(initialDraft) : undefined),
@@ -82,7 +70,17 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
   const [pendingRecurring, setPendingRecurring] = useState<{ payload: TransactionInput; mode: NotificationTransactionMode } | null>(null)
   const [schedule, setSchedule] = useState<RecurringSchedule>({ frequency: 'monthly', interval: 1 })
   const [until, setUntil] = useState<RecurringUntilPolicy>({ type: 'never' })
+  const [notifyDaysBefore, setNotifyDaysBefore] = useState<number | null>(null)
+  const [defaultNotifyDaysBefore, setDefaultNotifyDaysBefore] = useState(0)
   const [firstAction, setFirstAction] = useState<'plan-only' | 'add-now'>('plan-only')
+
+  useEffect(() => {
+    let cancelled = false
+    void settingsRepository.get('recurring_default_notify_days_before').then(value => {
+      if (!cancelled) setDefaultNotifyDaysBefore(Number(value ?? 0) || 0)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // Hydrate datetime and detect mode from initialData/initialDraft
   useEffect(() => {
@@ -169,6 +167,7 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
 
   const recurrenceAction = useMemo(() => {
     if (initialData) return null
+    if (mode === 'transfer' || mode === 'exchange') return null
 
     return (
       <button
@@ -188,12 +187,26 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
         </svg>
       </button>
     )
-  }, [initialData, recurrenceEnabled])
+  }, [initialData, mode, recurrenceEnabled])
 
   useEffect(() => {
     onRecurrenceActionChange?.(recurrenceAction)
     return () => onRecurrenceActionChange?.(null)
   }, [onRecurrenceActionChange, recurrenceAction])
+
+  // Recurrence is only supported for expense/income (design.md Decision 6) — if the
+  // user enabled it before switching to transfer/exchange, turn it back off so a
+  // submit there can't silently open the recurrence modal.
+  useEffect(() => {
+    if (mode === 'transfer' || mode === 'exchange') setRecurrenceEnabled(false)
+  }, [mode])
+
+  // Entry point from the Recurring Transactions page's Add button pre-enables
+  // recurrence (design.md's "Add entry point" — see AddTransactionPage.tsx's
+  // `recurring` query flag).
+  useEffect(() => {
+    if (recurringPreEnabled) setRecurrenceEnabled(true)
+  }, [recurringPreEnabled])
 
   const addAnotherAction = useMemo(() => {
     if (initialData || !showAddAnother) return null
@@ -273,6 +286,7 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
     setRecurrenceSaving(true)
     try {
       const startDate = getPayloadDate(pendingRecurring.payload)
+      const paymentPin = await recurringRepository.derivePaymentPin(pendingRecurring.payload)
       await recurringRepository.createPlanFromTransaction(
         {
           schedule,
@@ -280,6 +294,8 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
           mode: pendingRecurring.mode,
           start_date: startDate,
           until_policy: until,
+          notify_days_before: notifyDaysBefore,
+          payment_pin: paymentPin,
         },
         startDate < today ? 'add-past' : startDate === today ? firstAction : 'plan-only'
       )
@@ -296,6 +312,9 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
   }
 
   const sharedProps = { initialData: prefillData, createFromInitialData, onSubmit, onCancel, useActionBar, showAddAnother, addAnother, onAddAnotherChange: setAddAnother, onBeforeCreate: handleBeforeCreate, datetime, onDateTimeChange: setDateTime }
+  const availableModes: TransactionMode[] = recurringPreEnabled
+    ? ['expense', 'income']
+    : ['expense', 'income', 'transfer', 'exchange']
   const incomeAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') === 'plain')
   const expenseAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') !== 'savings')
   const getDefaultFor = (list: AccountOption[]) => {
@@ -308,10 +327,11 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
 
   return (
     <div className="space-y-4">
-      {/* Transaction Type */}
+      {/* Transaction Type — transfer/exchange aren't recurring-eligible (design.md
+          Decision 6), so hide them from the entry point that pre-enables recurrence */}
       {!initialData && (
-        <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-          {(['expense', 'income', 'transfer', 'exchange'] as TransactionMode[]).map((t) => (
+        <div className={`grid gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg ${recurringPreEnabled ? 'grid-cols-2' : 'grid-cols-4'}`}>
+          {availableModes.map((t) => (
             <button
               key={t}
               type="button"
@@ -335,6 +355,7 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
           incomeTagOptions={incomeTagOptions}
           counterparties={counterparties}
           defaultAccountId={getDefaultFor(incomeAccounts)}
+          dateOnly={dateOnly}
         />
       )}
       {mode === 'expense' && (
@@ -349,6 +370,7 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
           counterparties={counterparties}
           defaultAccountId={getDefaultFor(expenseAccounts)}
           defaultPaymentCurrencyId={defaultPaymentCurrencyId}
+          dateOnly={dateOnly}
         />
       )}
       {mode === 'transfer' && (
@@ -378,6 +400,9 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
             today={today}
             onScheduleChange={setSchedule}
             onUntilChange={setUntil}
+            notifyDaysBefore={notifyDaysBefore}
+            onNotifyDaysBeforeChange={setNotifyDaysBefore}
+            defaultNotifyDaysBefore={defaultNotifyDaysBefore}
           />
 
           {pendingRecurring && getPayloadDate(pendingRecurring.payload) === today && (

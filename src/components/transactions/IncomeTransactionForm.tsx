@@ -33,6 +33,7 @@ interface IncomeTransactionFormProps {
   defaultAccountId: string
   datetime: number
   onDateTimeChange: (value: number) => void
+  dateOnly?: boolean
   initialData?: Transaction
   createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
@@ -52,6 +53,7 @@ export function IncomeTransactionForm({
   defaultAccountId,
   datetime,
   onDateTimeChange,
+  dateOnly = false,
   initialData,
   createFromInitialData = false,
   onSubmit,
@@ -379,11 +381,19 @@ export function IncomeTransactionForm({
       />
 
       {/* Date/Time */}
-      <DateTimeUI
-        type="datetime-local"
-        onChange={e => onDateTimeChange(new Date(e.target.value).getTime())}
-        value={toDateTimeLocal(new Date(datetime))}
-      />
+      {dateOnly ? (
+        <DateTimeUI
+          type="date"
+          onChange={e => onDateTimeChange(new Date(`${e.target.value}T00:00:00`).getTime())}
+          value={toDateString(datetime)}
+        />
+      ) : (
+        <DateTimeUI
+          type="datetime-local"
+          onChange={e => onDateTimeChange(new Date(e.target.value).getTime())}
+          value={toDateTimeLocal(new Date(datetime))}
+        />
+      )}
 
       {/* Notes */}
       <div className="space-y-1">

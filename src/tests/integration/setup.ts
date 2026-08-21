@@ -81,6 +81,14 @@ export async function setupTestDatabase(): Promise<Database> {
       }
     }
   }
+  // Record the schema version workspaceMigrations.ts's real runWorkspaceMigrations()
+  // would leave behind, so a later real call (e.g. attachActiveWorkspace() in
+  // workspaceTransfer.test.ts) doesn't try to re-run non-idempotent statements
+  // (like an ALTER TABLE ADD COLUMN) from version 1 again.
+  db.run(
+    `INSERT OR REPLACE INTO workspace.workspace_meta (key, value, updated_at) VALUES ('schema_version', ?, unixepoch())`,
+    [CURRENT_WORKSPACE_VERSION.toString()]
+  )
 
   // Default workspace, matching workspace.ts's getOrCreateDefaultWorkspace()
   db.run(`INSERT INTO shared.workspace (name) VALUES ('Personal')`)

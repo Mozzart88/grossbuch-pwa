@@ -1,4 +1,4 @@
-import type { Account, NotificationTransactionMode, TagContextOption, TransactionInput } from '../../types'
+import type { Account, NotificationTransactionMode, TagContextOption, Transaction, TransactionInput } from '../../types'
 import type { LiveSearchOption, SelectUIOption } from '../ui'
 import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { toLocalISOString } from '../../utils/dateUtils'
@@ -172,3 +172,21 @@ export const toDateString = (datetimeMs: number): string =>
 
 export const isDateInPast = (datetimeMs: number): boolean =>
   toDateString(datetimeMs) < toLocalISOString(new Date()).slice(0, 10)
+
+// Converts a raw draft (notification payload, recurring plan's transaction_draft)
+// into a synthetic Transaction so it can prefill a sub-form via `initialData` +
+// `createFromInitialData` without a real persisted transaction existing yet.
+export const draftToTransaction = (draft: TransactionInput): Transaction => {
+  const trxId = new Uint8Array(8)
+  return {
+    id: trxId,
+    timestamp: draft.timestamp ?? Math.floor(Date.now() / 1000),
+    counterparty_id: draft.counterparty_id ?? null,
+    note: draft.note ?? null,
+    lines: draft.lines.map((line, index) => ({
+      id: new Uint8Array([index + 1, 0, 0, 0, 0, 0, 0, 0]),
+      trx_id: trxId,
+      ...line,
+    })),
+  }
+}

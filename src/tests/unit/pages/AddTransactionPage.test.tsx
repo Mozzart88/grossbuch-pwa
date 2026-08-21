@@ -56,6 +56,10 @@ vi.mock('../../../services/repositories', () => ({
     delete: vi.fn(),
     getAll: vi.fn(),
   },
+  recurringRepository: {
+    createPlanFromTransaction: vi.fn(),
+    derivePaymentPin: vi.fn().mockResolvedValue(null),
+  },
 }))
 
 // Mock toast
@@ -168,9 +172,9 @@ describe('AddTransactionPage', () => {
     mockNotificationRepository.deleteByHexId.mockResolvedValue(undefined)
   })
 
-  const renderPage = () => {
+  const renderPage = (initialEntries: string[] = ['/add']) => {
     return render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>
         <LayoutProvider>
           <AddTransactionPage />
           <ActionBar />
@@ -210,15 +214,31 @@ describe('AddTransactionPage', () => {
     expect(recurringButton.className).toContain('text-gray-400')
   })
 
-  it('renders add another action before recurring transaction in the page header', async () => {
+  it('renders recurring transaction action before add another in the page header', async () => {
     renderPage()
 
     const addAnotherButton = await screen.findByRole('button', { name: /add another/i })
     const recurringButton = await screen.findByRole('button', { name: /recurring transaction/i })
     expect(addAnotherButton.closest('header')).toBeInTheDocument()
-    expect(addAnotherButton.compareDocumentPosition(recurringButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(recurringButton.compareDocumentPosition(addAnotherButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(addAnotherButton.className).toContain('p-2')
     expect(addAnotherButton.className).toContain('text-gray-400')
+  })
+
+  it('pre-enables recurrence and shows a date-only input from the Recurring Transactions page entry point (?recurring=1)', async () => {
+    const { container } = renderPage(['/add?recurring=1'])
+
+    const recurringButton = await screen.findByRole('button', { name: /recurring transaction/i })
+    expect(recurringButton.className).toContain('text-primary-600')
+
+    await waitFor(() => {
+      expect(screen.getByText('Account')).toBeInTheDocument()
+    })
+    expect(container.querySelector('input[type="date"]')).toBeInTheDocument()
+    expect(container.querySelector('input[type="datetime-local"]')).not.toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: 'Transfer' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Exchange' })).not.toBeInTheDocument()
   })
 
   it('toggles recurring transaction action without opening setup immediately', async () => {
@@ -276,8 +296,8 @@ describe('AddTransactionPage', () => {
 
     fireEvent.change(recurrence.getByRole('combobox'), { target: { value: 'count' } })
 
-    expect(recurrence.getByText('Stop after')).toBeInTheDocument()
-    expect(recurrence.getByText('repetitions')).toBeInTheDocument()
+    expect(recurrence.getByText('After')).toBeInTheDocument()
+    expect(recurrence.getByText('occurrences')).toBeInTheDocument()
   })
 
   it('renders transaction form', async () => {

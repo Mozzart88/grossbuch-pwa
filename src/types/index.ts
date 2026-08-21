@@ -293,6 +293,12 @@ export interface RecurringUntilPolicy {
   date?: string
 }
 
+export interface RecurringPaymentPin {
+  currency_id: number
+  amount_int: number
+  amount_frac: number
+}
+
 export interface RecurringPlan {
   id: Uint8Array
   schedule: RecurringSchedule
@@ -303,6 +309,8 @@ export interface RecurringPlan {
   until_policy: RecurringUntilPolicy
   occurrence_count: number
   status: RecurringPlanStatus
+  payment_pin: RecurringPaymentPin | null
+  notify_days_before: number | null
   created_at: number
   updated_at: number
 }
@@ -315,6 +323,8 @@ export interface RecurringPlanInput {
   until_policy: RecurringUntilPolicy
   occurrence_count?: number
   status?: RecurringPlanStatus
+  payment_pin?: RecurringPaymentPin | null
+  notify_days_before?: number | null
 }
 
 export interface RecurringOccurrence {
@@ -427,6 +437,7 @@ export interface Settings {
   pending_initial_sync?: string
   pending_unlink_requests?: string
   pending_self_unlink?: string
+  recurring_default_notify_days_before?: number
 }
 
 // System tag IDs (for reference)
