@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useLayoutContext } from '../store/LayoutContext'
 import { PageHeader } from '../components/layout/PageHeader'
@@ -23,17 +23,19 @@ import type {
 } from '../types'
 import { SYSTEM_TAGS } from '../types'
 import { useDataRefresh } from '../hooks/useDataRefresh'
+import {
+  summaryItemKey,
+  withSummaryAncestors,
+  withCategoryAncestors,
+  buildDescendantsByTagId,
+  type SummaryTreeItem,
+} from './summariesRollup'
 
 const TABS = [
   { id: 'income-expense', label: 'Budgets' },
   { id: 'tags', label: 'By Tags' },
   { id: 'counterparties', label: 'By Counterparties' },
 ]
-
-type SummaryTreeItem = {
-  tag_id: number
-  tag_context_id?: number | null
-}
 
 type SummaryView = 'nested' | 'flat'
 
@@ -45,6 +47,8 @@ const accountBudgetTagLabel = (tagName: string): string => {
   if (tagName === 'credits') return 'Credit'
   return tagName
 }
+
+const budgetType = (budget: Budget): 'income' | 'expense' => budget.type ?? 'expense'
 
 export function SummariesPage() {
   const navigate = useNavigate()
@@ -229,8 +233,6 @@ export function SummariesPage() {
   }, [buildTagFilterUrl, month, navigate])
 
   // Budget helpers
-  const budgetType = (budget: Budget): 'income' | 'expense' => budget.type ?? 'expense'
-
   const getBudgetForTag = useCallback((tagId: number, type: 'income' | 'expense', contextId?: number | null): Budget | undefined => {
     return budgets.find(b =>
       b.tag_id === tagId &&
@@ -370,7 +372,7 @@ export function SummariesPage() {
     }
   }
 
-  const buildBudgetCategories = (type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
+  const buildBudgetCategories = useCallback((type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
     const categoriesFromBreakdown = categoryBreakdown.filter(c => c.type === type)
     const categoryKeys = new Set(categoriesFromBreakdown.map(summaryItemKey))
     const budgetOnlyCategories: MonthlyCategoryBreakdown[] = budgets
@@ -385,14 +387,15 @@ export function SummariesPage() {
       }))
 
     return [...categoriesFromBreakdown, ...budgetOnlyCategories]
-  }
+  }, [categoryBreakdown, budgets])
 
-  const getHierarchyTagName = (tagId: number): string =>
+  const getHierarchyTagName = useCallback((tagId: number): string =>
     tagHierarchy.find(h => h.parent_id === tagId)?.parent
     || tagHierarchy.find(h => h.child_id === tagId)?.child
     || incomeTags.find(t => t.id === tagId)?.name
     || expenseTags.find(t => t.id === tagId)?.name
-    || ''
+    || '',
+  [tagHierarchy, incomeTags, expenseTags])
 
   const isTopLevelCategoryTag = useCallback((tagId: number): boolean =>
     tagHierarchy.some(h =>
@@ -401,88 +404,25 @@ export function SummariesPage() {
     ),
   [tagHierarchy])
 
-  const getAncestorIdsForTree = (tagId: number, validIds?: Set<number>, contextId?: number | null): number[] => {
-    const result: number[] = []
-    const visit = (childId: number) => {
-      tagHierarchy
-        .filter(h => h.child_id === childId)
-        .forEach(h => {
-          if (h.parent_id === SYSTEM_TAGS.INCOME || h.parent_id === SYSTEM_TAGS.EXPENSE || h.parent_id === SYSTEM_TAGS.SYSTEM || h.parent_id === SYSTEM_TAGS.DEFAULT) {
-            return
-          }
-          if (contextId !== null && contextId !== undefined && h.parent_id === contextId) {
-            return
-          }
-          if (!validIds || validIds.has(h.parent_id)) {
-            result.push(h.parent_id)
-          }
-          visit(h.parent_id)
-        })
-    }
-    visit(tagId)
-    return result
-  }
+  // Descendant sets for the whole hierarchy, computed once per tagHierarchy
+  // change instead of via a fresh recursive walk per category node (see
+  // getAggregateBudgetForCategory below).
+  const descendantsByTagId = useMemo(() => buildDescendantsByTagId(tagHierarchy), [tagHierarchy])
 
-  const summaryItemKey = (item: SummaryTreeItem): string =>
-    item.tag_context_id === null || item.tag_context_id === undefined
-      ? item.tag_id.toString()
-      : `${item.tag_id}:${item.tag_context_id}`
-
-  const withSummaryAncestors = (items: MonthlyTagSummary[]): MonthlyTagSummary[] => {
-    const byId = new Map(items.map(item => [summaryItemKey(item), { ...item }]))
-    for (const item of items) {
-      for (const ancestorId of getAncestorIdsForTree(item.tag_id, undefined, item.tag_context_id ?? null)) {
-        const ancestorKey = summaryItemKey({ tag_id: ancestorId, tag_context_id: item.tag_context_id ?? null })
-        const existing = byId.get(ancestorKey)
-        if (existing) {
-          existing.income += item.income
-          existing.expense += item.expense
-          existing.net += item.net
-        } else {
-          byId.set(ancestorKey, {
-            tag_id: ancestorId,
-            tag: getHierarchyTagName(ancestorId),
-            tag_context_id: item.tag_context_id ?? null,
-            tag_context: item.tag_context ?? null,
-            income: item.income,
-            expense: item.expense,
-            net: item.net,
-          })
-        }
-      }
-    }
-    return Array.from(byId.values())
-  }
-
-  const withCategoryAncestors = (items: MonthlyCategoryBreakdown[], type: 'income' | 'expense'): MonthlyCategoryBreakdown[] => {
-    const typeTagIds = new Set((type === 'income' ? incomeTags : expenseTags).map(t => t.id))
-    const byId = new Map(items.map(item => [summaryItemKey(item), { ...item }]))
-    for (const item of items) {
-      for (const ancestorId of getAncestorIdsForTree(item.tag_id, typeTagIds.size ? typeTagIds : undefined, item.tag_context_id ?? null)) {
-        const ancestorKey = summaryItemKey({ tag_id: ancestorId, tag_context_id: item.tag_context_id ?? null })
-        const existing = byId.get(ancestorKey)
-        if (existing) {
-          existing.amount += item.amount
-        } else {
-          byId.set(ancestorKey, {
-            tag_id: ancestorId,
-            tag: getHierarchyTagName(ancestorId),
-            tag_context_id: item.tag_context_id ?? null,
-            tag_context: item.tag_context ?? null,
-            amount: item.amount,
-            type,
-          })
-        }
-      }
-    }
-    return Array.from(byId.values())
-  }
-
-  const tagsSummaryWithAncestors = withSummaryAncestors(tagsSummary)
-  const incomeCategories = withCategoryAncestors(buildBudgetCategories('income'), 'income')
-  const expenseCategories = withCategoryAncestors(buildBudgetCategories('expense'), 'expense')
-  const rawIncomeCategories = buildBudgetCategories('income')
-  const rawExpenseCategories = buildBudgetCategories('expense')
+  const tagsSummaryWithAncestors = useMemo(
+    () => withSummaryAncestors(tagsSummary, tagHierarchy, getHierarchyTagName),
+    [tagsSummary, tagHierarchy, getHierarchyTagName]
+  )
+  const rawIncomeCategories = useMemo(() => buildBudgetCategories('income'), [buildBudgetCategories])
+  const rawExpenseCategories = useMemo(() => buildBudgetCategories('expense'), [buildBudgetCategories])
+  const incomeCategories = useMemo(
+    () => withCategoryAncestors(rawIncomeCategories, 'income', tagHierarchy, incomeTags, expenseTags, getHierarchyTagName),
+    [rawIncomeCategories, tagHierarchy, incomeTags, expenseTags, getHierarchyTagName]
+  )
+  const expenseCategories = useMemo(
+    () => withCategoryAncestors(rawExpenseCategories, 'expense', tagHierarchy, incomeTags, expenseTags, getHierarchyTagName),
+    [rawExpenseCategories, tagHierarchy, incomeTags, expenseTags, getHierarchyTagName]
+  )
   const incomeBudgets = budgets.filter(b => budgetType(b) === 'income')
   const expenseBudgets = budgets.filter(b => budgetType(b) === 'expense')
   const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
@@ -625,14 +565,7 @@ export function SummariesPage() {
     allCategories: MonthlyCategoryBreakdown[]
   ): Budget | undefined => {
     const branchContextId = category.tag_context_id ?? (isTopLevelCategoryTag(category.tag_id) ? category.tag_id : null)
-    const descendantIds = new Set<number>()
-    const visit = (parentId: number) => {
-      getChildIds(parentId).forEach(childId => {
-        descendantIds.add(childId)
-        visit(childId)
-      })
-    }
-    visit(category.tag_id)
+    const descendantIds = descendantsByTagId.get(category.tag_id) ?? new Set<number>()
 
     const direct = getBudgetForTag(category.tag_id, type, category.tag_context_id ?? null)
     const descendantTotal = budgets
@@ -666,7 +599,7 @@ export function SummariesPage() {
       tag: category.tag,
       actual: category.amount,
     }
-  }, [budgets, getBudgetForTag, getChildIds, getBudgetAmount, isTopLevelCategoryTag])
+  }, [budgets, getBudgetForTag, descendantsByTagId, getBudgetAmount, isTopLevelCategoryTag])
 
   const getBranchContextId = (root: SummaryTreeItem): number | null =>
     root.tag_context_id ?? (isTopLevelCategoryTag(root.tag_id) ? root.tag_id : null)

@@ -6,7 +6,7 @@ import { execSQL, queryOne } from './connection'
 // currency, counterparty, notification) keep the column but drop the FK
 // clause: cross-database FK enforcement doesn't work, so these are soft
 // references, validated at the application level (see design.md).
-export const CURRENT_WORKSPACE_VERSION = 1
+export const CURRENT_WORKSPACE_VERSION = 2
 
 // Triggers that auto-write to a table this migration also bulk-copies directly
 // (account_to_tags/wallet_to_tags default-tag assignment, account balance from
@@ -616,6 +616,14 @@ export const workspaceMigrations: Record<number, string[]> = {
       INSERT OR REPLACE INTO sync_deletions (table_name, entity_id, deleted_at)
       VALUES ('recurring_occurrence', hex(OLD.id), unixepoch(CURRENT_TIMESTAMP));
     END;`,
+  ],
+
+  2: [
+    // Supports budgetRepository's actual-spend computation: tag_id lookups
+    // when matching trx_base rows to a budget's tag/descendants, and the
+    // trx.timestamp range filter (budget start/end) used on every query.
+    `CREATE INDEX IF NOT EXISTS workspace.idx_trx_base_tag ON trx_base(tag_id);`,
+    `CREATE INDEX IF NOT EXISTS workspace.idx_trx_timestamp ON trx(timestamp);`,
   ],
 }
 

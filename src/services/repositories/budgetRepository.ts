@@ -3,6 +3,7 @@ import { currencyRepository } from './currencyRepository'
 import { recurringRepository } from './recurringRepository'
 import { tagReferences } from './tagReferences'
 import type { Budget, BudgetInput, BudgetSummary } from '../../types'
+import { SYSTEM_TAGS } from '../../types'
 
 // Helper to convert Uint8Array to hex string for SQL queries
 function toHex(bytes: Uint8Array): string {
@@ -22,95 +23,198 @@ const budgetContextJoins = `
       LEFT JOIN budget_tag_context bctx ON bctx.budget_id = b.id
       LEFT JOIN tag ctx_tag ON ctx_tag.id = bctx.tag_id`
 
-const actualSpendSubquery = `
-        (
-          SELECT COALESCE(SUM(
-            CASE WHEN a.currency_id = ?
-                THEN (tb.amount_int + tb.amount_frac * 1e-18)
-                ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
-              END
-          ), 0)
-          FROM trx_base tb
-          JOIN trx ON trx.id = tb.trx_id
-          JOIN account a ON a.id = tb.account_id
-          LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
-          WHERE (
-            (
-              t.name IN ('savings', 'credits')
-              AND tb.sign = '+'
-              AND tb.tag_id IN (SELECT id FROM tag WHERE name IN ('transfer', 'exchange'))
-              AND EXISTS (
-                SELECT 1
-                FROM account_to_tags a2t
-                WHERE a2t.account_id = a.id
-                  AND a2t.tag_id = b.tag_id
-              )
-            )
-            OR (
-              t.name NOT IN ('savings', 'credits')
-              AND tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END
-              AND (
-                (
-                  tb.tag_id = b.tag_id
-                  AND (
-                    (bctx.tag_id IS NULL AND ctx.tag_id IS NULL)
-                    OR ctx.tag_id = bctx.tag_id
-                  )
-                )
-                OR (
-                  tb.tag_id IN (
-                    WITH RECURSIVE descendants(id) AS (
-                      SELECT child_id FROM tag_to_tag WHERE parent_id = b.tag_id
-                      UNION
-                      SELECT ttt.child_id FROM tag_to_tag ttt JOIN descendants d ON d.id = ttt.parent_id
-                    )
-                    SELECT id FROM descendants
-                  )
-                  AND (
-                    ctx.tag_id = bctx.tag_id
-                    OR (
-                      bctx.tag_id IS NULL
-                      AND ctx.tag_id = b.tag_id
-                    )
-                    OR (
-                      bctx.tag_id IS NULL
-                      AND ctx.tag_id IS NULL
-                      AND 1 = (
-                        SELECT COUNT(DISTINCT rel.child_id)
-                        FROM tag_to_tag rel
-                        WHERE rel.parent_id IN (9, 10)
-                          AND rel.child_id IN (
-                            WITH RECURSIVE ancestors(id) AS (
-                              SELECT tb.tag_id
-                              UNION
-                              SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
-                            )
-                            SELECT id FROM ancestors
-                          )
-                      )
-                      AND b.tag_id IN (
-                        SELECT rel.child_id
-                        FROM tag_to_tag rel
-                        WHERE rel.parent_id IN (9, 10)
-                          AND rel.child_id IN (
-                            WITH RECURSIVE ancestors(id) AS (
-                              SELECT tb.tag_id
-                              UNION
-                              SELECT ttt.parent_id FROM tag_to_tag ttt JOIN ancestors a2 ON a2.id = ttt.child_id
-                            )
-                            SELECT id FROM ancestors
-                          )
-                      )
-                    )
-                  )
-                )
-              )
-            )
-          )
-            AND trx.timestamp >= b.start
-            AND trx.timestamp < b.end
-            AND (tb.rate_int > 0 OR tb.rate_frac > 0)
-        ) as actual`
+type BudgetForActual = Pick<Budget, 'id' | 'tag_id' | 'type' | 'start' | 'end' | 'tag_context_id'> & { tag?: string }
+
+type ActualSpendRow = {
+    tag_id: number
+    sign: '+' | '-'
+    // sqlite-wasm returns these as bigint once they exceed
+    // Number.MAX_SAFE_INTEGER, which amount_frac/rate_frac (scaled by 1e18)
+    // routinely do.
+    amount_int: number | bigint
+    amount_frac: number | bigint
+    rate_int: number | bigint
+    rate_frac: number | bigint
+    currency_id: number
+    account_id: number
+    timestamp: number
+    ctx_tag_id: number | null
+}
+
+/**
+ * Computes `actual` spend for a batch of budgets in a fixed number of
+ * queries, regardless of how many budgets are passed in — replacing what was
+ * previously a correlated subquery (with up to three recursive tag_to_tag
+ * walks) re-executed once per budget row. Preserves the exact matching rules
+ * from that subquery: direct tag match, descendant-tag match (with explicit,
+ * budget-own, or unambiguous-top-level-ancestor context resolution), and the
+ * savings/credits inbound-transfer special case.
+ */
+async function computeActualSpend(budgets: BudgetForActual[]): Promise<Map<string, number>> {
+    const actuals = new Map<string, number>()
+    if (budgets.length === 0) return actuals
+    for (const budget of budgets) actuals.set(toHex(budget.id), 0)
+
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
+    const edges = await querySQL<{ parent_id: number; child_id: number }>(
+        'SELECT parent_id, child_id FROM tag_to_tag'
+    )
+    const childrenOf = new Map<number, number[]>()
+    const parentsOf = new Map<number, number[]>()
+    for (const { parent_id, child_id } of edges) {
+        if (!childrenOf.has(parent_id)) childrenOf.set(parent_id, [])
+        childrenOf.get(parent_id)!.push(child_id)
+        if (!parentsOf.has(child_id)) parentsOf.set(child_id, [])
+        parentsOf.get(child_id)!.push(parent_id)
+    }
+
+    const descendantsCache = new Map<number, Set<number>>()
+    const descendantsOf = (tagId: number): Set<number> => {
+        const cached = descendantsCache.get(tagId)
+        if (cached) return cached
+        const result = new Set<number>()
+        descendantsCache.set(tagId, result)
+        for (const child of childrenOf.get(tagId) ?? []) {
+            if (!result.has(child)) {
+                result.add(child)
+                for (const d of descendantsOf(child)) result.add(d)
+            }
+        }
+        return result
+    }
+
+    const ancestorsOrSelfCache = new Map<number, Set<number>>()
+    const ancestorsOrSelfOf = (tagId: number): Set<number> => {
+        const cached = ancestorsOrSelfCache.get(tagId)
+        if (cached) return cached
+        const result = new Set<number>([tagId])
+        ancestorsOrSelfCache.set(tagId, result)
+        for (const parent of parentsOf.get(tagId) ?? []) {
+            for (const a of ancestorsOrSelfOf(parent)) result.add(a)
+        }
+        return result
+    }
+
+    const topLevelCategorySet = new Set<number>([
+        ...(childrenOf.get(SYSTEM_TAGS.INCOME) ?? []),
+        ...(childrenOf.get(SYSTEM_TAGS.EXPENSE) ?? []),
+    ])
+
+    // The unique top-level category ancestor of tagId, or null if there is
+    // zero or more than one — mirrors the "1 = COUNT(DISTINCT ...)" fallback
+    // used when neither the budget nor the transaction line specify a
+    // context. Depends only on tagId (not on any particular budget), so it's
+    // computed once per distinct tag encountered rather than once per
+    // (budget, transaction) pair.
+    const soleTopLevelMatchCache = new Map<number, number | null>()
+    const soleTopLevelMatchOf = (tagId: number): number | null => {
+        const cached = soleTopLevelMatchCache.get(tagId)
+        if (cached !== undefined) return cached
+        const matches = [...ancestorsOrSelfOf(tagId)].filter(id => topLevelCategorySet.has(id))
+        const result = matches.length === 1 ? matches[0] : null
+        soleTopLevelMatchCache.set(tagId, result)
+        return result
+    }
+
+    const savingsCreditsBudgets = budgets.filter(b => b.tag === 'savings' || b.tag === 'credits')
+    const transferExchangeTagIds = new Set<number>()
+    const accountsTaggedWith = new Map<number, Set<number>>()
+    if (savingsCreditsBudgets.length > 0) {
+        const teRows = await querySQL<{ id: number }>("SELECT id FROM tag WHERE name IN ('transfer', 'exchange')")
+        for (const row of teRows) transferExchangeTagIds.add(row.id)
+
+        const budgetTagIds = [...new Set(savingsCreditsBudgets.map(b => b.tag_id))]
+        const placeholders = budgetTagIds.map(() => '?').join(',')
+        const a2tRows = await querySQL<{ account_id: number; tag_id: number }>(
+            `SELECT account_id, tag_id FROM account_to_tags WHERE tag_id IN (${placeholders})`,
+            budgetTagIds
+        )
+        for (const row of a2tRows) {
+            if (!accountsTaggedWith.has(row.tag_id)) accountsTaggedWith.set(row.tag_id, new Set())
+            accountsTaggedWith.get(row.tag_id)!.add(row.account_id)
+        }
+    }
+
+    const minStart = Math.min(...budgets.map(b => b.start))
+    const maxEnd = Math.max(...budgets.map(b => b.end))
+
+    const rows = await querySQL<ActualSpendRow>(
+        `
+      SELECT tb.tag_id, tb.sign, tb.amount_int, tb.amount_frac, tb.rate_int, tb.rate_frac,
+             a.currency_id, a.id as account_id, trx.timestamp,
+             ctx.tag_id as ctx_tag_id
+      FROM trx_base tb
+      JOIN trx ON trx.id = tb.trx_id
+      JOIN account a ON a.id = tb.account_id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      WHERE trx.timestamp >= ? AND trx.timestamp < ?
+        AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+    `,
+        [minStart, maxEnd]
+    )
+
+    // sqlite-wasm returns INTEGER columns as BigInt once their value exceeds
+    // Number.MAX_SAFE_INTEGER — amount_frac/rate_frac (scaled by 1e18) hit
+    // that regularly, even though amount_int/rate_int normally don't. Coerce
+    // all four before arithmetic (matches the Number(...) guard in
+    // utils/amount.ts's fromIntFrac).
+    const convert = (row: ActualSpendRow): number => {
+        const amount = Number(row.amount_int) + Number(row.amount_frac) * 1e-18
+        if (row.currency_id === sysCurrencyId) return amount
+        const rate = Number(row.rate_int) + Number(row.rate_frac) * 1e-18
+        return (amount / rate) * sysRate
+    }
+
+    for (const budget of budgets) {
+        const isSavingsCredits = budget.tag === 'savings' || budget.tag === 'credits'
+        const expectedSign = budget.type === 'income' ? '+' : '-'
+        let total = 0
+
+        for (const row of rows) {
+            if (row.timestamp < budget.start || row.timestamp >= budget.end) continue
+
+            if (isSavingsCredits) {
+                if (
+                    row.sign === '+' &&
+                    transferExchangeTagIds.has(row.tag_id) &&
+                    (accountsTaggedWith.get(budget.tag_id)?.has(row.account_id) ?? false)
+                ) {
+                    total += convert(row)
+                }
+                continue
+            }
+
+            if (row.sign !== expectedSign) continue
+
+            const isDirect = row.tag_id === budget.tag_id
+            if (isDirect) {
+                const contextMatches =
+                    (budget.tag_context_id == null && row.ctx_tag_id === null) ||
+                    (row.ctx_tag_id !== null && row.ctx_tag_id === budget.tag_context_id)
+                if (contextMatches) total += convert(row)
+                continue
+            }
+
+            if (!descendantsOf(budget.tag_id).has(row.tag_id)) continue
+
+            const contextMatches =
+                (row.ctx_tag_id !== null && budget.tag_context_id != null && row.ctx_tag_id === budget.tag_context_id) ||
+                (budget.tag_context_id == null && row.ctx_tag_id !== null && row.ctx_tag_id === budget.tag_id) ||
+                (budget.tag_context_id == null && row.ctx_tag_id === null && soleTopLevelMatchOf(row.tag_id) === budget.tag_id)
+            if (contextMatches) total += convert(row)
+        }
+
+        actuals.set(toHex(budget.id), total)
+    }
+
+    return actuals
+}
+
+async function withActual<T extends BudgetForActual>(budgets: T[]): Promise<(T & { actual: number })[]> {
+    const actuals = await computeActualSpend(budgets)
+    return budgets.map(b => ({ ...b, actual: actuals.get(toHex(b.id)) ?? 0 }))
+}
 
 export const budgetRepository = {
     /**
@@ -156,21 +260,19 @@ ${budgetContextJoins}
         endOfMonth.setMonth(endOfMonth.getMonth() + 1)
         const endTimestamp = Math.floor(endOfMonth.getTime() / 1000)
 
-        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
-
-        return querySQL<Budget>(
+        const budgets = await querySQL<Budget>(
             `
       SELECT
-${budgetSelectFields},
-${actualSpendSubquery}
+${budgetSelectFields}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
 ${budgetContextJoins}
       WHERE b.start >= ? AND b.start < ?
       ORDER BY t.name ASC
     `,
-            [sysCurrencyId, sysRate, startTimestamp, endTimestamp]
+            [startTimestamp, endTimestamp]
         )
+        return withActual(budgets)
     },
 
     /**
@@ -205,20 +307,20 @@ ${budgetContextJoins}
      * Get budget with actual spending for current period
      */
     async findWithActual(id: Uint8Array): Promise<Budget | null> {
-        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
-
-        return queryOne<Budget>(
+        const budget = await queryOne<Budget>(
             `
       SELECT
-${budgetSelectFields},
-${actualSpendSubquery}
+${budgetSelectFields}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
 ${budgetContextJoins}
       WHERE hex(b.id) = ?
     `,
-            [sysCurrencyId, sysRate, toHex(id)]
+            [toHex(id)]
         )
+        if (!budget) return null
+        const [result] = await withActual([budget])
+        return result
     },
 
     /**
@@ -393,20 +495,19 @@ ${budgetContextJoins}
      */
     async findActive(): Promise<Budget[]> {
         const now = Math.floor(Date.now() / 1000)
-        const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
 
-        return querySQL<Budget>(
+        const budgets = await querySQL<Budget>(
             `
       SELECT
-${budgetSelectFields},
-${actualSpendSubquery}
+${budgetSelectFields}
       FROM budget b
       JOIN tag t ON b.tag_id = t.id
 ${budgetContextJoins}
       WHERE b.start <= ? AND b.end > ?
       ORDER BY t.name ASC
     `,
-            [sysCurrencyId, sysRate, now, now]
+            [now, now]
         )
+        return withActual(budgets)
     },
 }

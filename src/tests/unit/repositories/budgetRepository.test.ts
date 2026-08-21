@@ -98,8 +98,26 @@ describe('budgetRepository', () => {
     })
 
     describe('findByMonth', () => {
-        it('returns budgets for specified month', async () => {
-            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 250.00 }])
+        it('returns budgets for specified month with actual computed from matching trx_base rows', async () => {
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('WHERE b.start >= ? AND b.start < ?')) return [{ ...sampleBudget, actual: 0 }]
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    return [{
+                        tag_id: SYSTEM_TAGS.FOOD,
+                        sign: '-',
+                        amount_int: 250,
+                        amount_frac: 0,
+                        rate_int: 1,
+                        rate_frac: 0,
+                        currency_id: 1,
+                        account_id: 1,
+                        timestamp: sampleBudget.start + 10,
+                        ctx_tag_id: null,
+                    }]
+                }
+                return []
+            })
 
             const result = await budgetRepository.findByMonth('2024-01')
 
@@ -107,57 +125,72 @@ describe('budgetRepository', () => {
                 expect.stringContaining('WHERE b.start >= ? AND b.start < ?'),
                 expect.arrayContaining([expect.any(Number), expect.any(Number)])
             )
-            expect(result[0].actual).toBe(250.00)
+            expect(result[0].actual).toBe(250)
         })
 
-        it('calculates actual spending with int/frac conversion', async () => {
-            mockQuerySQL.mockResolvedValue([])
+        it('issues a single batched trx_base query rather than a per-budget correlated subquery', async () => {
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('WHERE b.start >= ? AND b.start < ?')) return [{ ...sampleBudget, actual: 0 }]
+                return []
+            })
 
             await budgetRepository.findByMonth('2024-01')
 
-            // Verify int/frac conversion formula is used
             expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('amount_int'),
+                expect.stringContaining('FROM trx_base tb'),
                 expect.anything()
             )
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('rate_int'),
-                expect.anything()
-            )
+            expect(mockQuerySQL).toHaveBeenCalledTimes(3) // budget list + tag_to_tag edges + trx_base rows
         })
 
         it('filters actuals by budget type sign', async () => {
-            mockQuerySQL.mockResolvedValue([])
+            const incomeBudget = { ...sampleBudget, type: 'income' as const }
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('WHERE b.start >= ? AND b.start < ?')) return [{ ...incomeBudget, actual: 0 }]
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    return [
+                        { tag_id: SYSTEM_TAGS.FOOD, sign: '+', amount_int: 100, amount_frac: 0, rate_int: 1, rate_frac: 0, currency_id: 1, account_id: 1, timestamp: incomeBudget.start + 10, ctx_tag_id: null },
+                        { tag_id: SYSTEM_TAGS.FOOD, sign: '-', amount_int: 999, amount_frac: 0, rate_int: 1, rate_frac: 0, currency_id: 1, account_id: 1, timestamp: incomeBudget.start + 10, ctx_tag_id: null },
+                    ]
+                }
+                return []
+            })
 
-            await budgetRepository.findByMonth('2024-01')
+            const result = await budgetRepository.findByMonth('2024-01')
 
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining("tb.sign = CASE b.type WHEN 'income' THEN '+' ELSE '-' END"),
-                expect.anything()
-            )
+            // Only the '+' row should count toward an income-type budget
+            expect(result[0].actual).toBe(100)
         })
 
         it('calculates savings and credit budgets from inbound transfers and exchanges to tagged accounts', async () => {
-            mockQuerySQL.mockResolvedValue([])
+            const savingsTagId = 100
+            const savingsBudget = { ...sampleBudget, tag: 'savings', tag_id: savingsTagId }
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('WHERE b.start >= ? AND b.start < ?')) return [{ ...savingsBudget, actual: 0 }]
+                if (sql.includes("name IN ('transfer', 'exchange')")) return [{ id: SYSTEM_TAGS.TRANSFER }, { id: SYSTEM_TAGS.EXCHANGE }]
+                if (sql.includes('account_to_tags')) return [{ account_id: 5, tag_id: savingsTagId }]
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    return [{
+                        tag_id: SYSTEM_TAGS.TRANSFER,
+                        sign: '+',
+                        amount_int: 60,
+                        amount_frac: 0,
+                        rate_int: 1,
+                        rate_frac: 0,
+                        currency_id: 1,
+                        account_id: 5,
+                        timestamp: savingsBudget.start + 10,
+                        ctx_tag_id: null,
+                    }]
+                }
+                return []
+            })
 
-            await budgetRepository.findByMonth('2024-01')
+            const result = await budgetRepository.findByMonth('2024-01')
 
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining("t.name IN ('savings', 'credits')"),
-                expect.anything()
-            )
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining("tb.sign = '+'"),
-                expect.anything()
-            )
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining("tb.tag_id IN (SELECT id FROM tag WHERE name IN ('transfer', 'exchange'))"),
-                expect.anything()
-            )
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('a2t.tag_id = b.tag_id'),
-                expect.anything()
-            )
+            expect(result[0].actual).toBe(60)
         })
     })
 
@@ -188,7 +221,10 @@ describe('budgetRepository', () => {
 
     describe('findActive', () => {
         it('returns budgets for current period', async () => {
-            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 100.00 }])
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('WHERE b.start <= ? AND b.end > ?')) return [{ ...sampleBudget, actual: 0 }]
+                return []
+            })
 
             const result = await budgetRepository.findActive()
 
@@ -199,27 +235,32 @@ describe('budgetRepository', () => {
             expect(result).toHaveLength(1)
         })
 
-        it('includes actual spending in results', async () => {
-            mockQuerySQL.mockResolvedValue([{ ...sampleBudget, actual: 300.00 }])
+        it('includes actual spending computed from a batched trx_base query, with int/frac conversion', async () => {
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('WHERE b.start <= ? AND b.end > ?')) return [{ ...sampleBudget, actual: 0 }]
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    // amount = 15 + 0.5*1e-18*1e18 = 15.5 (foreign currency, rate = 1.0 -> converted stays 15.5)
+                    return [{
+                        tag_id: SYSTEM_TAGS.FOOD,
+                        sign: '-',
+                        amount_int: 15,
+                        amount_frac: 500000000000000000,
+                        rate_int: 1,
+                        rate_frac: 0,
+                        currency_id: 2,
+                        account_id: 1,
+                        timestamp: sampleBudget.start + 10,
+                        ctx_tag_id: null,
+                    }]
+                }
+                return []
+            })
 
             const result = await budgetRepository.findActive()
 
-            expect(result[0].actual).toBe(300.00)
-        })
-
-        it('uses int/frac conversion formula for actual calculation', async () => {
-            mockQuerySQL.mockResolvedValue([])
-
-            await budgetRepository.findActive()
-
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('amount_int'),
-                expect.anything()
-            )
-            expect(mockQuerySQL).toHaveBeenCalledWith(
-                expect.stringContaining('rate_int'),
-                expect.anything()
-            )
+            expect(mockQuerySQL).toHaveBeenCalledWith(expect.stringContaining('FROM trx_base tb'), expect.anything())
+            expect(result[0].actual).toBeCloseTo(15.5, 5)
         })
     })
 
@@ -408,38 +449,98 @@ describe('budgetRepository', () => {
     })
 
     describe('findWithActual', () => {
-        it('returns budget with actual spending', async () => {
-            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 350.00 })
+        it('returns budget with actual spending computed from matching trx_base rows', async () => {
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 0 })
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    return [{
+                        tag_id: SYSTEM_TAGS.FOOD,
+                        sign: '-',
+                        amount_int: 350,
+                        amount_frac: 0,
+                        rate_int: 1,
+                        rate_frac: 0,
+                        currency_id: 1,
+                        account_id: 1,
+                        timestamp: sampleBudget.start + 100,
+                        ctx_tag_id: null,
+                    }]
+                }
+                return []
+            })
 
             const result = await budgetRepository.findWithActual(mockId())
 
-            expect(result?.actual).toBe(350.00)
+            expect(result?.actual).toBe(350)
         })
 
-        it('calculates actual from trx_base with int/frac conversion', async () => {
-            mockQueryOne.mockResolvedValue(sampleBudget)
+        it('issues a single batched trx_base query rather than a per-budget correlated subquery', async () => {
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 0 })
+            mockQuerySQL.mockResolvedValue([])
 
             await budgetRepository.findWithActual(mockId())
 
-            expect(mockQueryOne).toHaveBeenCalledWith(
+            expect(mockQuerySQL).toHaveBeenCalledWith(
                 expect.stringContaining('FROM trx_base tb'),
-                expect.arrayContaining([mockHexId])
+                expect.anything()
             )
+            expect(mockQuerySQL).toHaveBeenCalledTimes(2) // tag_to_tag edges + trx_base rows (no savings/credits budget here)
         })
 
-        it('uses int/frac conversion formula', async () => {
-            mockQueryOne.mockResolvedValue(sampleBudget)
+        it('applies the int/frac amount and rate conversion formula', async () => {
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 0 })
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    // amount = 21 + 0 * 1e-18 = 21; rate = 2 + 0.5*1e18*1e-18 = 2.5
+                    // foreign currency (currency_id=2 !== sysCurrencyId=1): (21 / 2.5) * sysRate(1) = 8.4
+                    return [{
+                        tag_id: SYSTEM_TAGS.FOOD,
+                        sign: '-',
+                        amount_int: 21,
+                        amount_frac: 0,
+                        rate_int: 2,
+                        rate_frac: 500000000000000000,
+                        currency_id: 2,
+                        account_id: 1,
+                        timestamp: sampleBudget.start + 100,
+                        ctx_tag_id: null,
+                    }]
+                }
+                return []
+            })
 
-            await budgetRepository.findWithActual(mockId())
+            const result = await budgetRepository.findWithActual(mockId())
 
-            expect(mockQueryOne).toHaveBeenCalledWith(
-                expect.stringContaining('amount_int'),
-                expect.anything()
-            )
-            expect(mockQueryOne).toHaveBeenCalledWith(
-                expect.stringContaining('rate_int'),
-                expect.anything()
-            )
+            expect(result?.actual).toBeCloseTo(8.4, 5)
+        })
+
+        it('handles amount_frac/rate_frac returned as BigInt (sqlite-wasm returns BigInt once a value exceeds Number.MAX_SAFE_INTEGER)', async () => {
+            mockQueryOne.mockResolvedValue({ ...sampleBudget, actual: 0 })
+            mockQuerySQL.mockImplementation(async (sql: string) => {
+                if (sql.includes('tag_to_tag')) return []
+                if (sql.includes('trx_base')) {
+                    // amount = 10 + 500000000000000000n * 1e-18 = 10.5
+                    return [{
+                        tag_id: SYSTEM_TAGS.FOOD,
+                        sign: '-',
+                        amount_int: 10,
+                        amount_frac: 500000000000000000n,
+                        rate_int: 1,
+                        rate_frac: 0n,
+                        currency_id: 1,
+                        account_id: 1,
+                        timestamp: sampleBudget.start + 100,
+                        ctx_tag_id: null,
+                    }]
+                }
+                return []
+            })
+
+            const result = await budgetRepository.findWithActual(mockId())
+
+            expect(result?.actual).toBeCloseTo(10.5, 5)
         })
     })
 })

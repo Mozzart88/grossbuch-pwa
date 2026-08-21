@@ -8,6 +8,20 @@ import { formatCurrencyValue } from '../../../utils/formatters'
 vi.mock('../../../services/repositories')
 // Import after mock
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../../../services/repositories'
+
+// Spy on (while preserving) the real rollup implementations so tests can
+// assert on how often they're invoked, without changing observed behavior.
+vi.mock('../../../pages/summariesRollup', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../pages/summariesRollup')>()
+  return {
+    ...actual,
+    withSummaryAncestors: vi.fn(actual.withSummaryAncestors),
+    withCategoryAncestors: vi.fn(actual.withCategoryAncestors),
+  }
+})
+import { withSummaryAncestors, withCategoryAncestors } from '../../../pages/summariesRollup'
+const mockWithSummaryAncestors = vi.mocked(withSummaryAncestors)
+const mockWithCategoryAncestors = vi.mocked(withCategoryAncestors)
 const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
@@ -432,6 +446,71 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         expect(screen.getByText('No transactions this month')).toBeInTheDocument()
       })
+    })
+  })
+
+  describe('Nested rollup correctness (multi-parent tags)', () => {
+    // Diamond-shaped tag DAG: Bolt has two parents (Engine, Body) that both
+    // descend from the same further ancestor (Parts), so Parts is reachable
+    // from Bolt via two distinct paths.
+    const diamondHierarchy = [
+      { parent_id: 10, parent: 'expense', child_id: 100, child: 'Auto' },
+      { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Parts' },
+      { parent_id: 101, parent: 'Parts', child_id: 102, child: 'Engine' },
+      { parent_id: 101, parent: 'Parts', child_id: 103, child: 'Body' },
+      { parent_id: 102, parent: 'Engine', child_id: 104, child: 'Bolt' },
+      { parent_id: 103, parent: 'Body', child_id: 104, child: 'Bolt' },
+    ]
+
+    it('counts a leaf reachable via two parent paths exactly once in the shared ancestor subtotal (By Tags tab)', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 40,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', income: 0, expense: 0, net: 0, tag_context_id: null, tag_context: null },
+        { tag_id: 104, tag: 'Bolt', income: 0, expense: 40, net: -40, tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue(diamondHierarchy)
+
+      renderWithRouter(['/summaries?tab=tags'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Parts')).toBeInTheDocument()
+      })
+
+      const partsRow = screen.getByText('Parts').closest('div[class*="cursor-pointer"]') as HTMLElement
+      expect(within(partsRow).getByText(formatCurrencyValue(40, '$'))).toBeInTheDocument()
+      expect(within(partsRow).queryByText(formatCurrencyValue(80, '$'))).not.toBeInTheDocument()
+    })
+
+    it('counts a leaf reachable via two parent paths exactly once in the shared ancestor subtotal (Budgets tab)', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 40,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', amount: 0, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 104, tag: 'Bolt', amount: 40, type: 'expense', tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 100, name: 'Auto', sort_order: 10 },
+        { id: 101, name: 'Parts', sort_order: 10 },
+        { id: 102, name: 'Engine', sort_order: 10 },
+        { id: 103, name: 'Body', sort_order: 10 },
+        { id: 104, name: 'Bolt', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue(diamondHierarchy)
+
+      renderWithRouter(['/summaries'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Parts')).toBeInTheDocument()
+      })
+
+      const partsRow = screen.getByText('Parts').closest('div[class*="cursor-pointer"]') as HTMLElement
+      expect(within(partsRow).getByText(formatCurrencyValue(40, '$'))).toBeInTheDocument()
+      expect(within(partsRow).queryByText(formatCurrencyValue(80, '$'))).not.toBeInTheDocument()
     })
   })
 
@@ -1855,6 +1934,62 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Set Budget')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('rollup memoization', () => {
+    it('does not recompute tag/category ancestor rollups when typing in the Set Budget amount field', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('January 2025')).toBeInTheDocument()
+      })
+
+      const summaryCallsBefore = mockWithSummaryAncestors.mock.calls.length
+      const categoryCallsBefore = mockWithCategoryAncestors.mock.calls.length
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '1' } })
+      fireEvent.change(amountInput, { target: { value: '12' } })
+      fireEvent.change(amountInput, { target: { value: '123' } })
+
+      expect(mockWithSummaryAncestors.mock.calls.length).toBe(summaryCallsBefore)
+      expect(mockWithCategoryAncestors.mock.calls.length).toBe(categoryCallsBefore)
+    })
+
+    it('recomputes tag/category ancestor rollups when the underlying month data changes', async () => {
+      mockTransactionRepository.getMonthlyTagsSummary
+        .mockResolvedValueOnce([{ tag_id: 1, tag: 'Food', income: 0, expense: 300, net: -300 }])
+        .mockResolvedValueOnce([{ tag_id: 1, tag: 'Food', income: 0, expense: 999, net: -999 }])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('January 2025')).toBeInTheDocument()
+      })
+
+      const summaryCallsBefore = mockWithSummaryAncestors.mock.calls.length
+
+      // buttons[2] is the prev-month button in MonthNavigator (see 'handles month navigation via prev button' above)
+      const buttons = screen.getAllByRole('button')
+      fireEvent.click(buttons[2])
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.getMonthSummary).toHaveBeenCalledWith('2024-12')
+      })
+      await waitFor(() => {
+        expect(mockWithSummaryAncestors.mock.calls.length).toBeGreaterThan(summaryCallsBefore)
       })
     })
   })
