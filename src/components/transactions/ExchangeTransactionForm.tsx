@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { Transaction, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { currencyRepository, transactionRepository } from '../../services/repositories'
@@ -13,6 +13,8 @@ import { getRateForDate } from '../../services/exchangeRate/historicalRateServic
 interface ExchangeTransactionFormProps {
   accounts: AccountOption[]
   defaultAccountId: string
+  datetime: number
+  onDateTimeChange: (value: number) => void
   initialData?: Transaction
   createFromInitialData?: boolean
   onSubmit: (options?: SubmitOptions) => void
@@ -37,6 +39,8 @@ const renderAccountSelectedBadge = (option: AccountSelectUIOption) =>
 export function ExchangeTransactionForm({
   accounts,
   defaultAccountId,
+  datetime,
+  onDateTimeChange,
   initialData,
   createFromInitialData = false,
   onSubmit,
@@ -57,34 +61,56 @@ export function ExchangeTransactionForm({
   const [fee, setFee] = useState('')
   const [feeTagId, setFeeTagId] = useState('')
   const [note, setNote] = useState('')
-  const [datetime, setDateTime] = useState(Date.now())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
   const [localAddAnother, setLocalAddAnother] = useState(false)
   const isEditing = !!initialData && !createFromInitialData
   const addAnother = controlledAddAnother ?? localAddAnother
   const setAddAnother = onAddAnotherChange ?? setLocalAddAnother
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null)
 
   // Populate from initial data
   useEffect(() => {
     if (!initialData || !initialData.lines || initialData.lines.length === 0) return
     const lines = initialData.lines as TransactionLine[]
-    setDateTime(new Date(initialData.timestamp * 1000).getTime())
     const fromLine = lines.find(l => l.sign === '-')!
     const toLine = lines.find(l => l.sign === '+')!
     const feeLine = lines.find(l => l.tag_id === SYSTEM_TAGS.FEE)
-    setAccountId(fromLine.account_id.toString())
-    setToAccountId(toLine.account_id.toString())
-    setNote(initialData.note || '')
-    const fromAmt = fromIntFrac(fromLine.amount_int, fromLine.amount_frac)
-    const toAmt = fromIntFrac(toLine.amount_int, toLine.amount_frac)
-    setAmount(fromAmt.toString())
-    setToAmount(toAmt.toString())
-    if (feeLine) {
-      setFee(fromIntFrac(feeLine.amount_int, feeLine.amount_frac).toString())
-      setFeeTagId(feeLine.tag_id.toString())
-    }
+    const accountIdValue = fromLine.account_id.toString()
+    const toAccountIdValue = toLine.account_id.toString()
+    const noteValue = initialData.note || ''
+    const amountValue = fromIntFrac(fromLine.amount_int, fromLine.amount_frac).toString()
+    const toAmountValue = fromIntFrac(toLine.amount_int, toLine.amount_frac).toString()
+    const feeValue = feeLine ? fromIntFrac(feeLine.amount_int, feeLine.amount_frac).toString() : ''
+    const feeTagIdValue = feeLine ? feeLine.tag_id.toString() : ''
+    setAccountId(accountIdValue)
+    setToAccountId(toAccountIdValue)
+    setNote(noteValue)
+    setAmount(amountValue)
+    setToAmount(toAmountValue)
+    setFee(feeValue)
+    setFeeTagId(feeTagIdValue)
+    // Snapshot the hydrated values (built from the same local values just applied above, not
+    // read back from state) so "has this transaction actually changed?" can be checked by value
+    setInitialSnapshot(JSON.stringify({
+      accountId: accountIdValue,
+      toAccountId: toAccountIdValue,
+      note: noteValue,
+      amount: amountValue,
+      toAmount: toAmountValue,
+      fee: feeValue,
+      feeTagId: feeTagIdValue,
+      datetime: initialData.timestamp * 1000,
+    }))
   }, [initialData])
+
+  const hasChanges = useMemo(() => {
+    if (!isEditing) return true
+    if (initialSnapshot === null) return false
+    return JSON.stringify({
+      accountId, toAccountId, note, amount, toAmount, fee, feeTagId, datetime,
+    }) !== initialSnapshot
+  }, [isEditing, initialSnapshot, accountId, toAccountId, note, amount, toAmount, fee, feeTagId, datetime])
 
   // Action bar setup
   useEffect(() => {
@@ -95,10 +121,10 @@ export function ExchangeTransactionForm({
       primaryAction: () => { formRef.current?.requestSubmit() },
       cancelAction: onCancel,
       loading: submitting,
-      disabled: submitting,
+      disabled: submitting || (isEditing && !hasChanges),
     })
     return () => { setActionBarConfig(null) }
-  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting])
+  }, [useActionBar, layoutContext?.setActionBarConfig, isEditing, onCancel, submitting, hasChanges])
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const selectedToAccount = accounts.find(a => a.id.toString() === toAccountId)
@@ -315,7 +341,7 @@ export function ExchangeTransactionForm({
       {/* Date/Time */}
       <DateTimeUI
         type="datetime-local"
-        onChange={e => setDateTime(new Date(e.target.value).getTime())}
+        onChange={e => onDateTimeChange(new Date(e.target.value).getTime())}
         value={toDateTimeLocal(new Date(datetime))}
       />
 
@@ -367,7 +393,7 @@ export function ExchangeTransactionForm({
           <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting} className="flex-1">
+          <Button type="submit" disabled={submitting || (isEditing && !hasChanges)} className="flex-1">
             {submitting ? 'Saving...' : (isEditing ? 'Update' : 'Add')}
           </Button>
         </div>

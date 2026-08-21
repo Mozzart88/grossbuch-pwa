@@ -14,6 +14,7 @@ import { fromIntFrac, toIntFrac } from '../../utils/amount'
 import { notificationRepository } from './notificationRepository'
 import { transactionRepository } from './transactionRepository'
 import { currencyRepository } from './currencyRepository'
+import { tagReferences } from './tagReferences'
 
 interface RecurringPlanRow {
   id: Uint8Array
@@ -202,7 +203,27 @@ async function convertLineToSystemAmount(
   return { amountInt: converted.int, amountFrac: converted.frac }
 }
 
+async function decrementBudgetTagReferencesForPlan(planId: Uint8Array): Promise<void> {
+  const budgets = await querySQL<{ id: Uint8Array; tag_id: number }>(
+    `SELECT b.id, b.tag_id FROM budget b
+     JOIN recurring_budget rb ON rb.budget_id = b.id
+     WHERE rb.plan_id = ?`,
+    [planId]
+  )
+  for (const budget of budgets) {
+    await tagReferences.decrement(budget.tag_id)
+    const contexts = await querySQL<{ tag_id: number }>(
+      'SELECT tag_id FROM budget_tag_context WHERE budget_id = ?',
+      [budget.id]
+    )
+    for (const ctx of contexts) {
+      await tagReferences.decrement(ctx.tag_id)
+    }
+  }
+}
+
 async function projectBudgets(plan: RecurringPlan): Promise<void> {
+  await decrementBudgetTagReferencesForPlan(plan.id)
   await execSQL(
     `DELETE FROM budget
      WHERE id IN (SELECT budget_id FROM recurring_budget WHERE plan_id = ?)`,
@@ -271,10 +292,12 @@ async function projectBudgets(plan: RecurringPlan): Promise<void> {
        VALUES (randomblob(8), ?, ?, ?, ?, ?, ?)`,
       [range.start, range.end, total.tagId, total.type, total.amountInt, total.amountFrac]
     )
+    await tagReferences.increment(total.tagId)
     const budget = await queryOne<{ id: Uint8Array }>('SELECT id FROM budget ORDER BY rowid DESC LIMIT 1')
     if (!budget) continue
     if (total.tagContextId !== null) {
       await execSQL(`INSERT OR IGNORE INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`, [budget.id, total.tagContextId])
+      await tagReferences.increment(total.tagContextId)
     }
     await execSQL(
       `INSERT OR REPLACE INTO recurring_budget (budget_id, plan_id, due_month) VALUES (?, ?, ?)`,
@@ -406,6 +429,7 @@ export const recurringRepository = {
   },
 
   async delete(id: Uint8Array): Promise<void> {
+    await decrementBudgetTagReferencesForPlan(id)
     await execSQL(`DELETE FROM budget WHERE id IN (SELECT budget_id FROM recurring_budget WHERE plan_id = ?)`, [id])
     await execSQL(`DELETE FROM recurring_plan WHERE id = ?`, [id])
   },

@@ -99,26 +99,36 @@ describe('syncRepository', () => {
   })
 
   describe('getDeletionsSince', () => {
-    it('queries sync_deletions with timestamp', async () => {
+    it('unions main, shared, and workspace sync_deletions tables', async () => {
       const deletions = [{ entity: 'tag', entity_id: '12', deleted_at: 500 }]
       mockQuerySQL.mockResolvedValue(deletions)
 
       const result = await getDeletionsSince(100)
 
-      expect(mockQuerySQL).toHaveBeenCalledWith(
-        expect.stringContaining('sync_deletions WHERE deleted_at >= ?'),
-        [100]
-      )
+      const [sql, bind] = mockQuerySQL.mock.calls[0]
+      expect(sql).toContain('FROM main.sync_deletions')
+      expect(sql).toContain('FROM shared.sync_deletions')
+      expect(sql).toContain('FROM workspace.sync_deletions')
+      expect(bind).toEqual([100, 100, 100])
       expect(result).toEqual(deletions)
     })
   })
 
   describe('recordDeletion', () => {
-    it('inserts or replaces deletion record', async () => {
+    it('inserts a shared-schema deletion into shared.sync_deletions', async () => {
+      await recordDeletion('tag', '12')
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT OR REPLACE INTO shared.sync_deletions'),
+        ['tag', '12']
+      )
+    })
+
+    it('inserts a workspace-schema deletion into workspace.sync_deletions', async () => {
       await recordDeletion('wallet', 'My Wallet')
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT OR REPLACE INTO sync_deletions'),
+        expect.stringContaining('INSERT OR REPLACE INTO workspace.sync_deletions'),
         ['wallet', 'My Wallet']
       )
     })

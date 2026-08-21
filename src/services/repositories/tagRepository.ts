@@ -1,6 +1,7 @@
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Tag, TagInput, TagHierarchy, TagGraph, TagSummary, TagContextOption } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
+import { tagReferences } from './tagReferences'
 
 const ROOT_PARENT_IDS: number[] = [
   SYSTEM_TAGS.SYSTEM,
@@ -160,38 +161,13 @@ export const tagRepository = {
       return { canDelete: false, reason: 'System tags cannot be deleted' }
     }
 
-    // Check if tag is used in transactions
-    const txCount = await queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM trx_base WHERE tag_id = ?',
-      [id]
-    )
-    if (txCount && txCount.count > 0) {
-      return { canDelete: false, reason: `${txCount.count} transactions use this tag` }
-    }
-
-    // Check if tag is used in budgets
-    const budgetCount = await queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM budget WHERE tag_id = ?',
-      [id]
-    )
-    if (budgetCount && budgetCount.count > 0) {
-      return { canDelete: false, reason: `${budgetCount.count} budgets use this tag` }
-    }
-
-    const contextCount = await queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM trx_base_tag_context WHERE tag_id = ?',
-      [id]
-    )
-    if (contextCount && contextCount.count > 0) {
-      return { canDelete: false, reason: `${contextCount.count} transactions use this tag as context` }
-    }
-
-    const budgetContextCount = await queryOne<{ count: number }>(
-      'SELECT COUNT(*) as count FROM budget_tag_context WHERE tag_id = ?',
-      [id]
-    )
-    if (budgetContextCount && budgetContextCount.count > 0) {
-      return { canDelete: false, reason: `${budgetContextCount.count} budgets use this tag as context` }
+    // shared.tag_references is the source of truth: it reflects usage across
+    // every workspace, not just whichever workspace happens to be attached
+    // right now (a live COUNT against trx_base/budget/etc. only ever sees the
+    // currently-attached workspace once those tables move out of `main`).
+    const count = await tagReferences.getCount(id)
+    if (count > 0) {
+      return { canDelete: false, reason: 'This tag is still in use' }
     }
 
     return { canDelete: true }

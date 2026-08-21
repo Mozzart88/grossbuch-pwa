@@ -10,6 +10,10 @@ vi.mock('../../../services/repositories', () => ({
     set: vi.fn(),
     delete: vi.fn(),
   },
+  linkedDeviceRepository: {
+    findAll: vi.fn(),
+    remove: vi.fn(),
+  },
 }))
 
 vi.mock('../../../services/database/connection', () => ({
@@ -20,23 +24,26 @@ vi.mock('../../../services/sync', () => ({
   sendUnlinkCommand: vi.fn(),
 }))
 
-import { settingsRepository } from '../../../services/repositories'
+import { settingsRepository, linkedDeviceRepository, type LinkedDevice } from '../../../services/repositories'
 import { sendUnlinkCommand } from '../../../services/sync'
 
 const mockRepo = vi.mocked(settingsRepository)
+const mockLinkedDeviceRepo = vi.mocked(linkedDeviceRepository)
 const mockSendUnlinkCommand = vi.mocked(sendUnlinkCommand)
 
 const INSTALLATION_ID = 'abcdef1234567890'
 const INSTALLATION_ID_2 = 'fedcba0987654321'
-const INSTALLATIONS = JSON.stringify({ [INSTALLATION_ID]: 'pubkey1' })
-const TWO_INSTALLATIONS = JSON.stringify({
-  [INSTALLATION_ID]: 'pubkey1',
-  [INSTALLATION_ID_2]: 'pubkey2',
-})
 
-function mockGet(linked: string | null, pending: string | null = null) {
+function device(id: string, publicKey: string): LinkedDevice {
+  return { id, name: 'Unnamed device', public_key: publicKey, linked_at: 0, workspace_scope: null }
+}
+
+const ONE_DEVICE = [device(INSTALLATION_ID, 'pubkey1')]
+const TWO_DEVICES = [device(INSTALLATION_ID, 'pubkey1'), device(INSTALLATION_ID_2, 'pubkey2')]
+
+function mockGet(linked: LinkedDevice[] | null, pending: string | null = null) {
+  mockLinkedDeviceRepo.findAll.mockResolvedValue(linked ?? [])
   mockRepo.get.mockImplementation((key: string) => {
-    if (key === 'linked_installations') return Promise.resolve(linked)
     if (key === 'pending_unlink_requests') return Promise.resolve(pending)
     return Promise.resolve(null)
   })
@@ -56,6 +63,7 @@ describe('LinkedDevicesPage', () => {
     vi.clearAllMocks()
     mockRepo.set.mockResolvedValue(undefined)
     mockRepo.delete.mockResolvedValue(undefined)
+    mockLinkedDeviceRepo.remove.mockResolvedValue(undefined)
     mockSendUnlinkCommand.mockResolvedValue(undefined)
   })
 
@@ -81,7 +89,7 @@ describe('LinkedDevicesPage', () => {
     })
 
     it('shows empty state when installations is empty object', async () => {
-      mockGet('{}')
+      mockGet([])
       renderPage()
       await waitFor(() => expect(screen.getByText(/No linked devices/i)).toBeInTheDocument())
     })
@@ -89,7 +97,7 @@ describe('LinkedDevicesPage', () => {
 
   describe('Device list', () => {
     it('renders abbreviated installation IDs', async () => {
-      mockGet(TWO_INSTALLATIONS)
+      mockGet(TWO_DEVICES)
       renderPage()
       await waitFor(() => {
         expect(screen.getByText('abcdef12…')).toBeInTheDocument()
@@ -98,7 +106,7 @@ describe('LinkedDevicesPage', () => {
     })
 
     it('renders Unlink button for each non-pending device', async () => {
-      mockGet(TWO_INSTALLATIONS)
+      mockGet(TWO_DEVICES)
       renderPage()
       await waitFor(() => {
         const unlinkButtons = screen.getAllByRole('button', { name: /^Unlink$/i })
@@ -110,7 +118,7 @@ describe('LinkedDevicesPage', () => {
   describe('Pending devices', () => {
     it('shows "Waiting for confirmation" and Force Unlink for pending device', async () => {
       const pending = JSON.stringify([{ target_id: INSTALLATION_ID, started_at: 0, keep_data: true }])
-      mockGet(INSTALLATIONS, pending)
+      mockGet(ONE_DEVICE, pending)
       renderPage()
       await waitFor(() => {
         expect(screen.getByText('Waiting for confirmation…')).toBeInTheDocument()
@@ -120,14 +128,14 @@ describe('LinkedDevicesPage', () => {
 
     it('force unlink removes device from both settings keys', async () => {
       const pending = JSON.stringify([{ target_id: INSTALLATION_ID, started_at: 0, keep_data: true }])
-      mockGet(INSTALLATIONS, pending)
+      mockGet(ONE_DEVICE, pending)
       renderPage()
 
       await waitFor(() => screen.getByRole('button', { name: /Force Unlink/i }))
       fireEvent.click(screen.getByRole('button', { name: /Force Unlink/i }))
 
       await waitFor(() => {
-        expect(mockRepo.set).toHaveBeenCalledWith('linked_installations', JSON.stringify({}))
+        expect(mockLinkedDeviceRepo.remove).toHaveBeenCalledWith(INSTALLATION_ID)
         expect(mockRepo.delete).toHaveBeenCalledWith('pending_unlink_requests')
       })
     })
@@ -137,7 +145,7 @@ describe('LinkedDevicesPage', () => {
         { target_id: INSTALLATION_ID, started_at: 0, keep_data: true },
         { target_id: INSTALLATION_ID_2, started_at: 1, keep_data: false },
       ])
-      mockGet(TWO_INSTALLATIONS, pending)
+      mockGet(TWO_DEVICES, pending)
       renderPage()
 
       await waitFor(() => screen.getAllByRole('button', { name: /Force Unlink/i }))
@@ -154,9 +162,9 @@ describe('LinkedDevicesPage', () => {
 
     it('shows error toast when force unlink fails', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      mockRepo.set.mockRejectedValueOnce(new Error('Save failed'))
+      mockLinkedDeviceRepo.remove.mockRejectedValueOnce(new Error('Save failed'))
       const pending = JSON.stringify([{ target_id: INSTALLATION_ID, started_at: 0, keep_data: true }])
-      mockGet(INSTALLATIONS, pending)
+      mockGet(ONE_DEVICE, pending)
       renderPage()
 
       await waitFor(() => screen.getByRole('button', { name: /Force Unlink/i }))
@@ -171,7 +179,7 @@ describe('LinkedDevicesPage', () => {
 
   describe('Unlink dialog', () => {
     it('opens dialog when Unlink is clicked', async () => {
-      mockGet(INSTALLATIONS)
+      mockGet(ONE_DEVICE)
       renderPage()
       await waitFor(() => screen.getByRole('button', { name: /^Unlink$/i }))
       fireEvent.click(screen.getByRole('button', { name: /^Unlink$/i }))
@@ -181,7 +189,7 @@ describe('LinkedDevicesPage', () => {
     })
 
     it('closes dialog when Cancel is clicked without sending command', async () => {
-      mockGet(INSTALLATIONS)
+      mockGet(ONE_DEVICE)
       renderPage()
       await waitFor(() => screen.getByRole('button', { name: /^Unlink$/i }))
       fireEvent.click(screen.getByRole('button', { name: /^Unlink$/i }))
@@ -193,7 +201,7 @@ describe('LinkedDevicesPage', () => {
     })
 
     it('sends unlink command with keepData=true when "Keep data" chosen', async () => {
-      mockGet(INSTALLATIONS)
+      mockGet(ONE_DEVICE)
       renderPage()
       await waitFor(() => screen.getByRole('button', { name: /^Unlink$/i }))
       fireEvent.click(screen.getByRole('button', { name: /^Unlink$/i }))
@@ -205,7 +213,7 @@ describe('LinkedDevicesPage', () => {
     })
 
     it('sends unlink command with keepData=false when "Delete everything" chosen', async () => {
-      mockGet(INSTALLATIONS)
+      mockGet(ONE_DEVICE)
       renderPage()
       await waitFor(() => screen.getByRole('button', { name: /^Unlink$/i }))
       fireEvent.click(screen.getByRole('button', { name: /^Unlink$/i }))
@@ -217,7 +225,7 @@ describe('LinkedDevicesPage', () => {
     })
 
     it('saves pending_unlink_requests after sending command', async () => {
-      mockGet(INSTALLATIONS)
+      mockGet(ONE_DEVICE)
       renderPage()
       await waitFor(() => screen.getByRole('button', { name: /^Unlink$/i }))
       fireEvent.click(screen.getByRole('button', { name: /^Unlink$/i }))
@@ -234,7 +242,7 @@ describe('LinkedDevicesPage', () => {
     it('shows error toast when sendUnlinkCommand fails', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       mockSendUnlinkCommand.mockRejectedValueOnce(new Error('Network error'))
-      mockGet(INSTALLATIONS)
+      mockGet(ONE_DEVICE)
       renderPage()
       await waitFor(() => screen.getByRole('button', { name: /^Unlink$/i }))
       fireEvent.click(screen.getByRole('button', { name: /^Unlink$/i }))

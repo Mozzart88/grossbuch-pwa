@@ -3,7 +3,7 @@ import type { Settings } from '../../types'
 
 export const settingsRepository = {
   async get<K extends keyof Settings>(key: K): Promise<Settings[K] | null> {
-    const result = await queryOne<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key])
+    const result = await queryOne<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [key])
     if (!result) return null
 
     // Type conversion based on key
@@ -19,7 +19,7 @@ export const settingsRepository = {
 
   async set<K extends keyof Settings>(key: K, value: Settings[K]): Promise<void> {
     await execSQL(
-      `INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`,
+      `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, unixepoch(CURRENT_TIMESTAMP))`,
       [key, String(value)]
     )
   },
@@ -36,6 +36,6 @@ export const settingsRepository = {
   },
 
   async delete<K extends keyof Settings>(key: K): Promise<void> {
-    await execSQL('DELETE FROM settings WHERE key = ?', [key])
+    await execSQL('DELETE FROM app_settings WHERE key = ?', [key])
   },
 }

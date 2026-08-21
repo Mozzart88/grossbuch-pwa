@@ -8,55 +8,55 @@ vi.mock('../../../../services/database/connection', () => ({
 
 const { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } = await import('../../../../services/sync/syncTriggers')
 
-const EXPECTED_TRIGGER_NAMES = [
-  'trg_icon_update',
-  'trg_tag_update',
-  'trg_tag_to_tag_insert',
-  'trg_tag_to_tag_update',
-  'trg_tag_to_tag_delete',
-  'trg_tag_icon_insert',
-  'trg_tag_icon_update',
-  'trg_tag_icon_delete',
-  'trg_wallet_update',
-  'trg_wallet_to_tags_insert',
-  'trg_wallet_to_tags_update',
-  'trg_wallet_to_tags_delete',
-  'trg_account_update',
-  'trg_account_to_tags_insert',
-  'trg_account_to_tags_update',
-  'trg_account_to_tags_delete',
-  'trg_account_data_insert',
-  'trg_account_data_update',
-  'trg_account_data_delete',
-  'trg_counterparty_update',
-  'trg_counterparty_to_tags_insert',
-  'trg_counterparty_to_tags_update',
-  'trg_counterparty_to_tags_delete',
-  'trg_counterparty_note_insert',
-  'trg_counterparty_note_update',
-  'trg_counterparty_note_delete',
-  'trg_currency_to_tags_insert',
-  'trg_currency_to_tags_update',
-  'trg_currency_to_tags_delete',
-  'trg_trx_update',
-  'trg_trx_to_counterparty_insert',
-  'trg_trx_to_counterparty_update',
-  'trg_trx_to_counterparty_delete',
-  'trg_trx_note_insert',
-  'trg_trx_note_update',
-  'trg_trx_note_delete',
-  'trg_trx_base_insert',
-  'trg_trx_base_update',
-  'trg_trx_base_delete',
-  'trg_trx_base_tag_context_insert',
-  'trg_trx_base_tag_context_delete',
-  'trg_budget_update',
-  'trg_budget_tag_context_insert',
-  'trg_budget_tag_context_delete',
-  'trg_notification_update',
-  'trg_recurring_plan_update',
-  'trg_recurring_occurrence_update',
-  'trg_recurring_budget_update',
+const EXPECTED_TRIGGERS = [
+  { schema: 'shared', name: 'trg_icon_update' },
+  { schema: 'shared', name: 'trg_tag_update' },
+  { schema: 'shared', name: 'trg_tag_to_tag_insert' },
+  { schema: 'shared', name: 'trg_tag_to_tag_update' },
+  { schema: 'shared', name: 'trg_tag_to_tag_delete' },
+  { schema: 'shared', name: 'trg_tag_icon_insert' },
+  { schema: 'shared', name: 'trg_tag_icon_update' },
+  { schema: 'shared', name: 'trg_tag_icon_delete' },
+  { schema: 'workspace', name: 'trg_wallet_update' },
+  { schema: 'workspace', name: 'trg_wallet_to_tags_insert' },
+  { schema: 'workspace', name: 'trg_wallet_to_tags_update' },
+  { schema: 'workspace', name: 'trg_wallet_to_tags_delete' },
+  { schema: 'workspace', name: 'trg_account_update' },
+  { schema: 'workspace', name: 'trg_account_to_tags_insert' },
+  { schema: 'workspace', name: 'trg_account_to_tags_update' },
+  { schema: 'workspace', name: 'trg_account_to_tags_delete' },
+  { schema: 'workspace', name: 'trg_account_data_insert' },
+  { schema: 'workspace', name: 'trg_account_data_update' },
+  { schema: 'workspace', name: 'trg_account_data_delete' },
+  { schema: 'shared', name: 'trg_counterparty_update' },
+  { schema: 'shared', name: 'trg_counterparty_to_tags_insert' },
+  { schema: 'shared', name: 'trg_counterparty_to_tags_update' },
+  { schema: 'shared', name: 'trg_counterparty_to_tags_delete' },
+  { schema: 'shared', name: 'trg_counterparty_note_insert' },
+  { schema: 'shared', name: 'trg_counterparty_note_update' },
+  { schema: 'shared', name: 'trg_counterparty_note_delete' },
+  { schema: 'shared', name: 'trg_currency_to_tags_insert' },
+  { schema: 'shared', name: 'trg_currency_to_tags_update' },
+  { schema: 'shared', name: 'trg_currency_to_tags_delete' },
+  { schema: 'workspace', name: 'trg_trx_update' },
+  { schema: 'workspace', name: 'trg_trx_to_counterparty_insert' },
+  { schema: 'workspace', name: 'trg_trx_to_counterparty_update' },
+  { schema: 'workspace', name: 'trg_trx_to_counterparty_delete' },
+  { schema: 'workspace', name: 'trg_trx_note_insert' },
+  { schema: 'workspace', name: 'trg_trx_note_update' },
+  { schema: 'workspace', name: 'trg_trx_note_delete' },
+  { schema: 'workspace', name: 'trg_trx_base_insert' },
+  { schema: 'workspace', name: 'trg_trx_base_update' },
+  { schema: 'workspace', name: 'trg_trx_base_delete' },
+  { schema: 'workspace', name: 'trg_trx_base_tag_context_insert' },
+  { schema: 'workspace', name: 'trg_trx_base_tag_context_delete' },
+  { schema: 'workspace', name: 'trg_budget_update' },
+  { schema: 'workspace', name: 'trg_budget_tag_context_insert' },
+  { schema: 'workspace', name: 'trg_budget_tag_context_delete' },
+  { schema: 'shared', name: 'trg_shared_notification_update' },
+  { schema: 'workspace', name: 'trg_recurring_plan_update' },
+  { schema: 'workspace', name: 'trg_recurring_occurrence_update' },
+  { schema: 'workspace', name: 'trg_recurring_budget_update' },
 ]
 
 describe('syncTriggers', () => {
@@ -68,9 +68,9 @@ describe('syncTriggers', () => {
     it('drops all updated_at triggers', async () => {
       await dropUpdatedAtTriggers()
 
-      expect(mockExecSQL).toHaveBeenCalledTimes(EXPECTED_TRIGGER_NAMES.length)
-      for (const name of EXPECTED_TRIGGER_NAMES) {
-        expect(mockExecSQL).toHaveBeenCalledWith(`DROP TRIGGER IF EXISTS ${name}`)
+      expect(mockExecSQL).toHaveBeenCalledTimes(EXPECTED_TRIGGERS.length)
+      for (const trigger of EXPECTED_TRIGGERS) {
+        expect(mockExecSQL).toHaveBeenCalledWith(`DROP TRIGGER IF EXISTS ${trigger.schema}.${trigger.name}`)
       }
     })
 
@@ -78,8 +78,8 @@ describe('syncTriggers', () => {
       await dropUpdatedAtTriggers()
 
       const calls = mockExecSQL.mock.calls.map((c: unknown[]) => c[0] as string)
-      for (let i = 0; i < EXPECTED_TRIGGER_NAMES.length; i++) {
-        expect(calls[i]).toBe(`DROP TRIGGER IF EXISTS ${EXPECTED_TRIGGER_NAMES[i]}`)
+      for (let i = 0; i < EXPECTED_TRIGGERS.length; i++) {
+        expect(calls[i]).toBe(`DROP TRIGGER IF EXISTS ${EXPECTED_TRIGGERS[i].schema}.${EXPECTED_TRIGGERS[i].name}`)
       }
     })
   })
@@ -88,18 +88,18 @@ describe('syncTriggers', () => {
     it('restores all updated_at triggers', async () => {
       await restoreUpdatedAtTriggers()
 
-      expect(mockExecSQL).toHaveBeenCalledTimes(EXPECTED_TRIGGER_NAMES.length)
+      expect(mockExecSQL).toHaveBeenCalledTimes(EXPECTED_TRIGGERS.length)
     })
 
     it('uses CREATE TRIGGER IF NOT EXISTS for each trigger', async () => {
       await restoreUpdatedAtTriggers()
 
       const calls = mockExecSQL.mock.calls.map((c: unknown[]) => c[0] as string)
-      for (const name of EXPECTED_TRIGGER_NAMES) {
+      for (const trigger of EXPECTED_TRIGGERS) {
         const found = calls.some((sql: string) =>
-          sql.includes(`CREATE TRIGGER IF NOT EXISTS ${name}`)
+          sql.includes(`CREATE TRIGGER IF NOT EXISTS ${trigger.schema}.${trigger.name}`)
         )
-        expect(found, `Expected CREATE TRIGGER for ${name}`).toBe(true)
+        expect(found, `Expected CREATE TRIGGER for ${trigger.schema}.${trigger.name}`).toBe(true)
       }
     })
 

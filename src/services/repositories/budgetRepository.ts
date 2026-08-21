@@ -1,6 +1,7 @@
 import { querySQL, queryOne, execSQL } from '../database'
 import { currencyRepository } from './currencyRepository'
 import { recurringRepository } from './recurringRepository'
+import { tagReferences } from './tagReferences'
 import type { Budget, BudgetInput, BudgetSummary } from '../../types'
 
 // Helper to convert Uint8Array to hex string for SQL queries
@@ -254,6 +255,7 @@ ${budgetContextJoins}
             `INSERT INTO budget (tag_id, type, amount_int, amount_frac, start, end) VALUES (?, ?, ?, ?, ?, ?)`,
             [input.tag_id, type, input.amount_int, input.amount_frac, start, end]
         )
+        await tagReferences.increment(input.tag_id)
 
         // Get the newly created budget by finding it with tag_id, start, end
         const budget = await queryOne<Budget>(
@@ -276,6 +278,7 @@ ${budgetContextJoins}
                 `INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
                 [budget.id, input.tag_context_id]
             )
+            await tagReferences.increment(input.tag_context_id)
             return this.findById(budget.id) as Promise<Budget>
         }
         return budget
@@ -287,6 +290,12 @@ ${budgetContextJoins}
     async update(id: Uint8Array, input: Partial<BudgetInput>): Promise<Budget> {
         const fields: string[] = []
         const values: unknown[] = []
+
+        let oldTagId: number | null = null
+        if (input.tag_id !== undefined) {
+            const current = await queryOne<{ tag_id: number }>('SELECT tag_id FROM budget WHERE hex(id) = ?', [toHex(id)])
+            oldTagId = current?.tag_id ?? null
+        }
 
         if (input.tag_id !== undefined) {
             fields.push('tag_id = ?')
@@ -317,13 +326,24 @@ ${budgetContextJoins}
             values.push(toHex(id))
             await execSQL(`UPDATE budget SET ${fields.join(', ')} WHERE hex(id) = ?`, values)
         }
+        if (input.tag_id !== undefined && oldTagId !== null && oldTagId !== input.tag_id) {
+            await tagReferences.move(oldTagId, input.tag_id)
+        }
         if (input.tag_context_id !== undefined) {
+            const oldContexts = await querySQL<{ tag_id: number }>(
+                'SELECT tag_id FROM budget_tag_context WHERE hex(budget_id) = ?',
+                [toHex(id)]
+            )
             await execSQL(`DELETE FROM budget_tag_context WHERE hex(budget_id) = ?`, [toHex(id)])
+            for (const ctx of oldContexts) {
+                await tagReferences.decrement(ctx.tag_id)
+            }
             if (input.tag_context_id !== null) {
                 await execSQL(
                     `INSERT INTO budget_tag_context (budget_id, tag_id) VALUES (?, ?)`,
                     [id, input.tag_context_id]
                 )
+                await tagReferences.increment(input.tag_context_id)
             }
         }
 
@@ -354,6 +374,17 @@ ${budgetContextJoins}
      * Delete a budget
      */
     async delete(id: Uint8Array): Promise<void> {
+        const budget = await queryOne<{ tag_id: number }>('SELECT tag_id FROM budget WHERE hex(id) = ?', [toHex(id)])
+        if (budget) await tagReferences.decrement(budget.tag_id)
+
+        const contexts = await querySQL<{ tag_id: number }>(
+            'SELECT tag_id FROM budget_tag_context WHERE hex(budget_id) = ?',
+            [toHex(id)]
+        )
+        for (const ctx of contexts) {
+            await tagReferences.decrement(ctx.tag_id)
+        }
+
         await execSQL('DELETE FROM budget WHERE hex(id) = ?', [toHex(id)])
     },
 

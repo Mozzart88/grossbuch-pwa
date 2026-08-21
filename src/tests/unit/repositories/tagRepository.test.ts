@@ -351,63 +351,38 @@ describe('tagRepository', () => {
       expect(result).toEqual({ canDelete: false, reason: 'System tags cannot be deleted' })
     })
 
-    it('returns false when tag is used in transactions', async () => {
+    it('returns false when shared.tag_references count is greater than zero', async () => {
       mockQueryOne
         .mockResolvedValueOnce({ is_system: 0 })
         .mockResolvedValueOnce({ count: 5 })
 
       const result = await tagRepository.canDelete(23)
 
-      expect(result).toEqual({ canDelete: false, reason: '5 transactions use this tag' })
+      expect(mockQueryOne).toHaveBeenCalledWith(
+        'SELECT count FROM shared.tag_references WHERE tag_id = ?',
+        [23]
+      )
+      expect(result).toEqual({ canDelete: false, reason: 'This tag is still in use' })
     })
 
-    it('returns false when tag is used in budgets', async () => {
+    it('returns true when shared.tag_references has no row for the tag', async () => {
       mockQueryOne
         .mockResolvedValueOnce({ is_system: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 2 })
-
-      const result = await tagRepository.canDelete(23)
-
-      expect(result).toEqual({ canDelete: false, reason: '2 budgets use this tag' })
-    })
-
-    it('returns true when tag can be deleted', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ is_system: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
+        .mockResolvedValueOnce(null)
 
       const result = await tagRepository.canDelete(23)
 
       expect(result).toEqual({ canDelete: true })
     })
 
-    it('returns false when tag is used as transaction context', async () => {
+    it('returns true when shared.tag_references count is zero', async () => {
       mockQueryOne
         .mockResolvedValueOnce({ is_system: 0 })
         .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 4 })
 
       const result = await tagRepository.canDelete(23)
 
-      expect(result).toEqual({ canDelete: false, reason: '4 transactions use this tag as context' })
-    })
-
-    it('returns false when tag is used as budget context', async () => {
-      mockQueryOne
-        .mockResolvedValueOnce({ is_system: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 3 })
-
-      const result = await tagRepository.canDelete(23)
-
-      expect(result).toEqual({ canDelete: false, reason: '3 budgets use this tag as context' })
+      expect(result).toEqual({ canDelete: true })
     })
   })
 
@@ -415,7 +390,6 @@ describe('tagRepository', () => {
     it('deletes tag and its relationships when allowed', async () => {
       mockQueryOne
         .mockResolvedValueOnce({ is_system: 0 })
-        .mockResolvedValueOnce({ count: 0 })
         .mockResolvedValueOnce({ count: 0 })
 
       await tagRepository.delete(23)
@@ -433,7 +407,7 @@ describe('tagRepository', () => {
         .mockResolvedValueOnce({ count: 3 })
 
       await expect(tagRepository.delete(23)).rejects.toThrow(
-        'Cannot delete: 3 transactions use this tag'
+        'Cannot delete: This tag is still in use'
       )
     })
   })

@@ -10,6 +10,7 @@ import type {
   TransactionNotificationPayload,
 } from '../../types'
 import { blobToHex, hexToBlob } from '../../utils/blobUtils'
+import { getActiveWorkspaceId } from '../database/workspace'
 
 interface NotificationRow {
   id: Uint8Array
@@ -76,7 +77,7 @@ export const notificationRepository = {
   async findAll(limit = 50, offset = 0): Promise<Notification[]> {
     const rows = await querySQL<NotificationRow>(
       `SELECT id, type, status, timestamp, readed_at, updated_at, payload
-       FROM notification
+       FROM shared.notification
        ORDER BY timestamp DESC, updated_at DESC
        LIMIT ? OFFSET ?`,
       [limit, offset]
@@ -86,7 +87,7 @@ export const notificationRepository = {
 
   async unreadCount(): Promise<number> {
     const result = await queryOne<{ count: number }>(
-      `SELECT COUNT(*) as count FROM notification WHERE status = 'new'`
+      `SELECT COUNT(*) as count FROM shared.notification WHERE status = 'new'`
     )
     return result?.count ?? 0
   },
@@ -94,7 +95,7 @@ export const notificationRepository = {
   async findById(id: Uint8Array): Promise<Notification | null> {
     const row = await queryOne<NotificationRow>(
       `SELECT id, type, status, timestamp, readed_at, updated_at, payload
-       FROM notification
+       FROM shared.notification
        WHERE id = ?`,
       [id]
     )
@@ -121,13 +122,15 @@ export const notificationRepository = {
   async create(type: NotificationType, payload: NotificationPayload, timestamp = Math.floor(Date.now() / 1000)): Promise<Notification> {
     assertType(type)
     parsePayload(type, JSON.stringify(payload))
+    const workspaceId = getActiveWorkspaceId()
+    if (workspaceId === null) throw new Error('No active workspace')
     await execSQL(
-      `INSERT INTO notification (id, type, status, timestamp, payload)
-       VALUES (randomblob(8), ?, 'new', ?, ?)`,
-      [type, timestamp, JSON.stringify(payload)]
+      `INSERT INTO shared.notification (id, workspace_id, type, status, timestamp, payload)
+       VALUES (randomblob(8), ?, ?, 'new', ?, ?)`,
+      [workspaceId, type, timestamp, JSON.stringify(payload)]
     )
     const row = await queryOne<{ id: Uint8Array }>(
-      `SELECT id FROM notification ORDER BY rowid DESC LIMIT 1`
+      `SELECT id FROM shared.notification ORDER BY rowid DESC LIMIT 1`
     )
     if (!row) throw new Error('Failed to create notification')
     const notification = await this.findById(row.id)
@@ -137,7 +140,7 @@ export const notificationRepository = {
 
   async markReaded(id: Uint8Array, readedAt = Math.floor(Date.now() / 1000)): Promise<void> {
     await execSQL(
-      `UPDATE notification
+      `UPDATE shared.notification
        SET status = 'readed', readed_at = COALESCE(readed_at, ?)
        WHERE id = ?`,
       [readedAt, id]
@@ -145,7 +148,7 @@ export const notificationRepository = {
   },
 
   async delete(id: Uint8Array): Promise<void> {
-    await execSQL(`DELETE FROM notification WHERE id = ?`, [id])
+    await execSQL(`DELETE FROM shared.notification WHERE id = ?`, [id])
   },
 
   async deleteByHexId(id: string): Promise<void> {
@@ -154,7 +157,7 @@ export const notificationRepository = {
 
   async cleanupExpiredPlain(now = Math.floor(Date.now() / 1000)): Promise<void> {
     await execSQL(
-      `DELETE FROM notification
+      `DELETE FROM shared.notification
        WHERE type = 'plain'
          AND (
            (readed_at IS NOT NULL AND readed_at < ?)

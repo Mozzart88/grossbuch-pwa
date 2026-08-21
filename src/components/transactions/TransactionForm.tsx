@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { NotificationTransactionMode, RecurringSchedule, RecurringUntilPolicy, Tag, TagContextOption, Counterparty, Currency, Transaction, TransactionInput, TransactionLine } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository, tagRepository, counterpartyRepository, currencyRepository, recurringRepository } from '../../services/repositories'
+import { onDbWrite } from '../../services/database/connection'
 import type { TransactionMode, AccountOption, SubmitOptions } from './transactionFormShared'
 import { IncomeTransactionForm } from './IncomeTransactionForm'
 import { ExpenseTransactionForm } from './ExpenseTransactionForm'
@@ -58,6 +59,9 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
   const createFromInitialData = !initialData && !!initialDraft
   const [mode, setMode] = useState<TransactionMode>(initialMode || 'expense')
   const [loading, setLoading] = useState(true)
+  const [datetime, setDateTime] = useState(() =>
+    prefillData ? new Date(prefillData.timestamp * 1000).getTime() : Date.now()
+  )
 
   const [accounts, setAccounts] = useState<AccountOption[]>([])
   const [currencies, setCurrencies] = useState<Currency[]>([])
@@ -80,9 +84,11 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
   const [until, setUntil] = useState<RecurringUntilPolicy>({ type: 'never' })
   const [firstAction, setFirstAction] = useState<'plan-only' | 'add-now'>('plan-only')
 
-  // Detect mode from initialData (does not need accounts/currencies)
+  // Hydrate datetime and detect mode from initialData/initialDraft
   useEffect(() => {
-    if (!prefillData || !prefillData.lines || prefillData.lines.length === 0) return
+    if (!prefillData) return
+    setDateTime(new Date(prefillData.timestamp * 1000).getTime())
+    if (!prefillData.lines || prefillData.lines.length === 0) return
     const lines = prefillData.lines as TransactionLine[]
     if (isMultiCurrencyExpense(lines)) {
       setMode('expense')
@@ -158,6 +164,7 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
 
   useEffect(() => {
     void loadData()
+    return onDbWrite(() => { void loadData() })
   }, [loadData])
 
   const recurrenceAction = useMemo(() => {
@@ -288,7 +295,7 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
     }
   }
 
-  const sharedProps = { initialData: prefillData, createFromInitialData, onSubmit, onCancel, useActionBar, showAddAnother, addAnother, onAddAnotherChange: setAddAnother, onBeforeCreate: handleBeforeCreate }
+  const sharedProps = { initialData: prefillData, createFromInitialData, onSubmit, onCancel, useActionBar, showAddAnother, addAnother, onAddAnotherChange: setAddAnother, onBeforeCreate: handleBeforeCreate, datetime, onDateTimeChange: setDateTime }
   const incomeAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') === 'plain')
   const expenseAccounts = initialData ? accounts : accounts.filter(a => (a.account_type ?? 'plain') !== 'savings')
   const getDefaultFor = (list: AccountOption[]) => {
@@ -302,21 +309,23 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
   return (
     <div className="space-y-4">
       {/* Transaction Type */}
-      <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        {(['expense', 'income', 'transfer', 'exchange'] as TransactionMode[]).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setMode(t)}
-            className={`py-2 text-sm font-medium rounded-md transition-colors ${mode === t
-              ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
-              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
-            }`}
-          >
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+      {!initialData && (
+        <div className="grid grid-cols-4 gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
+          {(['expense', 'income', 'transfer', 'exchange'] as TransactionMode[]).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setMode(t)}
+              className={`py-2 text-sm font-medium rounded-md transition-colors ${mode === t
+                ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'
+              }`}
+            >
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
 
       {mode === 'income' && (
         <IncomeTransactionForm

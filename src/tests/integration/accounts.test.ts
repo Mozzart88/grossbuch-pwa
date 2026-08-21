@@ -72,7 +72,15 @@ describe('Accounts Integration', () => {
       ])
     })
 
-    it('propagates wallet type to existing and new accounts', async () => {
+    // Pre-split, `trg_wallet_type_propagate_insert`/`trg_account_inherit_wallet_type`
+    // (DB triggers on `wallet_to_tags`/`account`) propagated a wallet's type tag onto
+    // its accounts regardless of how the row was written. Section 3 moved that logic
+    // to the application layer (walletRepository.syncWalletType / accountTypeTags.
+    // inheritWalletTypeTags, see design.md and walletRepository.test.ts's own coverage
+    // of this propagation) since `tag` moved to `shared` and triggers can't read
+    // cross-schema. A raw SQL insert like this test's no longer triggers propagation —
+    // only going through the repository layer does.
+    it('does not propagate wallet type via a raw wallet_to_tags insert (moved to application layer)', async () => {
       const db = getTestDatabase()
       const walletId = insertWallet({ name: 'Savings Wallet' })
       const usdId = getCurrencyIdByCode('USD')
@@ -89,8 +97,8 @@ describe('Accounts Integration', () => {
       `, [firstAccount, secondAccount])
 
       expect(result[0].values).toEqual([
-        [firstAccount, 'savings'],
-        [secondAccount, 'savings'],
+        [firstAccount, 'plain'],
+        [secondAccount, 'plain'],
       ])
     })
 

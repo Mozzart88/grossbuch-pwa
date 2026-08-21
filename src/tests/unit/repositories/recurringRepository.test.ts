@@ -72,6 +72,7 @@ function planRow(overrides: Record<string, unknown> = {}) {
 describe('recurringRepository', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockQuerySQL.mockResolvedValue([])
     mockCurrencyRepository.getSystemRateInfo.mockResolvedValue({ rate: 1, currencyId: 1 })
     mockNotificationRepository.createTransactionDraft.mockResolvedValue({
       id: notificationId,

@@ -7,6 +7,7 @@ import {
   insertWallet,
   insertAccount,
   insertTransaction,
+  insertCurrency,
   getTestDatabase,
 } from './setup'
 import { SYSTEM_TAGS } from '../../types'
@@ -196,13 +197,23 @@ describe('Transactions Integration', () => {
   })
 
   describe('Foreign Key Constraints', () => {
-    it('prevents deleting currency with linked transactions', async () => {
+    // Pre-split, `currency` and `account`/`trx_base` lived in the same file, so this
+    // delete failed via CASCADE-then-RESTRICT. Post-split, `currency` lives in `shared`
+    // and `account`/`trx_base` live in `workspace` — SQLite foreign keys cannot span
+    // attached databases at all, so this reference is neither cascaded nor blocked
+    // anymore. This is a documented, accepted risk (see design.md "Risks / Trade-offs"),
+    // deferred until currency/counterparty reference counting is built; this test locks
+    // in the actual current behavior rather than asserting the old, no-longer-true one.
+    it('no longer blocks deleting a currency with linked transactions (cross-file FK, documented risk)', async () => {
       const db = getTestDatabase()
 
+      // Throwaway currency, not the shared seed fixture (id 1) — resetTestDatabase()
+      // deliberately preserves currencies/tags across tests in this file, so deleting
+      // the shared fixture here would silently break every later test that relies on it.
+      const throwawayCurrencyId = insertCurrency({ code: 'ZZZ', name: 'Throwaway', symbol: 'Z' })
       const walletId = insertWallet({ name: 'Cash' })
-      const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: throwawayCurrencyId })
 
-      // Add a transaction to the account
       insertTransaction({
         account_id: accountId,
         tag_id: SYSTEM_TAGS.FOOD,
@@ -210,10 +221,14 @@ describe('Transactions Integration', () => {
         amount_int: 100,
       })
 
-      // Currency CASCADE deletes account, but account RESTRICT fails due to trx_base
       expect(() => {
-        db.run('DELETE FROM currency WHERE id = 1')
-      }).toThrow()
+        db.run('DELETE FROM shared.currency WHERE id = ?', [throwawayCurrencyId])
+      }).not.toThrow()
+
+      // The account is now an orphaned reference to a deleted currency — exactly the
+      // silent-orphaning risk design.md flags.
+      const stillThere = db.exec('SELECT id FROM workspace.account WHERE id = ?', [accountId])
+      expect(stillThere[0]?.values[0]?.[0]).toBe(accountId)
     })
 
     it('prevents deleting account with transactions', async () => {
@@ -235,14 +250,18 @@ describe('Transactions Integration', () => {
       }).toThrow()
     })
 
-    it('prevents deleting tag with transactions', async () => {
+    // Same cross-file FK gap as the currency test above: `tag` lives in `shared`,
+    // `trx_base` lives in `workspace`, so the ON DELETE RESTRICT that used to protect
+    // in-use tags no longer applies. tagRepository.canDelete()'s application-level
+    // check (via shared.tag_references) is the actual protection now — this test
+    // documents that the DB-level guard is gone, not that deletion is safe to allow blindly.
+    it('no longer blocks deleting a tag with transactions at the DB level (cross-file FK, documented risk)', async () => {
       const db = getTestDatabase()
 
       const walletId = insertWallet({ name: 'Cash' })
       const accountId = insertAccount({ wallet_id: walletId, currency_id: 1 })
 
-      // Create a custom tag
-      db.run('INSERT INTO tag (name) VALUES (?)', ['CustomTag'])
+      db.run('INSERT INTO shared.tag (name) VALUES (?)', ['CustomTag'])
       const tagId = Number(db.exec('SELECT last_insert_rowid()')[0].values[0][0])
 
       insertTransaction({
@@ -252,10 +271,12 @@ describe('Transactions Integration', () => {
         amount_int: 100,
       })
 
-      // trx_base has ON DELETE RESTRICT for tag_id
       expect(() => {
-        db.run('DELETE FROM tag WHERE id = ?', [tagId])
-      }).toThrow()
+        db.run('DELETE FROM shared.tag WHERE id = ?', [tagId])
+      }).not.toThrow()
+
+      const stillThere = db.exec('SELECT tag_id FROM workspace.trx_base WHERE tag_id = ?', [tagId])
+      expect(stillThere[0]?.values[0]?.[0]).toBe(tagId)
     })
   })
 

@@ -25,6 +25,9 @@ describe('Notifications Integration', () => {
     dbMock = createDatabaseMock()
     vi.doMock('../../services/database', () => dbMock)
     vi.doMock('../../services/database/connection', () => dbMock)
+    vi.doMock('../../services/database/workspace', () => ({
+      getActiveWorkspaceId: () => 1,
+    }))
   })
 
   it('creates, lists, marks readed, and cleans up plain notifications', async () => {
@@ -54,26 +57,48 @@ describe('Notifications Integration', () => {
     expect(await notificationRepository.findById(all[0].id)).toBeNull()
   })
 
-  it('has notification schema, indexes, triggers, and deletion tracking', () => {
+  it('keeps notifications visible when a different workspace becomes active (8.8)', async () => {
+    // notification lives in `shared`, tagged with a `workspace_id` for
+    // attribution only — findAll() never filters by it (see design.md's
+    // "notification lives in shared with workspace_id" decision), so a
+    // notification created under one workspace stays visible after the
+    // active workspace changes.
+    const { notificationRepository } = await import('../../services/repositories/notificationRepository')
+    const created = await notificationRepository.createPlain({ title: 'Cross-workspace', body: 'Still here' }, 1_700_000_000)
+
+    vi.doMock('../../services/database/workspace', () => ({
+      getActiveWorkspaceId: () => 2,
+    }))
+    vi.resetModules()
+    vi.doMock('../../services/database', () => dbMock)
+    vi.doMock('../../services/database/connection', () => dbMock)
+    const { notificationRepository: freshRepo } = await import('../../services/repositories/notificationRepository')
+
+    const stillVisible = await freshRepo.findById(created.id)
+    expect(stillVisible?.payload.title).toBe('Cross-workspace')
+    expect((await freshRepo.findAll()).some(n => n.payload.title === 'Cross-workspace')).toBe(true)
+  })
+
+  it('has notification schema, indexes, triggers, and deletion tracking in shared', () => {
     const db = getTestDatabase()
-    expect(CURRENT_VERSION).toBe(23)
+    expect(CURRENT_VERSION).toBe(24)
 
-    const columns = db.exec(`PRAGMA table_info(notification)`)[0].values.map(row => row[1])
-    expect(columns).toEqual(['id', 'type', 'status', 'timestamp', 'readed_at', 'updated_at', 'payload'])
+    const columns = db.exec(`PRAGMA shared.table_info(notification)`)[0].values.map(row => row[1])
+    expect(columns).toEqual(['id', 'workspace_id', 'type', 'status', 'timestamp', 'readed_at', 'updated_at', 'payload'])
 
-    const indexes = db.exec(`PRAGMA index_list(notification)`)[0].values.map(row => row[1])
-    expect(indexes).toContain('idx_notification_unread')
-    expect(indexes).toContain('idx_notification_list')
-    expect(indexes).toContain('idx_notification_cleanup_readed')
-    expect(indexes).toContain('idx_notification_cleanup_unread')
+    const indexes = db.exec(`PRAGMA shared.index_list(notification)`)[0].values.map(row => row[1])
+    expect(indexes).toContain('idx_shared_notification_unread')
+    expect(indexes).toContain('idx_shared_notification_list')
+    expect(indexes).toContain('idx_shared_notification_cleanup_readed')
+    expect(indexes).toContain('idx_shared_notification_cleanup_unread')
 
     db.run(
-      `INSERT INTO notification (id, type, status, timestamp, payload)
-       VALUES (?, 'plain', 'new', 100, ?)`,
+      `INSERT INTO shared.notification (id, workspace_id, type, status, timestamp, payload)
+       VALUES (?, 1, 'plain', 'new', 100, ?)`,
       [hexToBlob('0102030405060708'), JSON.stringify({ title: 'x', body: 'y' })]
     )
-    db.run(`DELETE FROM notification WHERE hex(id) = '0102030405060708'`)
-    const tombstone = db.exec(`SELECT table_name, entity_id FROM sync_deletions WHERE table_name = 'notification'`)[0].values[0]
+    db.run(`DELETE FROM shared.notification WHERE hex(id) = '0102030405060708'`)
+    const tombstone = db.exec(`SELECT table_name, entity_id FROM shared.sync_deletions WHERE table_name = 'notification'`)[0].values[0]
     expect(tombstone).toEqual(['notification', '0102030405060708'])
   })
 
@@ -132,8 +157,8 @@ describe('Notifications Integration', () => {
 
     const insertRaw = (id: string, type: string, status: string, payload: unknown) => {
       db.run(
-        `INSERT INTO notification (id, type, status, timestamp, payload)
-         VALUES (?, ?, ?, 100, ?)`,
+        `INSERT INTO shared.notification (id, workspace_id, type, status, timestamp, payload)
+         VALUES (?, 1, ?, ?, 100, ?)`,
         [hexToBlob(id), type, status, JSON.stringify(payload)]
       )
     }

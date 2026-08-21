@@ -76,7 +76,7 @@ describe('settingsRepository', () => {
       await settingsRepository.set('theme', 'dark')
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining('INSERT OR REPLACE INTO settings'),
+        expect.stringContaining('INSERT OR REPLACE INTO app_settings'),
         ['theme', 'dark']
       )
     })
@@ -85,7 +85,7 @@ describe('settingsRepository', () => {
       await settingsRepository.set('theme', 'light')
 
       expect(mockExecSQL).toHaveBeenCalledWith(
-        expect.stringContaining("datetime('now')"),
+        expect.stringContaining('unixepoch(CURRENT_TIMESTAMP)'),
         expect.anything()
       )
     })

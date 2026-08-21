@@ -81,14 +81,14 @@ describe('verifyPin', () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.PBKDF2_SALT, 'storedsalt123')
     })
 
-    it('queries the auth_settings table for pin_hash', async () => {
+    it('queries the app_settings table for pin_hash', async () => {
       mockQueryOne.mockResolvedValue({ value: 'mockhash789' })
 
       await verifyPin('1234')
 
       expect(mockQueryOne).toHaveBeenCalledOnce()
       expect(mockQueryOne).toHaveBeenCalledWith(
-        "SELECT value FROM auth_settings WHERE key = 'pin_hash'"
+        "SELECT value FROM app_settings WHERE key = 'pin_hash'"
       )
     })
 

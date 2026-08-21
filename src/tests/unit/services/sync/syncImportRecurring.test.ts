@@ -90,15 +90,15 @@ describe('syncImport recurring entities', () => {
     expect(result.imported.recurringOccurrences).toBe(1)
     expect(result.imported.recurringBudgets).toBe(1)
     expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO recurring_plan'),
+      expect.stringContaining('INSERT INTO workspace.recurring_plan'),
       expect.arrayContaining([expect.any(Uint8Array), recurringPlan.schedule, recurringPlan.transaction_draft])
     )
     expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR IGNORE INTO recurring_occurrence'),
+      expect.stringContaining('INSERT OR IGNORE INTO workspace.recurring_occurrence'),
       expect.arrayContaining([expect.any(Uint8Array), expect.any(Uint8Array), recurringOccurrence.due_date, expect.any(Uint8Array)])
     )
     expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR IGNORE INTO recurring_budget'),
+      expect.stringContaining('INSERT OR IGNORE INTO workspace.recurring_budget'),
       expect.arrayContaining([expect.any(Uint8Array), expect.any(Uint8Array), recurringBudget.due_month])
     )
   })
@@ -122,23 +122,23 @@ describe('syncImport recurring entities', () => {
     expect(result.imported.recurringBudgets).toBe(1)
     expect(result.imported.deletions).toBe(2)
     expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE recurring_plan'),
+      expect.stringContaining('UPDATE workspace.recurring_plan'),
       expect.arrayContaining([recurringPlan.schedule, recurringPlan.transaction_draft, recurringPlan.mode])
     )
     expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE recurring_occurrence'),
+      expect.stringContaining('UPDATE workspace.recurring_occurrence'),
       expect.arrayContaining([expect.any(Uint8Array), recurringOccurrence.due_date, null])
     )
     expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE recurring_budget'),
+      expect.stringContaining('UPDATE workspace.recurring_budget'),
       expect.arrayContaining([expect.any(Uint8Array), recurringBudget.due_month, recurringBudget.updated_at])
     )
     expect(mockExecSQL).toHaveBeenCalledWith(
-      `DELETE FROM recurring_plan WHERE hex(id) = ?`,
+      `DELETE FROM workspace.recurring_plan WHERE hex(id) = ?`,
       [recurringPlan.id]
     )
     expect(mockExecSQL).toHaveBeenCalledWith(
-      `DELETE FROM recurring_occurrence WHERE hex(id) = ?`,
+      `DELETE FROM workspace.recurring_occurrence WHERE hex(id) = ?`,
       [recurringOccurrence.id]
     )
   })

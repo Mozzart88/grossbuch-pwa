@@ -1124,7 +1124,10 @@ describe('transactionRepository', () => {
         .mockResolvedValueOnce({ id: mockId2() }) // addLine: line id lookup
         .mockResolvedValueOnce(sampleLine) // addLine: line result
         .mockResolvedValueOnce({ id: mockId(), timestamp: 1705000000 }) // findById: trx header
-      mockQuerySQL.mockResolvedValue([sampleLine]) // findById: trx lines
+      mockQuerySQL
+        .mockResolvedValueOnce([]) // update: old trx_to_counterparty rows (none)
+        .mockResolvedValueOnce([]) // decrementTrxTagReferences: existing lines (none)
+        .mockResolvedValue([sampleLine]) // findById: trx lines
     })
 
     it('updates trx header', async () => {
@@ -1177,6 +1180,13 @@ describe('transactionRepository', () => {
     })
 
     it('handles counterparty_name auto-creation', async () => {
+      mockQueryOne
+        .mockReset()
+        .mockResolvedValueOnce({ id: 99 }) // update: newly linked counterparty id lookup
+        .mockResolvedValueOnce({ id: mockId2() }) // addLine: line id lookup
+        .mockResolvedValueOnce(sampleLine) // addLine: line result
+        .mockResolvedValueOnce({ id: mockId(), timestamp: 1705000000 }) // findById: trx header
+
       const inputWithName = { ...input, counterparty_id: undefined, counterparty_name: 'New CP' }
       await transactionRepository.update(mockId(), inputWithName)
 

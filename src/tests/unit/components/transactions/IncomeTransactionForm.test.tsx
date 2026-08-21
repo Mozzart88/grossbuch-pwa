@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
@@ -73,6 +74,8 @@ const defaultProps = {
   incomeTags: mockIncomeTags,
   counterparties: mockCounterparties,
   defaultAccountId: '1',
+  datetime: new Date('2024-01-15T10:00:00').getTime(),
+  onDateTimeChange: vi.fn(),
   onSubmit: vi.fn(),
   onCancel: vi.fn(),
 }
@@ -192,14 +195,46 @@ describe('IncomeTransactionForm', () => {
       }],
     }
 
-    render(<IncomeTransactionForm {...defaultProps} initialData={initialData} />)
+    render(<IncomeTransactionForm {...defaultProps} initialData={initialData} datetime={initialData.timestamp * 1000} />)
     await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue((500).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
+
+    // Update starts disabled until something actually changes
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '600' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).not.toBeDisabled())
 
     fireEvent.click(screen.getByRole('button', { name: 'Update' }))
     await waitFor(() => {
       expect(mockTransactionRepository.update).toHaveBeenCalled()
       expect(mockTransactionRepository.create).not.toHaveBeenCalled()
     })
+  })
+
+  it('disables Update until a field actually changes, and re-disables on revert', async () => {
+    const initialData: Transaction = {
+      id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+      timestamp: 1704803400,
+      lines: [{
+        id: new Uint8Array(8),
+        trx_id: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]),
+        account_id: 1,
+        tag_id: 20,
+        sign: '+',
+        amount_int: 500,
+        amount_frac: 0,
+        rate_int: 1,
+        rate_frac: 0,
+      }],
+    }
+
+    render(<IncomeTransactionForm {...defaultProps} initialData={initialData} datetime={initialData.timestamp * 1000} />)
+    await waitFor(() => expect(screen.getByLabelText(/^Amount/i)).toHaveValue((500).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })))
+    expect(screen.getByRole('button', { name: 'Update' })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '600' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).not.toBeDisabled())
+
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '500' } })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Update' })).toBeDisabled())
   })
 
   it('calls onCancel when cancel button clicked', () => {
@@ -304,7 +339,11 @@ describe('IncomeTransactionForm', () => {
   })
 
   it('allows changing datetime', () => {
-    render(<IncomeTransactionForm {...defaultProps} />)
+    function Wrapper() {
+      const [datetime, setDatetime] = useState(defaultProps.datetime)
+      return <IncomeTransactionForm {...defaultProps} datetime={datetime} onDateTimeChange={setDatetime} />
+    }
+    render(<Wrapper />)
     const dtInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
     fireEvent.change(dtInput, { target: { value: '2024-06-01T09:00' } })
     expect(dtInput).toHaveValue('2024-06-01T09:00')

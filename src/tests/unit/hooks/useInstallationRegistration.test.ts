@@ -15,6 +15,13 @@ vi.mock('../../../services/repositories/settingsRepository', () => ({
   },
 }))
 
+// Mock the linked device repository
+vi.mock('../../../services/repositories/linkedDeviceRepository', () => ({
+  linkedDeviceRepository: {
+    upsert: vi.fn(),
+  },
+}))
+
 // Mock the toast hook
 const mockShowToast = vi.fn()
 vi.mock('../../../components/ui', () => ({
@@ -24,11 +31,13 @@ vi.mock('../../../components/ui', () => ({
 import { useInstallationRegistration } from '../../../hooks/useInstallationRegistration'
 import { registerInstallation } from '../../../services/installation'
 import { settingsRepository } from '../../../services/repositories/settingsRepository'
+import { linkedDeviceRepository } from '../../../services/repositories/linkedDeviceRepository'
 import { AUTH_STORAGE_KEYS } from '../../../types/auth'
 
 const mockRegister = vi.mocked(registerInstallation)
 const mockSettingsGet = vi.mocked(settingsRepository.get)
 const mockSettingsSet = vi.mocked(settingsRepository.set)
+const mockLinkedDeviceUpsert = vi.mocked(linkedDeviceRepository.upsert)
 
 describe('useInstallationRegistration', () => {
   const wrapper = ({ children }: { children: ReactNode }) => children
@@ -38,6 +47,7 @@ describe('useInstallationRegistration', () => {
     vi.useFakeTimers()
     mockSettingsGet.mockResolvedValue(null)
     mockSettingsSet.mockResolvedValue(undefined)
+    mockLinkedDeviceUpsert.mockResolvedValue(undefined)
     mockRegister.mockResolvedValue({
       jwt: 'jwt-token-123',
     })
@@ -225,10 +235,7 @@ describe('useInstallationRegistration', () => {
         vi.advanceTimersByTime(3000)
       })
 
-      expect(mockSettingsSet).toHaveBeenCalledWith(
-        'linked_installations',
-        JSON.stringify({'sharer-uuid-abc': 'shared-pub-key'})
-      )
+      expect(mockLinkedDeviceUpsert).toHaveBeenCalledWith('sharer-uuid-abc', 'shared-pub-key')
     })
 
     it('does not clear shared UUID on failed new install', async () => {
@@ -262,10 +269,7 @@ describe('useInstallationRegistration', () => {
     it('clears shared UUID and saves linked installation on successful retry', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'retry-pub-key')
-      // First get returns the installation_id (no JWT), second get returns linked_installations
-      mockSettingsGet
-        .mockResolvedValueOnce(JSON.stringify({ id: 'existing-uuid' }) as never)
-        .mockResolvedValueOnce(null)
+      mockSettingsGet.mockResolvedValueOnce(JSON.stringify({ id: 'existing-uuid' }) as never)
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -275,10 +279,7 @@ describe('useInstallationRegistration', () => {
 
       expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBeNull()
       expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY)).toBeNull()
-      expect(mockSettingsSet).toHaveBeenCalledWith(
-        'linked_installations',
-        JSON.stringify({'sharer-uuid-retry': 'retry-pub-key'})
-      )
+      expect(mockLinkedDeviceUpsert).toHaveBeenCalledWith('sharer-uuid-retry', 'retry-pub-key')
     })
 
     it('does not clear shared UUID on failed retry', async () => {
@@ -297,51 +298,11 @@ describe('useInstallationRegistration', () => {
       vi.mocked(console.warn).mockRestore()
     })
 
-    it('appends to existing linked installations (dict format)', async () => {
-      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
-      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'new-pub-key')
-      // First call returns null (installation_id check), second returns existing linked_installations
-      mockSettingsGet
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(JSON.stringify({'existing-uuid-1': 'existing-pub-key'}) as never)
-
-      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
-
-      await act(async () => {
-        vi.advanceTimersByTime(3000)
-      })
-
-      expect(mockSettingsSet).toHaveBeenCalledWith(
-        'linked_installations',
-        JSON.stringify({'existing-uuid-1': 'existing-pub-key', 'sharer-uuid-abc': 'new-pub-key'})
-      )
-    })
-
-    it('converts old array format to dict on new link', async () => {
-      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
-      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'new-pub-key')
-      mockSettingsGet
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(JSON.stringify(['old-uuid-1']) as never)
-
-      renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
-
-      await act(async () => {
-        vi.advanceTimersByTime(3000)
-      })
-
-      expect(mockSettingsSet).toHaveBeenCalledWith(
-        'linked_installations',
-        JSON.stringify({'old-uuid-1': '', 'sharer-uuid-abc': 'new-pub-key'})
-      )
-    })
-
-    it('overwrites existing UUID entry with new public key', async () => {
+    it('upserts the linked device by installation id regardless of prior state', async () => {
+      // linked_device is a relational table now (task 4.2/4.4) — upsert (INSERT ... ON
+      // CONFLICT DO UPDATE) handles new links and overwrites uniformly, no blob merging
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-abc')
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'updated-pub-key')
-      mockSettingsGet
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(JSON.stringify({'sharer-uuid-abc': 'old-pub-key'}) as never)
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -349,10 +310,7 @@ describe('useInstallationRegistration', () => {
         vi.advanceTimersByTime(3000)
       })
 
-      expect(mockSettingsSet).toHaveBeenCalledWith(
-        'linked_installations',
-        JSON.stringify({'sharer-uuid-abc': 'updated-pub-key'})
-      )
+      expect(mockLinkedDeviceUpsert).toHaveBeenCalledWith('sharer-uuid-abc', 'updated-pub-key')
     })
   })
 

@@ -377,6 +377,48 @@ describe('AddTransactionPage', () => {
     expect(screen.getByRole('combobox', { name: /account/i })).toHaveValue('1')
   })
 
+  it('preserves datetime across an add-another submit and a mode switch', async () => {
+    renderPage()
+
+    await waitFor(() => {
+      expect(screen.getByText('Account')).toBeInTheDocument()
+    })
+
+    const addAnother = screen.getByRole('button', { name: /add another/i })
+    fireEvent.click(addAnother)
+
+    const dtInput = document.querySelector('input[type="datetime-local"]') as HTMLInputElement
+    fireEvent.change(dtInput, { target: { value: '2024-03-10T14:00' } })
+
+    await fillExpenseForm()
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledTimes(1)
+    })
+    const firstTimestamp = mockTransactionRepository.create.mock.calls[0][0].timestamp
+
+    // Switch mode after the add-another submit — datetime should carry over
+    fireEvent.click(screen.getByRole('button', { name: 'Income' }))
+
+    fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '75' } })
+    const incomeCategoryInput = screen.getByPlaceholderText('Select category')
+    fireEvent.focus(incomeCategoryInput)
+    fireEvent.change(incomeCategoryInput, { target: { value: 'sale' } })
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'sale' })).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('option', { name: 'sale' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    await waitFor(() => {
+      expect(mockTransactionRepository.create).toHaveBeenCalledTimes(2)
+    })
+    const secondTimestamp = mockTransactionRepository.create.mock.calls[1][0].timestamp
+    expect(secondTimestamp).toBe(firstTimestamp)
+  })
+
   it('navigates back on cancel', async () => {
     renderPage()
 

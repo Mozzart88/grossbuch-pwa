@@ -363,7 +363,9 @@ describe('EditTransactionPage', () => {
       expect(screen.getByRole('button', { name: 'Update' })).toBeInTheDocument()
     })
 
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '60' } })
     const updateButton = screen.getByRole('button', { name: 'Update' })
+    await waitFor(() => expect(updateButton).not.toBeDisabled())
     fireEvent.click(updateButton)
 
     await waitFor(() => {
