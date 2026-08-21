@@ -403,6 +403,7 @@ export function SummariesPage() {
 
   const getAncestorIdsForTree = (tagId: number, validIds?: Set<number>, contextId?: number | null): number[] => {
     const result: number[] = []
+    const visited = new Set<number>()
     const visit = (childId: number) => {
       tagHierarchy
         .filter(h => h.child_id === childId)
@@ -413,6 +414,10 @@ export function SummariesPage() {
           if (contextId !== null && contextId !== undefined && h.parent_id === contextId) {
             return
           }
+          if (visited.has(h.parent_id)) {
+            return
+          }
+          visited.add(h.parent_id)
           if (!validIds || validIds.has(h.parent_id)) {
             result.push(h.parent_id)
           }

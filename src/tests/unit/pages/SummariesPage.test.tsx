@@ -435,6 +435,71 @@ describe('SummariesPage', () => {
     })
   })
 
+  describe('Nested rollup correctness (multi-parent tags)', () => {
+    // Diamond-shaped tag DAG: Bolt has two parents (Engine, Body) that both
+    // descend from the same further ancestor (Parts), so Parts is reachable
+    // from Bolt via two distinct paths.
+    const diamondHierarchy = [
+      { parent_id: 10, parent: 'expense', child_id: 100, child: 'Auto' },
+      { parent_id: 100, parent: 'Auto', child_id: 101, child: 'Parts' },
+      { parent_id: 101, parent: 'Parts', child_id: 102, child: 'Engine' },
+      { parent_id: 101, parent: 'Parts', child_id: 103, child: 'Body' },
+      { parent_id: 102, parent: 'Engine', child_id: 104, child: 'Bolt' },
+      { parent_id: 103, parent: 'Body', child_id: 104, child: 'Bolt' },
+    ]
+
+    it('counts a leaf reachable via two parent paths exactly once in the shared ancestor subtotal (By Tags tab)', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 40,
+      })
+      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', income: 0, expense: 0, net: 0, tag_context_id: null, tag_context: null },
+        { tag_id: 104, tag: 'Bolt', income: 0, expense: 40, net: -40, tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue(diamondHierarchy)
+
+      renderWithRouter(['/summaries?tab=tags'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Parts')).toBeInTheDocument()
+      })
+
+      const partsRow = screen.getByText('Parts').closest('div[class*="cursor-pointer"]') as HTMLElement
+      expect(within(partsRow).getByText(formatCurrencyValue(40, '$'))).toBeInTheDocument()
+      expect(within(partsRow).queryByText(formatCurrencyValue(80, '$'))).not.toBeInTheDocument()
+    })
+
+    it('counts a leaf reachable via two parent paths exactly once in the shared ancestor subtotal (Budgets tab)', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 40,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 100, tag: 'Auto', amount: 0, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 104, tag: 'Bolt', amount: 40, type: 'expense', tag_context_id: 100, tag_context: 'Auto' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 100, name: 'Auto', sort_order: 10 },
+        { id: 101, name: 'Parts', sort_order: 10 },
+        { id: 102, name: 'Engine', sort_order: 10 },
+        { id: 103, name: 'Body', sort_order: 10 },
+        { id: 104, name: 'Bolt', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue(diamondHierarchy)
+
+      renderWithRouter(['/summaries'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Parts')).toBeInTheDocument()
+      })
+
+      const partsRow = screen.getByText('Parts').closest('div[class*="cursor-pointer"]') as HTMLElement
+      expect(within(partsRow).getByText(formatCurrencyValue(40, '$'))).toBeInTheDocument()
+      expect(within(partsRow).queryByText(formatCurrencyValue(80, '$'))).not.toBeInTheDocument()
+    })
+  })
+
   describe('Counterparties tab', () => {
     it('displays counterparties when tab is clicked', async () => {
       renderWithRouter()
