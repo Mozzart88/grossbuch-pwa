@@ -1,6 +1,6 @@
 import { execSQL, queryOne } from './connection'
 
-export const CURRENT_SHARED_VERSION = 2
+export const CURRENT_SHARED_VERSION = 3
 
 export const sharedMigrations: Record<number, string[]> = {
   1: [
@@ -432,6 +432,14 @@ export const sharedMigrations: Record<number, string[]> = {
     FROM tag_to_tag t2t
     JOIN tag p ON p.id = t2t.parent_id
     JOIN tag c ON c.id = t2t.child_id;`,
+  ],
+
+  3: [
+    // Supports the ancestor/descendant recursive walks over tag_to_tag used by
+    // budgetRepository's actual-spend computation and the Summaries page
+    // rollups, which previously scanned the whole table per step.
+    `CREATE INDEX IF NOT EXISTS shared.idx_tag_to_tag_parent ON tag_to_tag(parent_id);`,
+    `CREATE INDEX IF NOT EXISTS shared.idx_tag_to_tag_child ON tag_to_tag(child_id);`,
   ],
 }
 

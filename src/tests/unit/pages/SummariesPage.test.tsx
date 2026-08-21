@@ -8,6 +8,20 @@ import { formatCurrencyValue } from '../../../utils/formatters'
 vi.mock('../../../services/repositories')
 // Import after mock
 import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../../../services/repositories'
+
+// Spy on (while preserving) the real rollup implementations so tests can
+// assert on how often they're invoked, without changing observed behavior.
+vi.mock('../../../pages/summariesRollup', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../pages/summariesRollup')>()
+  return {
+    ...actual,
+    withSummaryAncestors: vi.fn(actual.withSummaryAncestors),
+    withCategoryAncestors: vi.fn(actual.withCategoryAncestors),
+  }
+})
+import { withSummaryAncestors, withCategoryAncestors } from '../../../pages/summariesRollup'
+const mockWithSummaryAncestors = vi.mocked(withSummaryAncestors)
+const mockWithCategoryAncestors = vi.mocked(withCategoryAncestors)
 const mockTransactionRepository = vi.mocked(transactionRepository)
 const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
@@ -1920,6 +1934,62 @@ describe('SummariesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Set Budget')).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('rollup memoization', () => {
+    it('does not recompute tag/category ancestor rollups when typing in the Set Budget amount field', async () => {
+      render(
+        <LayoutProvider>
+          <MemoryRouter initialEntries={['/summaries']}>
+            <SummariesPage />
+            <FABTrigger />
+          </MemoryRouter>
+        </LayoutProvider>
+      )
+
+      await waitFor(() => {
+        expect(screen.getByText('January 2025')).toBeInTheDocument()
+      })
+
+      const summaryCallsBefore = mockWithSummaryAncestors.mock.calls.length
+      const categoryCallsBefore = mockWithCategoryAncestors.mock.calls.length
+
+      fireEvent.click(screen.getByTestId('test-fab'))
+      await waitFor(() => expect(screen.getByText('Set Budget')).toBeInTheDocument())
+
+      const amountInput = screen.getByLabelText(/Budget Amount/)
+      fireEvent.change(amountInput, { target: { value: '1' } })
+      fireEvent.change(amountInput, { target: { value: '12' } })
+      fireEvent.change(amountInput, { target: { value: '123' } })
+
+      expect(mockWithSummaryAncestors.mock.calls.length).toBe(summaryCallsBefore)
+      expect(mockWithCategoryAncestors.mock.calls.length).toBe(categoryCallsBefore)
+    })
+
+    it('recomputes tag/category ancestor rollups when the underlying month data changes', async () => {
+      mockTransactionRepository.getMonthlyTagsSummary
+        .mockResolvedValueOnce([{ tag_id: 1, tag: 'Food', income: 0, expense: 300, net: -300 }])
+        .mockResolvedValueOnce([{ tag_id: 1, tag: 'Food', income: 0, expense: 999, net: -999 }])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('January 2025')).toBeInTheDocument()
+      })
+
+      const summaryCallsBefore = mockWithSummaryAncestors.mock.calls.length
+
+      // buttons[2] is the prev-month button in MonthNavigator (see 'handles month navigation via prev button' above)
+      const buttons = screen.getAllByRole('button')
+      fireEvent.click(buttons[2])
+
+      await waitFor(() => {
+        expect(mockTransactionRepository.getMonthSummary).toHaveBeenCalledWith('2024-12')
+      })
+      await waitFor(() => {
+        expect(mockWithSummaryAncestors.mock.calls.length).toBeGreaterThan(summaryCallsBefore)
       })
     })
   })

@@ -334,6 +334,75 @@ describe('Budget Integration', () => {
     expect(budgets.find(b => b.tag_context_id === boatId)?.actual).toBeCloseTo(40, 1)
   })
 
+  it('calculates actuals for a budget on an ancestor tag from a descendant-tagged transaction', async () => {
+    const budgetRepository = await getRepository()
+    const walletId = insertWallet({ name: 'Descendant Wallet' })
+    const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+    const parentId = insertTag({ name: 'Descendant Parent', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const childId = insertTag({ name: 'Descendant Child', parent_ids: [parentId] })
+
+    await budgetRepository.create({
+      tag_id: parentId,
+      amount_int: 100,
+      amount_frac: 0,
+    })
+
+    insertTransaction({
+      account_id: accountId,
+      tag_id: childId,
+      sign: '-',
+      amount_int: 30,
+      rate_int: 1,
+      timestamp: Math.floor(Date.now() / 1000),
+    })
+
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+
+    expect(budgets.find(b => b.tag_id === parentId)?.actual).toBeCloseTo(30, 1)
+  })
+
+  it('excludes an untagged-context transaction on an ambiguous shared descendant from both ancestor budgets', async () => {
+    const budgetRepository = await getRepository()
+    const walletId = insertWallet({ name: 'Ambiguous Wallet' })
+    const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+    const catAId = insertTag({ name: 'Ambiguous Category A', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const catBId = insertTag({ name: 'Ambiguous Category B', parent_ids: [SYSTEM_TAGS.EXPENSE] })
+    const sharedLeafId = insertTag({ name: 'Ambiguous Shared Leaf', parent_ids: [catAId, catBId] })
+
+    await budgetRepository.create({
+      tag_id: catAId,
+      amount_int: 100,
+      amount_frac: 0,
+    })
+    await budgetRepository.create({
+      tag_id: catBId,
+      amount_int: 100,
+      amount_frac: 0,
+    })
+
+    // No tag_context_id on the transaction: with two distinct top-level
+    // ancestors (catA, catB) both reachable and neither budget nor
+    // transaction disambiguating via context, this should count toward
+    // neither budget's actual rather than being double-counted or guessed.
+    insertTransaction({
+      account_id: accountId,
+      tag_id: sharedLeafId,
+      sign: '-',
+      amount_int: 50,
+      rate_int: 1,
+      timestamp: Math.floor(Date.now() / 1000),
+    })
+
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+
+    expect(budgets.find(b => b.tag_id === catAId)?.actual).toBeCloseTo(0, 1)
+    expect(budgets.find(b => b.tag_id === catBId)?.actual).toBeCloseTo(0, 1)
+  })
+
   it('calculates savings and credit budget actuals from inbound transfer and exchange lines', async () => {
     const budgetRepository = await getRepository()
     const db = getTestDatabase()
@@ -416,5 +485,37 @@ describe('Budget Integration', () => {
 
     expect(budgets.find(b => b.tag_id === savingsTagId)?.actual).toBeCloseTo(75, 1)
     expect(budgets.find(b => b.tag_id === creditsTagId)?.actual).toBeCloseTo(120, 1)
+  })
+
+  it('computes actual spend for many budgets without the query count scaling with the number of budgets', async () => {
+    const budgetRepository = await getRepository()
+    const walletId = insertWallet({ name: 'Scale Wallet' })
+    const accountId = insertAccount({ wallet_id: walletId, currency_id: 1, balance_int: 1000 })
+
+    const tagIds = Array.from({ length: 8 }, (_, i) => insertTag({ name: `Scale Tag ${i}` }))
+    for (const tagId of tagIds) {
+      await budgetRepository.create({ tag_id: tagId, amount_int: 50, amount_frac: 0 })
+      insertTransaction({
+        account_id: accountId,
+        tag_id: tagId,
+        sign: '-',
+        amount_int: 10,
+        rate_int: 1,
+        timestamp: Math.floor(Date.now() / 1000),
+      })
+    }
+
+    dbMock.querySQL.mockClear()
+
+    const now = new Date()
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const budgets = await budgetRepository.findByMonth(currentMonth)
+
+    expect(budgets).toHaveLength(8)
+    expect(budgets.every(b => b.actual === 10)).toBe(true)
+    // Budget list + tag_to_tag edges + one batched trx_base scan — a fixed
+    // count regardless of how many budgets (8 here) came back, unlike the
+    // old correlated-subquery-per-budget shape this replaced.
+    expect(dbMock.querySQL.mock.calls.length).toBeLessThanOrEqual(4)
   })
 })
