@@ -605,6 +605,98 @@ export const transactionRepository = {
     ])
   },
 
+  // Get monthly category breakdown, grouped directly on each transaction
+  // line's own tag with no ancestor/context rollup — a tag's amount is its
+  // direct transactions only, merged across every parent branch it appears
+  // under. Used by the Summaries page's flat view; see getMonthlyCategoryBreakdown
+  // for the tree-oriented equivalent.
+  async getMonthlyCategoryBreakdownFlat(yearMonth: string): Promise<MonthlyCategoryBreakdown[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
+    return querySQL<MonthlyCategoryBreakdown>(`
+      SELECT
+        tag_id,
+        tag,
+        NULL as tag_context_id,
+        NULL as tag_context,
+        COALESCE(SUM(conv_amount), 0) as amount,
+        type
+      FROM (
+        SELECT
+          tb.tag_id as tag_id,
+          tag.name as tag,
+          CASE WHEN a.currency_id = ?
+            THEN (tb.amount_int + tb.amount_frac * 1e-18)
+            ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+          END as conv_amount,
+          CASE WHEN tb.sign = '+' THEN 'income' ELSE 'expense' END as type
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN account a ON a.id = tb.account_id
+        JOIN tag ON tb.tag_id = tag.id
+        WHERE t.timestamp >= ? AND t.timestamp < ?
+          AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+          AND tb.tag_id NOT IN (?, ?, ?)
+      ) sub
+      GROUP BY tag_id, tag, type
+      ORDER BY amount DESC
+    `, [
+      sysCurrencyId, sysRate,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
+  // Get monthly tags summary, grouped directly on each transaction line's
+  // own tag with no ancestor/context rollup — see getMonthlyCategoryBreakdownFlat.
+  async getMonthlyTagsSummaryFlat(yearMonth: string): Promise<MonthlyTagSummary[]> {
+    const startTs = Math.floor(new Date(`${yearMonth}-01T00:00:00`).getTime() / 1000)
+    const endDate = new Date(`${yearMonth}-01`)
+    endDate.setMonth(endDate.getMonth() + 1)
+    const endTs = Math.floor(endDate.getTime() / 1000)
+
+    const { rate: sysRate, currencyId: sysCurrencyId } = await currencyRepository.getSystemRateInfo()
+
+    return querySQL<MonthlyTagSummary>(`
+      SELECT
+        tag_id,
+        tag,
+        NULL as tag_context_id,
+        NULL as tag_context,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN sign = '-' THEN conv_amount ELSE 0 END), 0) as expense,
+        COALESCE(SUM(CASE WHEN sign = '+' THEN conv_amount ELSE -conv_amount END), 0) as net
+      FROM (
+        SELECT
+          tb.tag_id as tag_id,
+          tag.name as tag,
+          tb.sign,
+          CASE WHEN a.currency_id = ?
+            THEN (tb.amount_int + tb.amount_frac * 1e-18)
+            ELSE (tb.amount_int + tb.amount_frac * 1e-18) / (tb.rate_int + tb.rate_frac * 1e-18) * ?
+          END AS conv_amount
+        FROM trx t
+        JOIN trx_base tb ON tb.trx_id = t.id
+        JOIN account a ON a.id = tb.account_id
+        JOIN tag ON tb.tag_id = tag.id
+        WHERE t.timestamp >= ? AND t.timestamp < ?
+          AND (tb.rate_int > 0 OR tb.rate_frac > 0)
+          AND tb.tag_id NOT IN (?, ?, ?)
+      ) sub
+      GROUP BY tag_id, tag
+      ORDER BY ABS(net) DESC
+    `, [
+      sysCurrencyId, sysRate,
+      startTs, endTs,
+      SYSTEM_TAGS.INITIAL, SYSTEM_TAGS.TRANSFER, SYSTEM_TAGS.EXCHANGE
+    ])
+  },
+
   // Create a new transaction
   async create(input: TransactionInput): Promise<Transaction> {
     // Insert transaction header

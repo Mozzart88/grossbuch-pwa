@@ -112,6 +112,14 @@ describe('SummariesPage', () => {
       { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
       { tag_id: 2, tag: 'Salary', amount: 1000, type: 'income' },
     ])
+    mockTransactionRepository.getMonthlyCategoryBreakdownFlat.mockResolvedValue([
+      { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
+      { tag_id: 2, tag: 'Salary', amount: 1000, type: 'income' },
+    ])
+    mockTransactionRepository.getMonthlyTagsSummaryFlat.mockResolvedValue([
+      { tag_id: 1, tag: 'Food', income: 0, expense: 300, net: -300 },
+      { tag_id: 2, tag: 'Salary', income: 1000, expense: 0, net: 1000 },
+    ])
     // Budget mocks
     mockBudgetRepository.findByMonth.mockResolvedValue([])
     mockBudgetRepository.create.mockResolvedValue({
@@ -290,11 +298,8 @@ describe('SummariesPage', () => {
         income: 0,
         expenses: 150,
       })
-      mockTransactionRepository.getMonthlyTagsSummary.mockResolvedValue([
-        { tag_id: 30, tag: 'Auto', income: 0, expense: 100, net: -100, tag_context_id: null, tag_context: null },
-        { tag_id: 31, tag: 'Boat', income: 0, expense: 50, net: -50, tag_context_id: null, tag_context: null },
-        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 100, net: -100, tag_context_id: 30, tag_context: 'Auto' },
-        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 50, net: -50, tag_context_id: 31, tag_context: 'Boat' },
+      mockTransactionRepository.getMonthlyTagsSummaryFlat.mockResolvedValue([
+        { tag_id: 40, tag: 'Maintenance', income: 0, expense: 150, net: -150, tag_context_id: null, tag_context: null },
       ])
 
       renderWithRouter(['/summaries?tab=tags&view=flat'])
@@ -512,6 +517,45 @@ describe('SummariesPage', () => {
       expect(within(partsRow).getByText(formatCurrencyValue(40, '$'))).toBeInTheDocument()
       expect(within(partsRow).queryByText(formatCurrencyValue(80, '$'))).not.toBeInTheDocument()
     })
+
+    it('nested-view Expenses section total sums only top-level subtotals, not every row', async () => {
+      // Two top-level categories (Food, House), each with its own child
+      // (Water) that has transactions this month. Each top-level row's
+      // amount already includes its child's amount (SQL-level rollup), so
+      // the section total must sum only the two top-level rows (150 + 100
+      // = 250), not every row in the ancestor-expanded array (150 + 50 +
+      // 100 + 20 = 320).
+      const foodHouseHierarchy = [
+        { parent_id: 10, parent: 'expense', child_id: 300, child: 'Food' },
+        { parent_id: 300, parent: 'Food', child_id: 301, child: 'Water' },
+        { parent_id: 10, parent: 'expense', child_id: 302, child: 'House' },
+        { parent_id: 302, parent: 'House', child_id: 303, child: 'Water' },
+      ]
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 250,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 300, tag: 'Food', amount: 150, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 301, tag: 'Water', amount: 50, type: 'expense', tag_context_id: 300, tag_context: 'Food' },
+        { tag_id: 302, tag: 'House', amount: 100, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 303, tag: 'Water', amount: 20, type: 'expense', tag_context_id: 302, tag_context: 'House' },
+      ])
+      mockTagRepository.findExpenseTags.mockResolvedValue([
+        { id: 300, name: 'Food', sort_order: 10 },
+        { id: 301, name: 'Water', sort_order: 10 },
+        { id: 302, name: 'House', sort_order: 10 },
+        { id: 303, name: 'Water', sort_order: 10 },
+      ])
+      mockTagRepository.getHierarchy.mockResolvedValue(foodHouseHierarchy)
+
+      renderWithRouter(['/summaries'])
+
+      await waitFor(() => {
+        expect(screen.getByText(`Expenses ${formatCurrencyValue(250, '$')}/${formatCurrencyValue(0, '$')}`)).toBeInTheDocument()
+      })
+      expect(screen.queryByText(`Expenses ${formatCurrencyValue(320, '$')}/${formatCurrencyValue(0, '$')}`)).not.toBeInTheDocument()
+    })
   })
 
   describe('Counterparties tab', () => {
@@ -618,9 +662,8 @@ describe('SummariesPage', () => {
         income: 0,
         expenses: 65,
       })
-      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
-        { tag_id: 40, tag: 'Diesel', amount: 25, type: 'expense', tag_context_id: 30, tag_context: 'Auto' },
-        { tag_id: 40, tag: 'Diesel', amount: 40, type: 'expense', tag_context_id: 31, tag_context: 'Boat' },
+      mockTransactionRepository.getMonthlyCategoryBreakdownFlat.mockResolvedValue([
+        { tag_id: 40, tag: 'Diesel', amount: 65, type: 'expense', tag_context_id: null, tag_context: null },
       ])
       mockBudgetRepository.findByMonth.mockResolvedValue([
         {
@@ -670,6 +713,49 @@ describe('SummariesPage', () => {
       })
 
       expect(screen.getByText('60%')).toBeInTheDocument()
+    })
+
+    it('flat view shows a top-level category\'s own amount only, not its child\'s amount folded in', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 150,
+      })
+      mockTransactionRepository.getMonthlyCategoryBreakdownFlat.mockResolvedValue([
+        { tag_id: 300, tag: 'Food', amount: 100, type: 'expense', tag_context_id: null, tag_context: null },
+        { tag_id: 301, tag: 'Water', amount: 50, type: 'expense', tag_context_id: null, tag_context: null },
+      ])
+
+      renderWithRouter(['/summaries?view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Food')).toBeInTheDocument()
+      })
+
+      const foodRow = screen.getByText('Food').closest('div[class*="cursor-pointer"]') as HTMLElement
+      expect(within(foodRow).getByText(formatCurrencyValue(100, '$'))).toBeInTheDocument()
+
+      const waterRow = screen.getByText('Water').closest('div[class*="cursor-pointer"]') as HTMLElement
+      expect(within(waterRow).getByText(formatCurrencyValue(50, '$'))).toBeInTheDocument()
+    })
+
+    it('flat view does not show a nonzero amount for a tag with no direct transactions of its own', async () => {
+      mockTransactionRepository.getMonthSummary.mockResolvedValue({
+        income: 0,
+        expenses: 50,
+      })
+      // Food has no direct transactions this month — only its child Water
+      // does — so the flat query returns no row for Food at all.
+      mockTransactionRepository.getMonthlyCategoryBreakdownFlat.mockResolvedValue([
+        { tag_id: 301, tag: 'Water', amount: 50, type: 'expense', tag_context_id: null, tag_context: null },
+      ])
+
+      renderWithRouter(['/summaries?view=flat'])
+
+      await waitFor(() => {
+        expect(screen.getByText('Water')).toBeInTheDocument()
+      })
+
+      expect(screen.queryByText('Food')).not.toBeInTheDocument()
     })
   })
 
