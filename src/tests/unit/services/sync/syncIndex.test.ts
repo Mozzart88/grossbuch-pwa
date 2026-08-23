@@ -11,10 +11,12 @@ vi.mock('../../../../services/database/connection', () => ({
 }))
 
 const mockSettingsGet = vi.fn()
+const mockSettingsSet = vi.fn()
 const mockSettingsDelete = vi.fn()
 vi.mock('../../../../services/repositories/settingsRepository', () => ({
   settingsRepository: {
     get: (...args: unknown[]) => mockSettingsGet(...args),
+    set: (...args: unknown[]) => mockSettingsSet(...args),
     delete: (...args: unknown[]) => mockSettingsDelete(...args),
   },
 }))
@@ -83,7 +85,7 @@ vi.mock('../../../../services/exchangeRate/exchangeRateSync', () => ({
   syncSingleRate: (...args: unknown[]) => mockSyncSingleRate(...args),
 }))
 
-const { pushSync, pullSync, hasUnpushedChanges, sendUnlinkCommand, sendUnlinkConfirmation } = await import('../../../../services/sync/index')
+const { pushSync, pullSync, hasUnpushedChanges, sendUnlinkCommand, sendUnlinkConfirmation, sendRenameCommand, getInstallationData } = await import('../../../../services/sync/index')
 
 describe('sync index', () => {
   beforeEach(() => {
@@ -91,6 +93,7 @@ describe('sync index', () => {
     mockDropTriggers.mockResolvedValue(undefined)
     mockRestoreTriggers.mockResolvedValue(undefined)
     mockLinkedDeviceFindAll.mockResolvedValue([])
+    mockSettingsSet.mockResolvedValue(undefined)
   })
 
   describe('pushSync', () => {
@@ -110,7 +113,7 @@ describe('sync index', () => {
 
     it('returns false when no JWT', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1' })
+        if (key === 'installation_id') return 'inst-1'
         return null
       })
 
@@ -120,7 +123,8 @@ describe('sync index', () => {
 
     it('returns false when no linked installations', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue([])
@@ -131,7 +135,8 @@ describe('sync index', () => {
 
     it('returns false when no unpushed changes', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'other-id': 'public-key' }))
@@ -144,7 +149,8 @@ describe('sync index', () => {
 
     it('exports, encrypts, and pushes when changes exist', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'other-id': 'public-key' }))
@@ -161,14 +167,15 @@ describe('sync index', () => {
 
       expect(result).toBe(true)
       expect(mockExportSyncPackage).toHaveBeenCalledWith(100, 'inst-1')
-      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(mockPkg, [{ installation_id: 'other-id', public_key: 'public-key' }])
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(mockPkg, [{ installation_id: 'other-id', public_key: 'public-key', name: 'x' }])
       expect(mockApiPush).toHaveBeenCalledWith({ package: mockEncrypted }, 'token')
       expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number))
     })
 
     it('suppresses write notifications around updatePushTimestamp', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'other-id': 'public-key' }))
@@ -189,7 +196,8 @@ describe('sync index', () => {
 
     it('restores write notifications even if updatePushTimestamp throws', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'other-id': 'public-key' }))
@@ -208,7 +216,8 @@ describe('sync index', () => {
 
     it('full-history push: encrypts for target only and skips hasChanges check', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'target-device': 'target-pub-key' }))
@@ -225,7 +234,7 @@ describe('sync index', () => {
       expect(result).toBe(true)
       expect(mockExportChunkedSyncPackages).toHaveBeenCalledWith('inst-1')
       expect(mockEncryptSyncPackage).toHaveBeenCalledTimes(2)
-      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(chunk1, [{ installation_id: 'target-device', public_key: 'target-pub-key' }])
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(chunk1, [{ installation_id: 'target-device', public_key: 'target-pub-key', name: 'x' }])
       expect(mockApiPush).toHaveBeenCalledTimes(2)
       expect(mockHasUnpushedChanges).not.toHaveBeenCalled()
       expect(mockUpdatePushTimestamp).not.toHaveBeenCalled()
@@ -233,7 +242,8 @@ describe('sync index', () => {
 
     it('returns false when targetUuid not in linked installations', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'other-device': 'other-key' }))
@@ -245,7 +255,8 @@ describe('sync index', () => {
 
     it('returns false when pending_initial_sync is set', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         if (key === 'pending_initial_sync') return '1'
         return null
       })
@@ -260,7 +271,8 @@ describe('sync index', () => {
 
     it('does not skip full-history push when pending_initial_sync is set', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         if (key === 'pending_initial_sync') return '1'
         return null
       })
@@ -285,7 +297,8 @@ describe('sync index', () => {
 
     it('returns empty when no private key', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue(null) // no private key
@@ -296,7 +309,8 @@ describe('sync index', () => {
 
     it('returns empty when no packages available', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -309,7 +323,8 @@ describe('sync index', () => {
 
     it('decrypts, imports, and acknowledges packages', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -338,7 +353,8 @@ describe('sync index', () => {
 
     it('drops and restores triggers once per pull cycle', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -367,7 +383,8 @@ describe('sync index', () => {
 
     it('restores triggers even when all packages fail', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -387,7 +404,8 @@ describe('sync index', () => {
 
     it('does not drop triggers when no packages', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -402,7 +420,8 @@ describe('sync index', () => {
 
     it('suppresses write notifications during import loop', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -434,7 +453,8 @@ describe('sync index', () => {
 
     it('restores write notifications even on import failure', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -454,7 +474,8 @@ describe('sync index', () => {
 
     it('continues processing on individual package failure', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'pk' })
@@ -483,7 +504,8 @@ describe('sync index', () => {
 
     it('calls syncSingleRate for currencies without rates after import', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne
@@ -513,7 +535,8 @@ describe('sync index', () => {
 
     it('does not call syncSingleRate when rate already exists', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne
@@ -542,7 +565,8 @@ describe('sync index', () => {
 
     it('clears pending_initial_sync and updates push timestamp when packages imported (flag is set)', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         if (key === 'pending_initial_sync') return '1'
         return null
       })
@@ -564,7 +588,8 @@ describe('sync index', () => {
 
     it('updates push timestamp even when pending_initial_sync is NOT set', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         // pending_initial_sync NOT set
         return null
       })
@@ -590,7 +615,8 @@ describe('sync index', () => {
       const beforeCall = Math.floor(Date.now() / 1000)
 
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -613,7 +639,8 @@ describe('sync index', () => {
 
     it('does not clear pending_initial_sync when no packages were imported', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         if (key === 'pending_initial_sync') return '1'
         return null
       })
@@ -629,7 +656,8 @@ describe('sync index', () => {
 
     it('does not clear pending_initial_sync when all packages failed to ack', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         if (key === 'pending_initial_sync') return '1'
         return null
       })
@@ -645,7 +673,8 @@ describe('sync index', () => {
 
     it('setSuppressWriteNotifications(false) is called when restoreUpdatedAtTriggers throws', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -663,7 +692,8 @@ describe('sync index', () => {
 
     it('setSuppressWriteNotifications(false) is called when dropUpdatedAtTriggers throws', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
@@ -679,7 +709,8 @@ describe('sync index', () => {
 
     it('deduplicates currency IDs across multiple packages', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockQueryOne
@@ -719,7 +750,8 @@ describe('sync index', () => {
 
     it('returns early when no linked installations', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue([])
@@ -729,7 +761,8 @@ describe('sync index', () => {
 
     it('encrypts command for all recipients and pushes', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'device-a': 'pub-key-a', 'device-b': 'pub-key-b' }))
@@ -744,8 +777,8 @@ describe('sync index', () => {
           commands: [{ type: 'unlink_device', target_installation_id: 'device-a', keep_data: false, initiator_id: 'inst-1' }],
         }),
         [
-          { installation_id: 'device-a', public_key: 'pub-key-a' },
-          { installation_id: 'device-b', public_key: 'pub-key-b' },
+          { installation_id: 'device-a', public_key: 'pub-key-a', name: 'x' },
+          { installation_id: 'device-b', public_key: 'pub-key-b', name: 'x' },
         ]
       )
       expect(mockApiPush).toHaveBeenCalledWith({ package: mockEncrypted }, 'token')
@@ -753,7 +786,8 @@ describe('sync index', () => {
 
     it('sends command package with empty data arrays', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'device-a': 'pub-key-a' }))
@@ -806,7 +840,8 @@ describe('sync index', () => {
 
     it('delegates to syncRepository', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
-        if (key === 'installation_id') return JSON.stringify({ id: 'inst-1', jwt: 'token' })
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
         return null
       })
       mockHasUnpushedChanges.mockResolvedValue(true)
@@ -814,6 +849,134 @@ describe('sync index', () => {
       const result = await hasUnpushedChanges()
       expect(result).toBe(true)
       expect(mockHasUnpushedChanges).toHaveBeenCalledWith('inst-1')
+    })
+  })
+
+  describe('sendRenameCommand', () => {
+    it('returns early when no installation data', async () => {
+      mockSettingsGet.mockResolvedValue(null)
+      await sendRenameCommand('target-id', 'New Name')
+      expect(mockApiPush).not.toHaveBeenCalled()
+    })
+
+    it('returns early when no linked installations', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
+        return null
+      })
+      mockLinkedDeviceFindAll.mockResolvedValue([])
+      await sendRenameCommand('target-id', 'New Name')
+      expect(mockApiPush).not.toHaveBeenCalled()
+    })
+
+    it('encrypts a rename_device command for all recipients and pushes', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
+        return null
+      })
+      mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'device-a': 'pub-key-a' }))
+      const mockEncrypted = { sender_id: 'inst-1', iv: 'iv', ciphertext: 'ct', recipient_keys: [] }
+      mockEncryptSyncPackage.mockResolvedValue(mockEncrypted)
+      mockApiPush.mockResolvedValue({ success: true })
+
+      await sendRenameCommand('inst-1', 'My Laptop')
+
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          commands: [{ type: 'rename_device', target_installation_id: 'inst-1', name: 'My Laptop' }],
+        }),
+        [{ installation_id: 'device-a', public_key: 'pub-key-a', name: 'x' }]
+      )
+      expect(mockApiPush).toHaveBeenCalledWith({ package: mockEncrypted }, 'token')
+    })
+  })
+
+  describe('getInstallationData', () => {
+    it('returns null when nothing stored', async () => {
+      mockSettingsGet.mockResolvedValue(null)
+      const result = await getInstallationData()
+      expect(result).toBeNull()
+    })
+
+    it('reads the split keys directly when already migrated', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return 'inst-1'
+        if (key === 'jwt') return 'token'
+        if (key === 'device_name') return 'My Phone'
+        return null
+      })
+
+      const result = await getInstallationData()
+
+      expect(result).toEqual({ id: 'inst-1', jwt: 'token', device_name: 'My Phone' })
+      expect(mockSettingsSet).not.toHaveBeenCalled()
+    })
+
+    it('splits the legacy { id, jwt } blob into the three keys and guesses a device name', async () => {
+      // Stateful: readInstallationData() self-corrects after the split writes 'jwt', so
+      // the nested getInstallationData() call inside sendRenameCommand doesn't re-migrate
+      // (a static mock here would make that nested call see the same unmigrated blob forever).
+      let jwtWritten: string | null = null
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'legacy-id', jwt: 'legacy-jwt' })
+        if (key === 'jwt') return jwtWritten
+        return null
+      })
+      mockSettingsSet.mockImplementation((key: string, value: string) => {
+        if (key === 'jwt') jwtWritten = value
+        return Promise.resolve(undefined)
+      })
+      mockLinkedDeviceFindAll.mockResolvedValue([]) // no peers — no propagation expected
+
+      const result = await getInstallationData()
+
+      expect(result?.id).toBe('legacy-id')
+      expect(result?.jwt).toBe('legacy-jwt')
+      expect(result?.device_name).toBeTruthy()
+      expect(mockSettingsSet).toHaveBeenCalledWith('installation_id', 'legacy-id')
+      expect(mockSettingsSet).toHaveBeenCalledWith('jwt', 'legacy-jwt')
+      expect(mockSettingsSet).toHaveBeenCalledWith('device_name', result?.device_name)
+      expect(mockApiPush).not.toHaveBeenCalled()
+    })
+
+    it('propagates the guessed name to existing linked peers after a legacy split', async () => {
+      let jwtWritten: string | null = null
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return JSON.stringify({ id: 'legacy-id', jwt: 'legacy-jwt' })
+        if (key === 'jwt') return jwtWritten
+        return null
+      })
+      mockSettingsSet.mockImplementation((key: string, value: string) => {
+        if (key === 'jwt') jwtWritten = value
+        return Promise.resolve(undefined)
+      })
+      mockLinkedDeviceFindAll.mockResolvedValue(linkedDevices({ 'peer-1': 'peer-pub-key' }))
+      mockEncryptSyncPackage.mockResolvedValue({ sender_id: 'legacy-id', iv: 'iv', ciphertext: 'ct', recipient_keys: [] })
+      mockApiPush.mockResolvedValue({ success: true })
+
+      const result = await getInstallationData()
+
+      expect(mockEncryptSyncPackage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          commands: [{ type: 'rename_device', target_installation_id: 'legacy-id', name: result?.device_name }],
+        }),
+        expect.anything()
+      )
+      expect(mockApiPush).toHaveBeenCalledWith(expect.anything(), 'legacy-jwt')
+    })
+
+    it('does not split when installation_id is already a plain (non-JSON) id', async () => {
+      mockSettingsGet.mockImplementation((key: string) => {
+        if (key === 'installation_id') return 'plain-id'
+        return null
+      })
+
+      const result = await getInstallationData()
+
+      expect(result).toEqual({ id: 'plain-id', jwt: undefined, device_name: undefined })
+      expect(mockSettingsSet).not.toHaveBeenCalled()
     })
   })
 })

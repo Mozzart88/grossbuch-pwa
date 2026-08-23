@@ -1,5 +1,5 @@
 import { currencyRepository } from '../repositories/currencyRepository'
-import { settingsRepository } from '../repositories/settingsRepository'
+import { getInstallationData } from '../sync'
 import { getHistoricalRates } from './exchangeRateApi'
 import { toIntFrac } from '../../utils/amount'
 import type { IntFrac } from '../../utils/amount'
@@ -18,11 +18,8 @@ function offsetDate(date: string, days: number): string {
 }
 
 async function getToken(): Promise<string | null> {
-  const raw = await settingsRepository.get('installation_id')
-  const installation = raw
-    ? typeof raw === 'string' ? JSON.parse(raw) : raw
-    : null
-  return installation?.jwt ?? null
+  const installData = await getInstallationData()
+  return installData?.jwt ?? null
 }
 
 async function fetchAndStoreRate(

@@ -33,6 +33,10 @@ export const linkedDeviceRepository = {
     }
   },
 
+  async rename(id: string, name: string): Promise<void> {
+    await execSQL('UPDATE linked_device SET name = ? WHERE id = ?', [name, id])
+  },
+
   async remove(id: string): Promise<void> {
     await execSQL('DELETE FROM linked_device WHERE id = ?', [id])
   },

@@ -94,12 +94,6 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp'
     },
   },
-
-  build: {
-    minify: false,
-    sourcemap: true,
-  },
-
   // Exclude sqlite-wasm from optimization
   optimizeDeps: {
     exclude: ['@sqlite.org/sqlite-wasm', 'src/sqlite-wasm']

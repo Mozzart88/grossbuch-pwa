@@ -78,6 +78,8 @@ export function SummariesPage() {
   const [tagsSummary, setTagsSummary] = useState<MonthlyTagSummary[]>([])
   const [counterpartiesSummary, setCounterpartiesSummary] = useState<MonthlyCounterpartySummary[]>([])
   const [categoryBreakdown, setCategoryBreakdown] = useState<MonthlyCategoryBreakdown[]>([])
+  const [flatCategoryBreakdown, setFlatCategoryBreakdown] = useState<MonthlyCategoryBreakdown[]>([])
+  const [flatTagsSummaryRaw, setFlatTagsSummaryRaw] = useState<MonthlyTagSummary[]>([])
 
   // Budget state
   const [budgets, setBudgets] = useState<Budget[]>([])
@@ -138,12 +140,14 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, monthBudgets, allIncomeTags, allExpenseTags, systemTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, flatBreakdown, flatTags, monthBudgets, allIncomeTags, allExpenseTags, systemTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
         transactionRepository.getMonthSummary(month),
         accountRepository.getPlainTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
         transactionRepository.getMonthlyCounterpartiesSummary(month),
         transactionRepository.getMonthlyCategoryBreakdown(month),
+        transactionRepository.getMonthlyCategoryBreakdownFlat(month),
+        transactionRepository.getMonthlyTagsSummaryFlat(month),
         budgetRepository.findByMonth(month),
         tagRepository.findIncomeTags(),
         tagRepository.findExpenseTags(),
@@ -172,6 +176,8 @@ export function SummariesPage() {
       setTagsSummary(tags)
       setCounterpartiesSummary(counterparties)
       setCategoryBreakdown(breakdown)
+      setFlatCategoryBreakdown(flatBreakdown)
+      setFlatTagsSummaryRaw(flatTags)
 
       setBudgets(monthBudgets)
       setIncomeTags((allIncomeTags ?? []).filter((t) => t.id > 10 && t.id !== SYSTEM_TAGS.ARCHIVED))
@@ -427,13 +433,16 @@ export function SummariesPage() {
   const expenseBudgets = budgets.filter(b => budgetType(b) === 'expense')
   const incomeBudgetTotal = incomeBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
   const expenseBudgetTotal = expenseBudgets.reduce((acc, b) => fromIntFrac(b.amount_int, b.amount_frac) + acc, 0)
+  const getTopLevelSummaryItems = <T extends SummaryTreeItem>(items: T[]): T[] =>
+    items.filter(item => (item.tag_context_id ?? null) === null)
+
   const getCategoryActual = (category: MonthlyCategoryBreakdown, type: 'income' | 'expense'): number => {
     const budget = getBudgetForTag(category.tag_id, type, category.tag_context_id ?? null)
     if (!budget || fromIntFrac(budget.amount_int, budget.amount_frac) <= 0) return category.amount
     return budget.actual ?? category.amount
   }
-  const incomeActualTotal = incomeCategories.reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
-  const expenseActualTotal = expenseCategories.reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
+  const incomeActualTotal = getTopLevelSummaryItems(incomeCategories).reduce((acc, c) => acc + getCategoryActual(c, 'income'), 0)
+  const expenseActualTotal = getTopLevelSummaryItems(expenseCategories).reduce((acc, c) => acc + getCategoryActual(c, 'expense'), 0)
   const typeTagOptions = selectedBudgetType === 'income' ? incomeTagOptions : expenseTagOptions
   const budgetCategoryOptions = toTagLiveSearchOptions(typeTagOptions).map(option => {
     const source = typeTagOptions.find(tag => encodeTagSelection(tag.tag_id, tag.context_id) === String(option.value))
@@ -534,9 +543,9 @@ export function SummariesPage() {
     return matchingBudgets.length === 1 ? matchingBudgets[0] : undefined
   }
 
-  const flatTagsSummary = buildFlatTagSummaryRows(tagsSummary)
-  const flatIncomeCategories = buildFlatBudgetCategories(rawIncomeCategories, 'income')
-  const flatExpenseCategories = buildFlatBudgetCategories(rawExpenseCategories, 'expense')
+  const flatTagsSummary = buildFlatTagSummaryRows(flatTagsSummaryRaw)
+  const flatIncomeCategories = buildFlatBudgetCategories(flatCategoryBreakdown.filter(c => c.type === 'income'), 'income')
+  const flatExpenseCategories = buildFlatBudgetCategories(flatCategoryBreakdown.filter(c => c.type === 'expense'), 'expense')
   const flatIncomeActualTotal = flatIncomeCategories.reduce((acc, c) => acc + c.amount, 0)
   const flatExpenseActualTotal = flatExpenseCategories.reduce((acc, c) => acc + c.amount, 0)
 
@@ -612,9 +621,6 @@ export function SummariesPage() {
           ? (item.tag_context_id ?? null) === null
           : item.tag_context_id === branchContextId)
       ))
-
-  const getTopLevelSummaryItems = <T extends SummaryTreeItem>(items: T[]): T[] =>
-    items.filter(item => (item.tag_context_id ?? null) === null)
 
   const sectionProgress = (actual: number, budget: number): number => {
     if (budget <= 0) return actual > 0 ? 100 : 0

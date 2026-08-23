@@ -5,15 +5,6 @@ export const settingsRepository = {
   async get<K extends keyof Settings>(key: K): Promise<Settings[K] | null> {
     const result = await queryOne<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [key])
     if (!result) return null
-
-    // Type conversion based on key
-    if (key === 'installation_id') {
-      try {
-        return JSON.parse(result.value) as Settings[K]
-      } catch {
-        return result.value as Settings[K]
-      }
-    }
     return result.value as Settings[K]
   },
 
