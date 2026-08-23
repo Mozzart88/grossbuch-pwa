@@ -7,11 +7,20 @@ vi.mock('../../../services/installation', () => ({
   registerInstallation: vi.fn(),
 }))
 
-// Mock the settings repository
+// Simple stateful fake so get() reflects prior set() calls, matching the hook's
+// read-then-conditionally-write flow across the split installation_id/jwt/device_name keys.
+let settingsStore: Record<string, string> = {}
+
+const mockSettingsGet = vi.fn((key: string) => Promise.resolve(settingsStore[key] ?? null))
+const mockSettingsSet = vi.fn((key: string, value: string) => {
+  settingsStore[key] = String(value)
+  return Promise.resolve(undefined)
+})
+
 vi.mock('../../../services/repositories/settingsRepository', () => ({
   settingsRepository: {
-    get: vi.fn(),
-    set: vi.fn(),
+    get: (...args: [string]) => mockSettingsGet(...args),
+    set: (...args: [string, string]) => mockSettingsSet(...args),
   },
 }))
 
@@ -30,13 +39,10 @@ vi.mock('../../../components/ui', () => ({
 
 import { useInstallationRegistration } from '../../../hooks/useInstallationRegistration'
 import { registerInstallation } from '../../../services/installation'
-import { settingsRepository } from '../../../services/repositories/settingsRepository'
 import { linkedDeviceRepository } from '../../../services/repositories/linkedDeviceRepository'
 import { AUTH_STORAGE_KEYS } from '../../../types/auth'
 
 const mockRegister = vi.mocked(registerInstallation)
-const mockSettingsGet = vi.mocked(settingsRepository.get)
-const mockSettingsSet = vi.mocked(settingsRepository.set)
 const mockLinkedDeviceUpsert = vi.mocked(linkedDeviceRepository.upsert)
 
 describe('useInstallationRegistration', () => {
@@ -45,8 +51,7 @@ describe('useInstallationRegistration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
-    mockSettingsGet.mockResolvedValue(null)
-    mockSettingsSet.mockResolvedValue(undefined)
+    settingsStore = {}
     mockLinkedDeviceUpsert.mockResolvedValue(undefined)
     mockRegister.mockResolvedValue({
       jwt: 'jwt-token-123',
@@ -75,10 +80,7 @@ describe('useInstallationRegistration', () => {
   })
 
   it('skips registration when already fully registered', async () => {
-    mockSettingsGet.mockResolvedValue(JSON.stringify({
-      id: 'existing-uuid',
-      jwt: 'existing-token',
-    }) as never)
+    settingsStore = { installation_id: 'existing-uuid', jwt: 'existing-token' }
 
     renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -91,7 +93,7 @@ describe('useInstallationRegistration', () => {
   })
 
   it('retries registration when ID exists but JWT is missing', async () => {
-    mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+    settingsStore = { installation_id: 'existing-uuid' }
 
     renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -100,13 +102,21 @@ describe('useInstallationRegistration', () => {
     })
 
     expect(mockRegister).toHaveBeenCalledWith('existing-uuid', undefined)
-    expect(mockSettingsSet).toHaveBeenCalledWith(
-      'installation_id',
-      JSON.stringify({
-        id: 'existing-uuid',
-        jwt: 'jwt-token-123',
-      })
-    )
+    expect(mockSettingsSet).toHaveBeenCalledWith('installation_id', 'existing-uuid')
+    expect(mockSettingsSet).toHaveBeenCalledWith('jwt', 'jwt-token-123')
+    expect(mockSettingsSet).toHaveBeenCalledWith('device_name', expect.any(String))
+  })
+
+  it('does not re-guess device_name on retry when one is already set', async () => {
+    settingsStore = { installation_id: 'existing-uuid', device_name: 'My Phone' }
+
+    renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000)
+    })
+
+    expect(mockSettingsSet).not.toHaveBeenCalledWith('device_name', expect.anything())
   })
 
   it('generates new UUID and registers on first install', async () => {
@@ -117,16 +127,12 @@ describe('useInstallationRegistration', () => {
     })
 
     expect(mockRegister).toHaveBeenCalledWith('mock-uuid-1234', undefined)
-    expect(mockSettingsSet).toHaveBeenCalledWith(
-      'installation_id',
-      JSON.stringify({
-        id: 'mock-uuid-1234',
-        jwt: 'jwt-token-123',
-      })
-    )
+    expect(mockSettingsSet).toHaveBeenCalledWith('installation_id', 'mock-uuid-1234')
+    expect(mockSettingsSet).toHaveBeenCalledWith('jwt', 'jwt-token-123')
+    expect(mockSettingsSet).toHaveBeenCalledWith('device_name', expect.any(String))
   })
 
-  it('saves ID without JWT on API failure for new install', async () => {
+  it('saves ID and guessed name without JWT on API failure for new install', async () => {
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     mockRegister.mockRejectedValue(new Error('Network error'))
 
@@ -136,17 +142,16 @@ describe('useInstallationRegistration', () => {
       vi.advanceTimersByTime(3000)
     })
 
-    expect(mockSettingsSet).toHaveBeenCalledWith(
-      'installation_id',
-      JSON.stringify({ id: 'mock-uuid-1234' })
-    )
+    expect(mockSettingsSet).toHaveBeenCalledWith('installation_id', 'mock-uuid-1234')
+    expect(mockSettingsSet).toHaveBeenCalledWith('device_name', expect.any(String))
+    expect(mockSettingsSet).not.toHaveBeenCalledWith('jwt', expect.anything())
 
     consoleWarn.mockRestore()
   })
 
   it('handles retry registration API failure gracefully', async () => {
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+    settingsStore = { installation_id: 'existing-uuid' }
     mockRegister.mockRejectedValue(new Error('Server down'))
 
     renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
@@ -172,7 +177,8 @@ describe('useInstallationRegistration', () => {
       vi.advanceTimersByTime(3000)
     })
 
-    expect(mockSettingsGet).toHaveBeenCalledTimes(1)
+    const callsAfterFirstRun = mockSettingsGet.mock.calls.length
+    expect(callsAfterFirstRun).toBeGreaterThan(0)
 
     rerender()
 
@@ -180,7 +186,7 @@ describe('useInstallationRegistration', () => {
       vi.advanceTimersByTime(3000)
     })
 
-    expect(mockSettingsGet).toHaveBeenCalledTimes(1)
+    expect(mockSettingsGet.mock.calls.length).toBe(callsAfterFirstRun)
   })
 
   it('cleans up timeout on unmount', async () => {
@@ -255,7 +261,7 @@ describe('useInstallationRegistration', () => {
 
     it('passes shared UUID on retry registration', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
-      mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+      settingsStore = { installation_id: 'existing-uuid' }
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -269,7 +275,7 @@ describe('useInstallationRegistration', () => {
     it('clears shared UUID and saves linked installation on successful retry', async () => {
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_PUBLIC_KEY, 'retry-pub-key')
-      mockSettingsGet.mockResolvedValueOnce(JSON.stringify({ id: 'existing-uuid' }) as never)
+      settingsStore = { installation_id: 'existing-uuid' }
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -285,7 +291,7 @@ describe('useInstallationRegistration', () => {
     it('does not clear shared UUID on failed retry', async () => {
       vi.spyOn(console, 'warn').mockImplementation(() => {})
       localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'sharer-uuid-retry')
-      mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+      settingsStore = { installation_id: 'existing-uuid' }
       mockRegister.mockRejectedValue(new Error('Server down'))
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
@@ -334,7 +340,7 @@ describe('useInstallationRegistration', () => {
     })
 
     it('shows success toast on retry registration', async () => {
-      mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+      settingsStore = { installation_id: 'existing-uuid' }
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })
 
@@ -365,7 +371,7 @@ describe('useInstallationRegistration', () => {
 
     it('shows error toast on retry registration failure', async () => {
       vi.spyOn(console, 'warn').mockImplementation(() => {})
-      mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'existing-uuid' }) as never)
+      settingsStore = { installation_id: 'existing-uuid' }
       mockRegister.mockRejectedValue(new Error('Server error'))
 
       renderHook(() => useInstallationRegistration({ enabled: true }), { wrapper })

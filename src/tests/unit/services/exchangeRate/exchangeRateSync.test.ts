@@ -10,11 +10,8 @@ vi.mock('../../../../services/repositories/currencyRepository', () => ({
   },
 }))
 
-vi.mock('../../../../services/repositories/settingsRepository', () => ({
-  settingsRepository: {
-    get: vi.fn(),
-    set: vi.fn(),
-  },
+vi.mock('../../../../services/sync/installationData', () => ({
+  readInstallationData: vi.fn(),
 }))
 
 vi.mock('../../../../services/exchangeRate/exchangeRateApi', () => ({
@@ -23,7 +20,7 @@ vi.mock('../../../../services/exchangeRate/exchangeRateApi', () => ({
 
 import { syncRates, syncSingleRate } from '../../../../services/exchangeRate/exchangeRateSync'
 import { currencyRepository } from '../../../../services/repositories/currencyRepository'
-import { settingsRepository } from '../../../../services/repositories/settingsRepository'
+import { readInstallationData } from '../../../../services/sync/installationData'
 import { getLatestRates } from '../../../../services/exchangeRate/exchangeRateApi'
 import type { Currency } from '../../../../types'
 
@@ -32,7 +29,7 @@ const mockFindById = vi.mocked(currencyRepository.findById)
 const mockFindSystem = vi.mocked(currencyRepository.findSystem)
 const mockSetExchangeRate = vi.mocked(currencyRepository.setExchangeRate)
 const mockGetLatestRates = vi.mocked(getLatestRates)
-const mockSettingsGet = vi.mocked(settingsRepository.get)
+const mockReadInstallationData = vi.mocked(readInstallationData)
 
 describe('exchangeRateSync', () => {
   const originalNavigator = global.navigator
@@ -45,7 +42,7 @@ describe('exchangeRateSync', () => {
       writable: true,
     })
     // Default to having a valid JWT
-    mockSettingsGet.mockResolvedValue(JSON.stringify({ id: 'test-id', jwt: 'test-jwt-token' }))
+    mockReadInstallationData.mockResolvedValue({ data: { id: 'test-id', jwt: 'test-jwt-token' }, migrated: false })
   })
 
   afterEach(() => {
@@ -290,7 +287,7 @@ describe('exchangeRateSync', () => {
     })
 
     it('returns no_auth_token result when no JWT available', async () => {
-      mockSettingsGet.mockResolvedValue(null)
+      mockReadInstallationData.mockResolvedValue(null)
 
       const result = await syncRates()
 
@@ -302,8 +299,8 @@ describe('exchangeRateSync', () => {
       expect(mockGetLatestRates).not.toHaveBeenCalled()
     })
 
-    it('handles installation setting returned as object (not string)', async () => {
-      mockSettingsGet.mockResolvedValue({ id: 'test-id', jwt: 'obj-jwt-token' } as never)
+    it('reads the jwt from installation data', async () => {
+      mockReadInstallationData.mockResolvedValue({ data: { id: 'test-id', jwt: 'obj-jwt-token' }, migrated: false })
       const currencies = [
         createCurrency({ id: 1, code: 'USD', is_system: true }),
         createCurrency({ id: 2, code: 'EUR', is_system: false }),
@@ -331,7 +328,7 @@ describe('exchangeRateSync', () => {
     })
 
     it('returns success: false when no JWT available', async () => {
-      mockSettingsGet.mockResolvedValue(null)
+      mockReadInstallationData.mockResolvedValue(null)
 
       const result = await syncSingleRate(2)
 
@@ -339,8 +336,8 @@ describe('exchangeRateSync', () => {
       expect(mockGetLatestRates).not.toHaveBeenCalled()
     })
 
-    it('handles installation setting returned as object (not string)', async () => {
-      mockSettingsGet.mockResolvedValue({ id: 'test-id', jwt: 'obj-jwt-token' } as never)
+    it('reads the jwt from installation data', async () => {
+      mockReadInstallationData.mockResolvedValue({ data: { id: 'test-id', jwt: 'obj-jwt-token' }, migrated: false })
       const eur = createCurrency({ id: 2, code: 'EUR', decimal_places: 2 })
       const usd = createCurrency({ id: 1, code: 'USD', is_system: true, decimal_places: 2 })
       mockFindById.mockResolvedValue(eur)

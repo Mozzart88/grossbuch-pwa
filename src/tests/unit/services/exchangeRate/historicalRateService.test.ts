@@ -13,10 +13,8 @@ vi.mock('../../../../services/repositories/currencyRepository', () => ({
   },
 }))
 
-vi.mock('../../../../services/repositories/settingsRepository', () => ({
-  settingsRepository: {
-    get: vi.fn(),
-  },
+vi.mock('../../../../services/sync', () => ({
+  getInstallationData: vi.fn(),
 }))
 
 vi.mock('../../../../services/exchangeRate/exchangeRateApi', () => ({
@@ -25,12 +23,12 @@ vi.mock('../../../../services/exchangeRate/exchangeRateApi', () => ({
 
 import { getRateForDate } from '../../../../services/exchangeRate/historicalRateService'
 import { currencyRepository } from '../../../../services/repositories/currencyRepository'
-import { settingsRepository } from '../../../../services/repositories/settingsRepository'
+import { getInstallationData } from '../../../../services/sync'
 import { getHistoricalRates } from '../../../../services/exchangeRate/exchangeRateApi'
 import type { Currency, ExchangeRate } from '../../../../types'
 
 const mockCurrencyRepository = vi.mocked(currencyRepository)
-const mockSettingsGet = vi.mocked(settingsRepository.get)
+const mockGetInstallationData = vi.mocked(getInstallationData)
 const mockGetHistoricalRates = vi.mocked(getHistoricalRates)
 
 const PAST_DATE = '2024-01-15'
@@ -52,7 +50,7 @@ describe('historicalRateService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     Object.defineProperty(global, 'navigator', { value: { onLine: true }, writable: true })
-    mockSettingsGet.mockResolvedValue(JSON.stringify({ jwt: 'test-token' }))
+    mockGetInstallationData.mockResolvedValue({ id: 'test-id', jwt: 'test-token' })
     mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 1, frac: 0 })
     mockCurrencyRepository.getExchangeRateForDate.mockResolvedValue(null)
     mockCurrencyRepository.getExchangeRateNearDate.mockResolvedValue(null)
@@ -114,7 +112,7 @@ describe('historicalRateService', () => {
     })
 
     it('falls back to latest rate when no auth token', async () => {
-      mockSettingsGet.mockResolvedValue(null)
+      mockGetInstallationData.mockResolvedValue(null)
       mockCurrencyRepository.getRateForCurrency.mockResolvedValue({ int: 3, frac: 0 })
 
       const result = await getRateForDate(CURRENCY_ID, PAST_DATE)

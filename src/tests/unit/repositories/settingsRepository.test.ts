@@ -53,21 +53,28 @@ describe('settingsRepository', () => {
       expect(result).toBe('system')
     })
 
-    it('parses installation_id as JSON', async () => {
-      const jsonValue = JSON.stringify({ id: 'uuid-123', jwt: 'token-456' })
-      mockQueryOne.mockResolvedValue({ value: jsonValue })
+    it('returns installation_id as a plain string, without JSON parsing', async () => {
+      mockQueryOne.mockResolvedValue({ value: 'uuid-123' })
 
       const result = await settingsRepository.get('installation_id')
 
-      expect(result).toEqual({ id: 'uuid-123', jwt: 'token-456' })
+      expect(result).toBe('uuid-123')
     })
 
-    it('returns raw string for installation_id when JSON parse fails', async () => {
-      mockQueryOne.mockResolvedValue({ value: 'not-valid-json' })
+    it('returns jwt as a plain string', async () => {
+      mockQueryOne.mockResolvedValue({ value: 'token-456' })
 
-      const result = await settingsRepository.get('installation_id')
+      const result = await settingsRepository.get('jwt')
 
-      expect(result).toBe('not-valid-json')
+      expect(result).toBe('token-456')
+    })
+
+    it('returns device_name as a plain string', async () => {
+      mockQueryOne.mockResolvedValue({ value: 'My Phone' })
+
+      const result = await settingsRepository.get('device_name')
+
+      expect(result).toBe('My Phone')
     })
   })
 

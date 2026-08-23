@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { onDbWrite, wipeDatabase } from '../services/database/connection'
 import { settingsRepository } from '../services/repositories/settingsRepository'
 import { linkedDeviceRepository } from '../services/repositories/linkedDeviceRepository'
-import { sendUnlinkConfirmation } from '../services/sync'
+import { getInstallationData, sendUnlinkConfirmation } from '../services/sync'
 import { deleteInstallation } from '../services/installation/installationApi'
 
 interface PendingSelfUnlink {
@@ -42,13 +42,10 @@ export function useSelfUnlinkHandler() {
       let ownInstallationId = ''
       let ownJwt = ''
       try {
-        const rawInstall = await settingsRepository.get('installation_id')
-        if (rawInstall) {
-          const install = typeof rawInstall === 'object'
-            ? (rawInstall as { id: string; jwt?: string })
-            : JSON.parse(String(rawInstall)) as { id: string; jwt?: string }
-          ownInstallationId = install.id
-          ownJwt = install.jwt ?? ''
+        const installData = await getInstallationData()
+        if (installData) {
+          ownInstallationId = installData.id
+          ownJwt = installData.jwt ?? ''
         }
       } catch {
         // Continue with empty credentials — confirmation will fail gracefully

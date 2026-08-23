@@ -36,8 +36,10 @@ vi.mock('../../../services/repositories/linkedDeviceRepository', () => ({
 }))
 
 const mockSendUnlinkConfirmation = vi.fn()
+const mockGetInstallationData = vi.fn()
 vi.mock('../../../services/sync', () => ({
   sendUnlinkConfirmation: (...args: unknown[]) => mockSendUnlinkConfirmation(...args),
+  getInstallationData: (...args: unknown[]) => mockGetInstallationData(...args),
 }))
 
 const mockDeleteInstallation = vi.fn()
@@ -65,9 +67,9 @@ function pendingSelfUnlink(keepData = true) {
 function mockInstallationSettings(keepData = true) {
   mockSettingsGet.mockImplementation((key: string) => {
     if (key === 'pending_self_unlink') return Promise.resolve(pendingSelfUnlink(keepData))
-    if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID, jwt: OWN_JWT }))
     return Promise.resolve(null)
   })
+  mockGetInstallationData.mockResolvedValue({ id: OWN_ID, jwt: OWN_JWT })
 }
 
 describe('useSelfUnlinkHandler', () => {
@@ -80,6 +82,7 @@ describe('useSelfUnlinkHandler', () => {
     mockLinkedDeviceRemoveAll.mockResolvedValue(undefined)
     mockWipeDatabase.mockResolvedValue(undefined)
     mockSendUnlinkConfirmation.mockResolvedValue(undefined)
+    mockGetInstallationData.mockResolvedValue(null)
     mockDeleteInstallation.mockResolvedValue(undefined)
     mockReload.mockReset()
   })
@@ -214,9 +217,9 @@ describe('useSelfUnlinkHandler', () => {
   it('handles missing own installation data gracefully', async () => {
     mockSettingsGet.mockImplementation((key: string) => {
       if (key === 'pending_self_unlink') return Promise.resolve(pendingSelfUnlink(true))
-      if (key === 'installation_id') return Promise.resolve(null)
       return Promise.resolve(null)
     })
+    mockGetInstallationData.mockResolvedValue(null)
     renderHook(() => useSelfUnlinkHandler())
 
     await act(async () => { onDbWriteCallback?.() })

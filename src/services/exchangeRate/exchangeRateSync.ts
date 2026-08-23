@@ -1,5 +1,5 @@
 import { currencyRepository } from '../repositories/currencyRepository'
-import { settingsRepository } from '../repositories/settingsRepository'
+import { readInstallationData } from '../sync/installationData'
 import { getLatestRates } from './exchangeRateApi'
 import { toIntFrac } from '../../utils/amount'
 
@@ -19,14 +19,11 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
     return { success: false }
   }
 
-  const installationRaw = await settingsRepository.get('installation_id')
-  const installation = installationRaw
-    ? typeof installationRaw === 'string' ? JSON.parse(installationRaw) : installationRaw
-    : null
-  if (!installation?.jwt) {
+  const installationData = await readInstallationData()
+  if (!installationData?.data.jwt) {
     return { success: false }
   }
-  const token: string = installation.jwt
+  const token: string = installationData.data.jwt
 
   const currency = await currencyRepository.findById(currencyId)
   if (!currency) {
@@ -75,15 +72,12 @@ export async function syncRates(): Promise<SyncRatesResult> {
   }
 
   // Read JWT from installation settings
-  const installationRaw = await settingsRepository.get('installation_id')
-  const installation = installationRaw
-    ? typeof installationRaw === 'string' ? JSON.parse(installationRaw) : installationRaw
-    : null
-  if (!installation?.jwt) {
+  const installationData = await readInstallationData()
+  if (!installationData?.data.jwt) {
     console.warn('[ExchangeRateSync] No auth token, skipping sync')
     return { success: false, syncedCount: 0, skippedReason: 'no_auth_token' }
   }
-  const token: string = installation.jwt
+  const token: string = installationData.data.jwt
 
   // Get only currencies that are linked to accounts (active or virtual)
   const currencies = await currencyRepository.findUsedInAccounts()

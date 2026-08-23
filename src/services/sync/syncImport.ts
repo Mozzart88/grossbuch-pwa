@@ -20,6 +20,7 @@ import type {
   SyncDeletion,
   SyncUnlinkCommand,
   SyncUnlinkConfirmCommand,
+  SyncRenameCommand,
   SyncCommand,
   ImportResult,
 } from './syncTypes'
@@ -81,6 +82,21 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
 
 // ======= Commands =======
 
+// Not imported from './index' to avoid a circular dependency (index.ts imports this module).
+// Handles both the split `installation_id` key (plain id string) and the legacy `{ id, jwt }`
+// blob, in case this runs before the lazy split in getInstallationData() has occurred.
+async function getOwnInstallationId(): Promise<string | null> {
+  const raw = await settingsRepository.get('installation_id')
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(String(raw)) as { id?: string }
+    if (parsed && typeof parsed.id === 'string') return parsed.id
+  } catch {
+    // Not JSON — already split, raw is the plain id
+  }
+  return String(raw)
+}
+
 async function processCommands(commands: SyncCommand[]): Promise<void> {
   for (const cmd of commands) {
     try {
@@ -88,6 +104,8 @@ async function processCommands(commands: SyncCommand[]): Promise<void> {
         await processUnlinkDevice(cmd)
       } else if (cmd.type === 'unlink_confirm') {
         await processUnlinkConfirm(cmd)
+      } else if (cmd.type === 'rename_device') {
+        await processRenameDevice(cmd)
       }
     } catch (err) {
       console.error('[processCommands] Failed to process command:', cmd.type, err)
@@ -95,19 +113,22 @@ async function processCommands(commands: SyncCommand[]): Promise<void> {
   }
 }
 
-async function processUnlinkDevice(cmd: SyncUnlinkCommand): Promise<void> {
-  const rawInstall = await settingsRepository.get('installation_id')
-  if (!rawInstall) return
+async function processRenameDevice(cmd: SyncRenameCommand): Promise<void> {
+  const ownId = await getOwnInstallationId()
+  if (!ownId) return
 
-  let ownId: string
-  try {
-    const parsed = typeof rawInstall === 'object'
-      ? (rawInstall as { id: string })
-      : JSON.parse(String(rawInstall)) as { id: string }
-    ownId = parsed.id
-  } catch {
-    return
+  if (cmd.target_installation_id === ownId) {
+    await settingsRepository.set('device_name', cmd.name)
+    console.log('[processRenameDevice] Renamed self to', cmd.name)
+  } else {
+    await linkedDeviceRepository.rename(cmd.target_installation_id, cmd.name)
+    console.log('[processRenameDevice] Renamed peer', cmd.target_installation_id, 'to', cmd.name)
   }
+}
+
+async function processUnlinkDevice(cmd: SyncUnlinkCommand): Promise<void> {
+  const ownId = await getOwnInstallationId()
+  if (!ownId) return
 
   if (cmd.target_installation_id === ownId) {
     const initiator = await linkedDeviceRepository.findById(cmd.initiator_id)

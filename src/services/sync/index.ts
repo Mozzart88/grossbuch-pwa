@@ -13,23 +13,32 @@ import {
 } from './syncRepository'
 import * as syncApi from './syncApi'
 import { syncSingleRate } from '../exchangeRate/exchangeRateSync'
+import { readInstallationData } from './installationData'
 import type { ImportResult, SyncPackage } from './syncTypes'
+import type { InstallationData } from './installationData'
 
-interface InstallationData {
-  id: string
-  jwt?: string
-}
+export type { InstallationData } from './installationData'
 
+/**
+ * Reads installation identity, lazily migrating the legacy `{ id, jwt }` blob into the
+ * split `installation_id`/`jwt`/`device_name` settings keys on first read after an
+ * upgrade. When that migration just happened and this installation already has linked
+ * peers, propagates the guessed name to them — they previously had no way to learn it,
+ * since old handshakes carried no name.
+ */
 export async function getInstallationData(): Promise<InstallationData | null> {
-  const raw = await settingsRepository.get('installation_id')
-  if (!raw) return null
-  if (typeof raw === 'object')
-    return raw
-  try {
-    return JSON.parse(String(raw))
-  } catch {
-    return null
+  const result = await readInstallationData()
+  if (!result) return null
+
+  if (result.migrated) {
+    try {
+      await sendRenameCommand(result.data.id, result.data.device_name!)
+    } catch (err) {
+      console.warn('[getInstallationData] Failed to propagate initialized device name:', err)
+    }
   }
+
+  return result.data
 }
 
 export async function getPrivateKey(): Promise<string | null> {
@@ -39,11 +48,11 @@ export async function getPrivateKey(): Promise<string | null> {
   return row?.value ?? null
 }
 
-export async function getLinkedInstallations(): Promise<Array<{ installation_id: string; public_key: string }>> {
+export async function getLinkedInstallations(): Promise<Array<{ installation_id: string; public_key: string; name: string }>> {
   const devices = await linkedDeviceRepository.findAll()
   return devices
     .filter(d => d.public_key.length > 0)
-    .map(d => ({ installation_id: d.id, public_key: d.public_key }))
+    .map(d => ({ installation_id: d.id, public_key: d.public_key, name: d.name }))
 }
 
 interface PushSyncOptions {
@@ -265,6 +274,42 @@ export async function sendUnlinkConfirmation(
 
   const encrypted = await encryptSyncPackage(pkg, [{ installation_id: initiatorId, public_key: initiatorPublicKey }])
   await syncApi.push({ package: encrypted }, jwt)
+}
+
+/**
+ * Send a rename command to all linked devices for the given target (self or a peer).
+ * Applies optimistically on the caller's side before this is invoked — no confirm round-trip.
+ */
+export async function sendRenameCommand(targetId: string, name: string): Promise<void> {
+  const installData = await getInstallationData()
+  if (!installData?.jwt || !installData.id) return
+
+  const allRecipients = await getLinkedInstallations()
+  if (allRecipients.length === 0) return
+
+  const pkg: SyncPackage = {
+    version: 2,
+    sender_id: installData.id,
+    created_at: Math.floor(Date.now() / 1000),
+    since: 0,
+    icons: [],
+    tags: [],
+    wallets: [],
+    accounts: [],
+    counterparties: [],
+    currencies: [],
+    transactions: [],
+    budgets: [],
+    deletions: [],
+    commands: [{
+      type: 'rename_device',
+      target_installation_id: targetId,
+      name,
+    }],
+  }
+
+  const encrypted = await encryptSyncPackage(pkg, allRecipients)
+  await syncApi.push({ package: encrypted }, installData.jwt)
 }
 
 export type { ImportResult } from './syncTypes'

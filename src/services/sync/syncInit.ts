@@ -19,7 +19,7 @@ export async function sendInit(targetUuid: string, targetPublicKey: string): Pro
     throw new Error('No public key available')
   }
 
-  const toEncrypt = JSON.stringify({ uuid: installData.id })
+  const toEncrypt = JSON.stringify({ uuid: installData.id, device_name: installData.device_name })
   const encrypted = await rsaEncrypt(
     new TextEncoder().encode(toEncrypt).buffer as ArrayBuffer,
     targetPublicKey
@@ -72,9 +72,10 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
         base64UrlToArrayBuffer(msg),
         privateKey
       )
-      const { uuid, intro } = JSON.parse(new TextDecoder().decode(decrypted)) as {
+      const { uuid, intro, device_name } = JSON.parse(new TextDecoder().decode(decrypted)) as {
         uuid: string
         intro?: boolean
+        device_name?: string
       }
 
       // Skip if already linked — just ack the package
@@ -84,7 +85,7 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
       }
 
       // Save as linked installation (always — needed for future incremental pushes)
-      await saveLinkedInstallation(uuid, publicKey)
+      await saveLinkedInstallation(uuid, publicKey, device_name)
       alreadyLinked.add(uuid)
       newDevices.push(uuid)
 
@@ -119,7 +120,7 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
           try {
             // Tell existing device about the new device
             const encForExisting = await rsaEncrypt(
-              new TextEncoder().encode(JSON.stringify({ uuid, intro: true })).buffer as ArrayBuffer,
+              new TextEncoder().encode(JSON.stringify({ uuid, intro: true, device_name })).buffer as ArrayBuffer,
               device.public_key
             )
             await syncApi.postInit(
@@ -129,7 +130,7 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
 
             // Tell new device about the existing device
             const encForNew = await rsaEncrypt(
-              new TextEncoder().encode(JSON.stringify({ uuid: device.installation_id, intro: true })).buffer as ArrayBuffer,
+              new TextEncoder().encode(JSON.stringify({ uuid: device.installation_id, intro: true, device_name: device.name })).buffer as ArrayBuffer,
               publicKey
             )
             await syncApi.postInit(

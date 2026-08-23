@@ -16,11 +16,9 @@ vi.mock('../../../services/sync/syncInit', () => ({
   pollAndProcessInit: vi.fn().mockResolvedValue({ newDevices: [], done: false }),
 }))
 
-// Mock settingsRepository
-vi.mock('../../../services/repositories', () => ({
-  settingsRepository: {
-    get: vi.fn(),
-  },
+// Mock sync (getInstallationData)
+vi.mock('../../../services/sync', () => ({
+  getInstallationData: vi.fn(),
 }))
 
 // Mock authService
@@ -28,10 +26,10 @@ vi.mock('../../../services/auth/authService', () => ({
   getPublicKey: vi.fn(),
 }))
 
-import { settingsRepository } from '../../../services/repositories'
+import { getInstallationData } from '../../../services/sync'
 import { getPublicKey } from '../../../services/auth/authService'
 
-const mockSettingsGet = vi.mocked(settingsRepository.get)
+const mockGetInstallationData = vi.mocked(getInstallationData)
 const mockGetPublicKey = vi.mocked(getPublicKey)
 
 // Mock QRCodeSVG
@@ -62,21 +60,21 @@ describe('SharePage', () => {
 
   describe('Loading state', () => {
     it('shows spinner while loading', () => {
-      mockSettingsGet.mockImplementation(() => new Promise(() => { })) // never resolves
+      mockGetInstallationData.mockImplementation(() => new Promise(() => { })) // never resolves
       const { container } = renderPage()
       expect(container.querySelector('.animate-spin')).toBeTruthy()
     })
 
     it('shows page header with back button while loading', () => {
-      mockSettingsGet.mockImplementation(() => new Promise(() => { }))
+      mockGetInstallationData.mockImplementation(() => new Promise(() => { }))
       renderPage()
       expect(screen.getByText('Share')).toBeInTheDocument()
     })
   })
 
   describe('Not registered state', () => {
-    it('shows registration not complete message when no installation_id', async () => {
-      mockSettingsGet.mockResolvedValue(null)
+    it('shows registration not complete message when no installation data', async () => {
+      mockGetInstallationData.mockResolvedValue(null)
       renderPage()
 
       await waitFor(() => {
@@ -84,8 +82,8 @@ describe('SharePage', () => {
       })
     })
 
-    it('shows registration not complete when installation_id has no id field', async () => {
-      mockSettingsGet.mockResolvedValue(JSON.stringify({}) as never)
+    it('shows registration not complete when installation data has no id field', async () => {
+      mockGetInstallationData.mockResolvedValue({} as never)
       renderPage()
 
       await waitFor(() => {
@@ -95,10 +93,8 @@ describe('SharePage', () => {
   })
 
   describe('Registered state', () => {
-    const installationData = JSON.stringify({ id: 'test-uuid-123', jwt: 'some-jwt' })
-
     beforeEach(() => {
-      mockSettingsGet.mockResolvedValue(installationData as never)
+      mockGetInstallationData.mockResolvedValue({ id: 'test-uuid-123', jwt: 'some-jwt' })
       mockGetPublicKey.mockResolvedValue('test-public-key-base64url')
     })
 
@@ -272,9 +268,9 @@ describe('SharePage', () => {
   })
 
   describe('Error handling', () => {
-    it('handles settingsRepository.get failure', async () => {
+    it('handles getInstallationData failure', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => { })
-      mockSettingsGet.mockRejectedValue(new Error('DB error'))
+      mockGetInstallationData.mockRejectedValue(new Error('DB error'))
 
       renderPage()
 
