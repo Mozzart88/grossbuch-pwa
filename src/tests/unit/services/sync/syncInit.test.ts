@@ -14,11 +14,13 @@ const mockGetInstallationData = vi.fn()
 const mockGetPrivateKey = vi.fn()
 const mockGetLinkedInstallations = vi.fn()
 const mockPushSync = vi.fn()
+const mockSendRenameCommand = vi.fn()
 vi.mock('../../../../services/sync/index', () => ({
   getInstallationData: () => mockGetInstallationData(),
   getPrivateKey: () => mockGetPrivateKey(),
   getLinkedInstallations: () => mockGetLinkedInstallations(),
   pushSync: (...args: unknown[]) => mockPushSync(...args),
+  sendRenameCommand: (...args: unknown[]) => mockSendRenameCommand(...args),
 }))
 
 const mockGetPublicKey = vi.fn()
@@ -47,11 +49,12 @@ const { sendInit, pollAndProcessInit } = await import('../../../../services/sync
 describe('syncInit', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSendRenameCommand.mockResolvedValue(undefined)
   })
 
   describe('sendInit', () => {
-    it('encrypts own uuid+publicKey and posts to target', async () => {
-      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' })
+    it('encrypts own uuid+publicKey+device_name and posts to target', async () => {
+      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt', device_name: 'My Mac' })
       mockGetPublicKey.mockResolvedValue('my-public-key')
       mockRsaEncrypt.mockResolvedValue(new ArrayBuffer(32))
       mockArrayBufferToBase64Url.mockReturnValue('encrypted-base64')
@@ -62,9 +65,9 @@ describe('syncInit', () => {
       expect(mockRsaEncrypt).toHaveBeenCalledTimes(1)
       const [encryptedData, pubKey] = mockRsaEncrypt.mock.calls[0]
       expect(pubKey).toBe('target-public-key')
-      // Verify the payload contains our uuid and publicKey
+      // Verify the payload contains our uuid, publicKey, and device_name
       const payloadStr = new TextDecoder().decode(new Uint8Array(encryptedData))
-      expect(JSON.parse(payloadStr)).toEqual({ uuid: 'my-uuid' })
+      expect(JSON.parse(payloadStr)).toEqual({ uuid: 'my-uuid', device_name: 'My Mac' })
 
       // Verify the encrypted result was base64url encoded
       expect(mockArrayBufferToBase64Url).toHaveBeenCalledWith(new ArrayBuffer(32))
@@ -137,10 +140,10 @@ describe('syncInit', () => {
     })
 
     it('processes init packages: decrypt, save, push, introduce, delete', async () => {
-      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' })
+      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt', device_name: 'My Laptop' })
       mockGetPrivateKey.mockResolvedValue('my-private-key')
 
-      const payloadJson = JSON.stringify({ uuid: 'new-device' })
+      const payloadJson = JSON.stringify({ uuid: 'new-device', device_name: 'New Phone' })
       const publicKey = 'new-pub-key'
       const decryptedBuffer = new TextEncoder().encode(payloadJson).buffer
       const payload = JSON.stringify({
@@ -167,14 +170,60 @@ describe('syncInit', () => {
         'my-private-key'
       )
 
-      // Verify linked installation was saved
-      expect(mockSaveLinkedInstallation).toHaveBeenCalledWith('new-device', 'new-pub-key')
+      // Verify linked installation was saved with the device's name
+      expect(mockSaveLinkedInstallation).toHaveBeenCalledWith('new-device', 'new-pub-key', 'New Phone')
 
       // Verify full push to new device
       expect(mockPushSync).toHaveBeenCalledWith({ targetUuid: 'new-device' })
 
+      // Verify our own name is sent back to the new device — it only learned our
+      // uuid+publicKey from the share link, never our device_name (bug: inviter
+      // showed as "Unnamed device" on the invitee)
+      expect(mockSendRenameCommand).toHaveBeenCalledWith('my-uuid', 'My Laptop')
+
       // Verify acknowledgment
       expect(mockDeleteInit).toHaveBeenCalledWith({ ids: [1], uuid: 'my-uuid' }, 'my-jwt')
+    })
+
+    it('does not send a self-rename command when this device has no device_name yet', async () => {
+      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' }) // no device_name
+      mockGetPrivateKey.mockResolvedValue('my-private-key')
+
+      const payloadJson = JSON.stringify({ uuid: 'new-device', device_name: 'New Phone' })
+      const payload = JSON.stringify({ msg: 'enc-payload', publicKey: 'new-pub-key' })
+
+      mockGetInit.mockResolvedValue([
+        { id: 1, uuid: 'new-device', payload, created_at: '2026-01-01' },
+      ])
+      mockBase64UrlToArrayBuffer.mockReturnValue(new ArrayBuffer(32))
+      mockRsaDecrypt.mockResolvedValue(new TextEncoder().encode(payloadJson).buffer)
+      mockPushSync.mockResolvedValue(true)
+      mockGetLinkedInstallations.mockResolvedValue([])
+      mockGetPublicKey.mockResolvedValue('my-public-key')
+
+      await pollAndProcessInit()
+
+      expect(mockSendRenameCommand).not.toHaveBeenCalled()
+    })
+
+    it('does not send a self-rename command for intro (mesh-relayed) packages', async () => {
+      mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt', device_name: 'My Laptop' })
+      mockGetPrivateKey.mockResolvedValue('my-private-key')
+
+      const payloadJson = JSON.stringify({ uuid: 'device-c', intro: true, device_name: 'Device C' })
+      const payload = JSON.stringify({ msg: 'enc-payload', publicKey: 'device-c-pub-key' })
+
+      mockGetInit.mockResolvedValue([
+        { id: 5, uuid: 'device-c', payload, created_at: '2026-01-01' },
+      ])
+      mockBase64UrlToArrayBuffer.mockReturnValue(new ArrayBuffer(32))
+      mockRsaDecrypt.mockResolvedValue(new TextEncoder().encode(payloadJson).buffer)
+      mockGetLinkedInstallations.mockResolvedValue([])
+      mockGetPublicKey.mockResolvedValue('my-public-key')
+
+      await pollAndProcessInit()
+
+      expect(mockSendRenameCommand).not.toHaveBeenCalled()
     })
 
     it('continues when pushSync fails for new device', async () => {
@@ -302,7 +351,7 @@ describe('syncInit', () => {
       mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' })
       mockGetPrivateKey.mockResolvedValue('my-private-key')
 
-      const payloadJson = JSON.stringify({ uuid: 'device-c', intro: true })
+      const payloadJson = JSON.stringify({ uuid: 'device-c', intro: true, device_name: 'Device C' })
       const publicKey = 'device-c-pub-key'
       const decryptedBuffer = new TextEncoder().encode(payloadJson).buffer
       const payload = JSON.stringify({ msg: 'enc-payload', publicKey })
@@ -317,7 +366,7 @@ describe('syncInit', () => {
 
       const result = await pollAndProcessInit()
 
-      expect(mockSaveLinkedInstallation).toHaveBeenCalledWith('device-c', 'device-c-pub-key')
+      expect(mockSaveLinkedInstallation).toHaveBeenCalledWith('device-c', 'device-c-pub-key', 'Device C')
       expect(mockPushSync).not.toHaveBeenCalled()
       expect(mockPostInit).not.toHaveBeenCalled()
       expect(mockDeleteInit).toHaveBeenCalledWith({ ids: [5], uuid: 'my-uuid' }, 'my-jwt')
@@ -328,7 +377,7 @@ describe('syncInit', () => {
       mockGetInstallationData.mockResolvedValue({ id: 'my-uuid', jwt: 'my-jwt' })
       mockGetPrivateKey.mockResolvedValue('my-private-key')
 
-      const payloadJson = JSON.stringify({ uuid: 'new-device' })
+      const payloadJson = JSON.stringify({ uuid: 'new-device', device_name: 'New Phone' })
       const publicKey = 'new-pub-key'
       const decryptedBuffer = new TextEncoder().encode(payloadJson).buffer
       const payload = JSON.stringify({
@@ -346,11 +395,11 @@ describe('syncInit', () => {
       // Second call: after saveLinkedInstallation (both devices linked)
       mockGetLinkedInstallations
         .mockResolvedValueOnce([
-          { installation_id: 'existing-device', public_key: 'existing-pub-key' },
+          { installation_id: 'existing-device', public_key: 'existing-pub-key', name: 'Existing Laptop' },
         ])
         .mockResolvedValue([
-          { installation_id: 'new-device', public_key: 'new-pub-key' },
-          { installation_id: 'existing-device', public_key: 'existing-pub-key' },
+          { installation_id: 'new-device', public_key: 'new-pub-key', name: 'New Phone' },
+          { installation_id: 'existing-device', public_key: 'existing-pub-key', name: 'Existing Laptop' },
         ])
       mockGetPublicKey.mockResolvedValue('my-public-key')
       mockRsaEncrypt.mockResolvedValue(new ArrayBuffer(32))
@@ -370,6 +419,12 @@ describe('syncInit', () => {
         { uuid: 'new-device', payload: JSON.stringify({ msg: 'intro-encrypted', publicKey: 'existing-pub-key' }) },
         'my-jwt'
       )
+
+      // The plaintext handed to rsaEncrypt (before mocking swallows it) must carry
+      // device_name so 3+ device topologies don't show "Unnamed device" for indirect peers
+      const plaintexts = mockRsaEncrypt.mock.calls.map(([data]) => JSON.parse(new TextDecoder().decode(new Uint8Array(data as ArrayBuffer))))
+      expect(plaintexts).toContainEqual({ uuid: 'new-device', intro: true, device_name: 'New Phone' })
+      expect(plaintexts).toContainEqual({ uuid: 'existing-device', intro: true, device_name: 'Existing Laptop' })
     })
   })
 })

@@ -26,11 +26,13 @@ vi.mock('../../../../services/repositories/settingsRepository', () => ({
 
 const mockLinkedDeviceFindById = vi.fn()
 const mockLinkedDeviceRemove = vi.fn()
+const mockLinkedDeviceRename = vi.fn()
 
 vi.mock('../../../../services/repositories/linkedDeviceRepository', () => ({
   linkedDeviceRepository: {
     findById: (...args: unknown[]) => mockLinkedDeviceFindById(...args),
     remove: (...args: unknown[]) => mockLinkedDeviceRemove(...args),
+    rename: (...args: unknown[]) => mockLinkedDeviceRename(...args),
   },
 }))
 
@@ -783,6 +785,7 @@ describe('syncImport', () => {
       mockSettingsDelete.mockResolvedValue(undefined)
       mockLinkedDeviceFindById.mockResolvedValue(null)
       mockLinkedDeviceRemove.mockResolvedValue(undefined)
+      mockLinkedDeviceRename.mockResolvedValue(undefined)
     })
 
     it('does nothing when commands array is absent', async () => {
@@ -974,8 +977,56 @@ describe('syncImport', () => {
       })
     })
 
+    describe('rename_device command', () => {
+      it('updates local device_name when target is self', async () => {
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID, jwt: 'token' }))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'rename_device' as const, target_installation_id: OWN_ID, name: 'New Self Name' }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).toHaveBeenCalledWith('device_name', 'New Self Name')
+        expect(mockLinkedDeviceRename).not.toHaveBeenCalled()
+      })
+
+      it('renames the peer in linked_device when target is not self', async () => {
+        mockSettingsGet.mockImplementation((key: string) => {
+          if (key === 'installation_id') return Promise.resolve(JSON.stringify({ id: OWN_ID }))
+          return Promise.resolve(null)
+        })
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'rename_device' as const, target_installation_id: OTHER_ID, name: 'New Peer Name' }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockLinkedDeviceRename).toHaveBeenCalledWith(OTHER_ID, 'New Peer Name')
+        expect(mockSettingsSet).not.toHaveBeenCalledWith('device_name', expect.anything())
+      })
+
+      it('returns early when own installation_id is not found', async () => {
+        mockSettingsGet.mockResolvedValue(null)
+
+        const pkg = {
+          ...emptyPackage(),
+          commands: [{ type: 'rename_device' as const, target_installation_id: OWN_ID, name: 'New Name' }],
+        }
+        await importSyncPackage(pkg)
+
+        expect(mockSettingsSet).not.toHaveBeenCalled()
+        expect(mockLinkedDeviceRename).not.toHaveBeenCalled()
+      })
+    })
+
     it('continues processing other commands after one fails', async () => {
-      // First command fails due to JSON parse error in installation_id
+      // First command no-ops: own id ('not-json', treated as an already-split plain id)
+      // doesn't match OWN_ID as target, and the peer lookup for it returns null
       mockSettingsGet.mockImplementation((key: string) => {
         if (key === 'installation_id') return Promise.resolve('not-json')
         return Promise.resolve(null)

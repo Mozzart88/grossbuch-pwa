@@ -97,6 +97,17 @@ describe('linkedDeviceRepository', () => {
     })
   })
 
+  describe('rename', () => {
+    it('updates the name for the given id', async () => {
+      await linkedDeviceRepository.rename('device-1', 'New Name')
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE linked_device SET name = ? WHERE id = ?'),
+        ['New Name', 'device-1']
+      )
+    })
+  })
+
   describe('remove', () => {
     it('deletes the device by id', async () => {
       await linkedDeviceRepository.remove('device-1')

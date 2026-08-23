@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, Spinner } from '../components/ui'
-import { settingsRepository } from '../services/repositories'
+import { getInstallationData } from '../services/sync'
 import { getPublicKey } from '../services/auth/authService'
 import { useSharePageInitPolling } from '../hooks/useSyncInit'
 
@@ -18,17 +18,14 @@ export function SharePage() {
 
   const loadInstallationId = async () => {
     try {
-      const existing = await settingsRepository.get('installation_id')
-      if (existing) {
-        const parsed = typeof existing === 'string' ? JSON.parse(existing) : existing
-        if (parsed.id) {
-          const pubKey = await getPublicKey()
-          let url = `${window.location.origin}/share?uuid=${parsed.id}`
-          if (pubKey) {
-            url += `&pub=${pubKey}`
-          }
-          setShareUrl(url)
+      const existing = await getInstallationData()
+      if (existing?.id) {
+        const pubKey = await getPublicKey()
+        let url = `${window.location.origin}/share?uuid=${existing.id}`
+        if (pubKey) {
+          url += `&pub=${pubKey}`
         }
+        setShareUrl(url)
       }
     } catch (error) {
       console.error('Failed to load installation ID:', error)

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
-import { Button, Card, useToast } from '../components/ui'
+import { Button, Card, LinkedDeviceCard, useToast } from '../components/ui'
 import { settingsRepository, linkedDeviceRepository, type LinkedDevice } from '../services/repositories'
 import { onDbWrite } from '../services/database/connection'
-import { sendUnlinkCommand } from '../services/sync'
+import { getInstallationData, sendRenameCommand, sendUnlinkCommand } from '../services/sync'
 
 interface PendingRequest {
   target_id: string
@@ -11,8 +11,14 @@ interface PendingRequest {
   keep_data: boolean
 }
 
+interface SelfDevice {
+  id: string
+  name: string
+}
+
 export function LinkedDevicesPage() {
   const { showToast } = useToast()
+  const [selfDevice, setSelfDevice] = useState<SelfDevice | null>(null)
   const [devices, setDevices] = useState<LinkedDevice[]>([])
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -21,14 +27,17 @@ export function LinkedDevicesPage() {
 
   const loadInstallations = useCallback(async () => {
     try {
-      const [linkedDevices, rawPending] = await Promise.all([
+      const [installData, linkedDevices, rawPending] = await Promise.all([
+        getInstallationData(),
         linkedDeviceRepository.findAll(),
         settingsRepository.get('pending_unlink_requests'),
       ])
+      setSelfDevice(installData ? { id: installData.id, name: installData.device_name || 'This device' } : null)
       setDevices(linkedDevices)
       setPendingRequests(rawPending ? (JSON.parse(rawPending) as PendingRequest[]) : [])
     } catch (error) {
       console.error('Failed to load linked installations:', error)
+      setSelfDevice(null)
       setDevices([])
       setPendingRequests([])
     } finally {
@@ -43,6 +52,41 @@ export function LinkedDevicesPage() {
   useEffect(() => {
     return onDbWrite(() => { void loadInstallations() })
   }, [loadInstallations])
+
+  const handleRenameSelf = async (name: string) => {
+    if (!selfDevice) return
+    try {
+      await settingsRepository.set('device_name', name)
+      setSelfDevice({ ...selfDevice, name })
+    } catch (error) {
+      console.error('Failed to rename this device:', error)
+      showToast('Failed to rename this device', 'error')
+      throw error // keep the rename modal open so the user can retry
+    }
+    try {
+      await sendRenameCommand(selfDevice.id, name)
+    } catch (error) {
+      console.error('Failed to send rename command:', error)
+      showToast('Renamed locally, but failed to notify linked devices', 'error')
+    }
+  }
+
+  const handleRenamePeer = async (id: string, name: string) => {
+    try {
+      await linkedDeviceRepository.rename(id, name)
+      setDevices(prev => prev.map(d => (d.id === id ? { ...d, name } : d)))
+    } catch (error) {
+      console.error('Failed to rename device:', error)
+      showToast('Failed to rename device', 'error')
+      throw error // keep the rename modal open so the user can retry
+    }
+    try {
+      await sendRenameCommand(id, name)
+    } catch (error) {
+      console.error('Failed to send rename command:', error)
+      showToast('Renamed locally, but failed to notify linked devices', 'error')
+    }
+  }
 
   const handleUnlinkConfirm = async (keepData: boolean) => {
     if (!unlinkDialogId) return
@@ -101,52 +145,49 @@ export function LinkedDevicesPage() {
       <div className="p-4 space-y-4">
         {loading ? (
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">Loading...</p>
-        ) : devices.length === 0 ? (
-          <Card className="p-6">
-            <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-              No linked devices. Use the Share feature to pair another device.
-            </p>
-          </Card>
         ) : (
-          <Card className="divide-y divide-gray-200 dark:divide-gray-700">
-            {devices.map(({ id, name }) => {
-              const isPending = pendingRequests.some(p => p.target_id === id)
-              return (
-                <div key={id} className="flex items-center justify-between p-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {name}
-                    </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 font-mono">
-                      {id.slice(0, 8)}…
-                    </p>
-                    {isPending && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        Waiting for confirmation…
-                      </p>
-                    )}
-                  </div>
-                  {isPending ? (
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => handleForceUnlink(id)}
-                    >
-                      Force Unlink
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="danger"
-                      onClick={() => setUnlinkDialogId(id)}
-                      disabled={unlinkInProgress === id}
-                    >
-                      {unlinkInProgress === id ? 'Sending…' : 'Unlink'}
-                    </Button>
-                  )}
-                </div>
-              )
-            })}
-          </Card>
+          <>
+            {selfDevice && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                  This Device
+                </h3>
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                  <LinkedDeviceCard
+                    name={selfDevice.name}
+                    installationId={selfDevice.id}
+                    onRename={handleRenameSelf}
+                  />
+                </Card>
+              </div>
+            )}
+
+            {devices.length === 0 ? (
+              <Card className="p-6">
+                <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                  No linked devices. Use the Share feature to pair another device.
+                </p>
+              </Card>
+            ) : (
+              <Card className="divide-y divide-gray-200 dark:divide-gray-700">
+                {devices.map(({ id, name }) => {
+                  const isPending = pendingRequests.some(p => p.target_id === id)
+                  return (
+                    <LinkedDeviceCard
+                      key={id}
+                      name={name}
+                      installationId={id}
+                      subtitle={isPending ? 'Waiting for confirmation…' : undefined}
+                      onRename={(newName) => handleRenamePeer(id, newName)}
+                      onUnlink={isPending ? () => handleForceUnlink(id) : () => setUnlinkDialogId(id)}
+                      unlinkLabel={isPending ? 'Force Unlink' : 'Unlink'}
+                      unlinkDisabled={unlinkInProgress === id}
+                    />
+                  )
+                })}
+              </Card>
+            )}
+          </>
         )}
       </div>
 

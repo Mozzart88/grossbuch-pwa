@@ -168,7 +168,13 @@ export interface SyncUnlinkConfirmCommand {
   target_installation_id: string
 }
 
-export type SyncCommand = SyncUnlinkCommand | SyncUnlinkConfirmCommand
+export interface SyncRenameCommand {
+  type: 'rename_device'
+  target_installation_id: string
+  name: string
+}
+
+export type SyncCommand = SyncUnlinkCommand | SyncUnlinkConfirmCommand | SyncRenameCommand
 
 // ======= Encrypted Package =======
 
