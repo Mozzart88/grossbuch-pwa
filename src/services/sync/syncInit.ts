@@ -1,7 +1,7 @@
 import { rsaEncrypt, rsaDecrypt, arrayBufferToBase64Url, base64UrlToArrayBuffer } from '../auth/crypto'
 import { getPublicKey } from '../auth/authService'
 import { saveLinkedInstallation } from '../installation/installationStore'
-import { getInstallationData, getPrivateKey, getLinkedInstallations, pushSync } from './index'
+import { getInstallationData, getPrivateKey, getLinkedInstallations, pushSync, sendRenameCommand } from './index'
 import * as syncApi from './syncApi'
 
 /**
@@ -139,6 +139,18 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
             )
           } catch (err) {
             console.warn('[pollAndProcessInit] Introduction failed for device:', device.installation_id, err)
+          }
+        }
+
+        // The new device learned our uuid+publicKey directly from the share link,
+        // which carries no name — the direct init handshake only flows new-device
+        // → us. Tell it (and any other already-linked peers, redundant but
+        // harmless) our own name via the rename channel.
+        if (installData.device_name) {
+          try {
+            await sendRenameCommand(installData.id, installData.device_name)
+          } catch (err) {
+            console.warn('[pollAndProcessInit] Failed to send own name to new device:', err)
           }
         }
       }
