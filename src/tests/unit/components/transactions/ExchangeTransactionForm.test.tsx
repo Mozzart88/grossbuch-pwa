@@ -194,6 +194,7 @@ describe('ExchangeTransactionForm', () => {
     })
   })
 
+
   it('populates fields from initialData', () => {
     const initialData: Transaction = {
       id: new Uint8Array(8),

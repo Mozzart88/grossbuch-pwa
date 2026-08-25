@@ -148,6 +148,21 @@ describe('transactionRepository', () => {
         expect.anything()
       )
     })
+
+    it('selects the goal_name and goal_id columns so goal transfers are identifiable in the main list', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByMonth('2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('a.goal_name as goal_name'),
+        expect.anything()
+      )
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('a.goal_id as goal_id'),
+        expect.anything()
+      )
+    })
   })
 
   describe('findByMonthFiltered', () => {
@@ -1405,6 +1420,45 @@ describe('transactionRepository', () => {
       const call = mockQuerySQL.mock.calls[0]
       expect(call![0]).not.toContain('tag_id NOT IN')
       expect(call![0]).not.toContain("tags NOT LIKE '%initial%'")
+    })
+
+    it('selects the goal_name and goal_id columns', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByAccountAndMonth(1, '2025-01')
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('a.goal_name as goal_name'),
+        expect.anything()
+      )
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('a.goal_id as goal_id'),
+        expect.anything()
+      )
+    })
+  })
+
+  describe('findByAccountIds', () => {
+    it('returns empty array without querying when no account ids are given', async () => {
+      const result = await transactionRepository.findByAccountIds([])
+
+      expect(result).toEqual([])
+      expect(mockQuerySQL).not.toHaveBeenCalled()
+    })
+
+    it('selects the goal_name and goal_id columns', async () => {
+      mockQuerySQL.mockResolvedValue([])
+
+      await transactionRepository.findByAccountIds([1, 2])
+
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('a.goal_name as goal_name'),
+        expect.anything()
+      )
+      expect(mockQuerySQL).toHaveBeenCalledWith(
+        expect.stringContaining('a.goal_id as goal_id'),
+        expect.anything()
+      )
     })
   })
 

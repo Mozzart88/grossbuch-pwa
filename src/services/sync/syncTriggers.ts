@@ -207,6 +207,49 @@ BEGIN
   WHERE account.id = OLD.account_id;
 END`,
   },
+  {
+    schema: 'workspace', name: 'trg_goal_insert', sql: `
+AFTER INSERT ON goal
+FOR EACH ROW
+BEGIN
+  UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.id;
+END`,
+  },
+  {
+    schema: 'workspace', name: 'trg_goal_update', sql: `
+AFTER UPDATE OF name, target_int, target_frac, due_date ON goal
+FOR EACH ROW
+BEGIN
+  UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.id;
+END`,
+  },
+  // goal_note (workspace) — a note edit bumps the owning goal's own
+  // updated_at too, so sync replaces the note wholesale gated by the goal
+  // row's single LWW timestamp (see workspaceMigrations.ts).
+  {
+    schema: 'workspace', name: 'trg_goal_note_insert', sql: `
+AFTER INSERT ON goal_note
+FOR EACH ROW
+BEGIN
+  UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.goal_id;
+END`,
+  },
+  {
+    schema: 'workspace', name: 'trg_goal_note_update', sql: `
+AFTER UPDATE ON goal_note
+FOR EACH ROW
+BEGIN
+  UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.goal_id;
+END`,
+  },
+  {
+    schema: 'workspace', name: 'trg_goal_note_delete', sql: `
+AFTER DELETE ON goal_note
+FOR EACH ROW
+BEGIN
+  UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = OLD.goal_id;
+END`,
+  },
   // Counterparty (shared)
   {
     schema: 'shared', name: 'trg_counterparty_update', sql: `

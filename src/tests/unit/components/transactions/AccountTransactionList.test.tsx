@@ -420,6 +420,27 @@ describe('AccountTransactionList', () => {
 
       expect(mockNavigate).toHaveBeenCalledWith('/transaction/0102030405060708')
     })
+
+    it('navigates to the goal Put/Take edit page when the row is a goal transfer', async () => {
+      const today = toLocalISOString().slice(0, 10)
+      const transactions = [createMockTransaction({
+        date_time: `${today} 10:30:00`,
+        goal_id: 'aabbccdd',
+        counterparty: null,
+      })]
+      vi.mocked(transactionRepository.findByAccountAndMonth).mockResolvedValue(transactions)
+      vi.mocked(transactionRepository.getAccountDaySummary).mockResolvedValue(-50)
+
+      renderComponent()
+
+      await waitFor(() => {
+        expect(screen.getByText('Main Wallet')).toBeInTheDocument()
+      })
+
+      fireEvent.click(screen.getByText('Main Wallet'))
+
+      expect(mockNavigate).toHaveBeenCalledWith('/goals/aabbccdd/put-take/0102030405060708')
+    })
   })
 
   describe('Month sync with initialMonth prop', () => {

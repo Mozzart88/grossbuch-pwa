@@ -7,7 +7,7 @@ import { formatCurrencyValue } from '../../../utils/formatters'
 
 vi.mock('../../../services/repositories')
 // Import after mock
-import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../../../services/repositories'
+import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository, goalRepository } from '../../../services/repositories'
 
 // Spy on (while preserving) the real rollup implementations so tests can
 // assert on how often they're invoked, without changing observed behavior.
@@ -27,6 +27,7 @@ const mockCurrencyRepository = vi.mocked(currencyRepository)
 const mockAccountRepository = vi.mocked(accountRepository)
 const mockBudgetRepository = vi.mocked(budgetRepository)
 const mockTagRepository = vi.mocked(tagRepository)
+const mockGoalRepository = vi.mocked(goalRepository)
 
 // Mock dateUtils
 vi.mock('../../../utils/dateUtils', () => ({
@@ -168,6 +169,7 @@ describe('SummariesPage', () => {
           ]
     ))
     mockTagRepository.getHierarchy?.mockResolvedValue([])
+    mockGoalRepository.findActive.mockResolvedValue([])
   })
 
   describe('Page structure', () => {
@@ -1129,6 +1131,91 @@ describe('SummariesPage', () => {
       await waitFor(() => {
         const amountInput = screen.getByLabelText(/Budget Amount/) as HTMLInputElement
         expect(amountInput.value).toBe((300).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      })
+    })
+
+    it('pre-fills the aggregate Savings "Set budget" amount with the sum of active due-dated goal contributions', async () => {
+      // Due this month -> months remaining floors to 1, deterministic regardless of today's date.
+      const dueThisMonth = (() => {
+        const now = new Date()
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      })()
+      mockGoalRepository.findActive.mockResolvedValue([
+        { id: new Uint8Array([1]), wallet_id: 10, name: 'Travel', color: null, currency_id: 1, currency: 'USD', symbol: '$', decimal_places: 2, balance: 200, target_int: 1200, target_frac: 0, due_date: dueThisMonth, updated_at: 0, is_achieved: false, is_archived: false },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
+        { tag_id: 21, tag: 'Savings', amount: 999, type: 'expense' },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdownFlat.mockResolvedValue([
+        { tag_id: 1, tag: 'Food', amount: 300, type: 'expense' },
+        { tag_id: 21, tag: 'Savings', amount: 999, type: 'expense' },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Savings')).toBeInTheDocument()
+      })
+
+      const savingsCard = screen.getByText('Savings').closest('div')!.parentElement!
+      const dropdownButton = within(savingsCard).getAllByRole('button').find(b => b.getAttribute('aria-haspopup') === 'menu')!
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Set budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Set budget' }))
+
+      await waitFor(() => {
+        const amountInput = screen.getByLabelText(/Budget Amount/) as HTMLInputElement
+        // (1200 - 200) / 1 month = 1000 -- not the category's actual amount (999)
+        expect(amountInput.value).toBe((1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+      })
+    })
+
+    it('pre-fills the aggregate Savings "Adjust budget" amount with the freshly computed sum, not the previous budget amount', async () => {
+      const dueThisMonth = (() => {
+        const now = new Date()
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      })()
+      mockGoalRepository.findActive.mockResolvedValue([
+        { id: new Uint8Array([1]), wallet_id: 10, name: 'Travel', color: null, currency_id: 1, currency: 'USD', symbol: '$', decimal_places: 2, balance: 200, target_int: 1200, target_frac: 0, due_date: dueThisMonth, updated_at: 0, is_achieved: false, is_archived: false },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdown.mockResolvedValue([
+        { tag_id: 21, tag: 'Savings', amount: 999, type: 'expense' },
+      ])
+      mockTransactionRepository.getMonthlyCategoryBreakdownFlat.mockResolvedValue([
+        { tag_id: 21, tag: 'Savings', amount: 999, type: 'expense' },
+      ])
+      mockBudgetRepository.findByMonth.mockResolvedValue([
+        {
+          id: new Uint8Array([9, 9, 9, 9, 9, 9, 9, 9]),
+          tag_id: 21,
+          amount_int: 50,
+          amount_frac: 0,
+          start: 0,
+          end: 0,
+          tag: 'savings',
+          actual: 999,
+        },
+      ])
+
+      renderWithRouter()
+
+      await waitFor(() => {
+        expect(screen.getByText('Savings')).toBeInTheDocument()
+      })
+
+      const savingsCard = screen.getByText('Savings').closest('div')!.parentElement!
+      const dropdownButton = within(savingsCard).getAllByRole('button').find(b => b.getAttribute('aria-haspopup') === 'menu')!
+      fireEvent.click(dropdownButton)
+
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Adjust budget' })).toBeInTheDocument())
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Adjust budget' }))
+
+      await waitFor(() => {
+        const amountInput = screen.getByLabelText(/Budget Amount/) as HTMLInputElement
+        // (1200 - 200) / 1 month = 1000 -- not the previous budget amount (50)
+        expect(amountInput.value).toBe((1000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
       })
     })
 

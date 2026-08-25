@@ -80,6 +80,37 @@ describe('Sync Integration', () => {
       expect(account!.currency).toBe(usdId)
     })
 
+    it('exports a goal as its own standalone entity, with tags and note', async () => {
+      const { exportSyncPackage } = await import('../../services/sync/syncExport')
+
+      const walletId = insertWallet({ name: 'goal_test' })
+      const usdId = getCurrencyIdByCode('USD')
+      insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const db = getTestDatabase()
+      db.run(
+        `INSERT INTO workspace.goal (id, name, target_int, target_frac, due_date, wallet_id) VALUES (randomblob(8), ?, ?, ?, ?, ?)`,
+        ['Emergency Fund', 5000, 0, '2027-01-01', walletId]
+      )
+      const goalIdRow = db.exec(`SELECT hex(id) FROM workspace.goal WHERE wallet_id = ${walletId}`)
+      const goalIdHex = String(goalIdRow[0].values[0][0])
+      db.run(`INSERT INTO workspace.goal_note (goal_id, note) VALUES ((SELECT id FROM workspace.goal WHERE hex(id) = ?), ?)`, [goalIdHex, 'save up'])
+
+      const pkg = await exportSyncPackage(0, 'sender-1')
+
+      const goal = pkg.goals!.find(g => g.id === goalIdHex)
+      expect(goal).toBeDefined()
+      expect(goal!.name).toBe('Emergency Fund')
+      expect(goal!.target_int).toBe(5000)
+      expect(goal!.due_date).toBe('2027-01-01')
+      expect(goal!.wallet).toBe(walletId)
+      expect(goal!.note).toBe('save up')
+
+      // The goal's own hidden wallet/account sync generically as ordinary
+      // SyncWallet/SyncAccount rows — no goal-specific fields on either.
+      const account = pkg.accounts.find(a => a.wallet === walletId)
+      expect(account).toBeDefined()
+    })
+
     it('exports counterparties with notes and tags', async () => {
       const { exportSyncPackage } = await import('../../services/sync/syncExport')
 
@@ -496,6 +527,87 @@ describe('Sync Integration', () => {
       const db = getTestDatabase()
       const acc = db.exec(`SELECT id FROM account WHERE id = 999`)
       expect(acc[0]?.values).toHaveLength(1)
+    })
+
+    it('imports a new goal as its own standalone entity, with tags and note', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'goal_import_test' })
+      const usdId = getCurrencyIdByCode('USD')
+      insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const goalIdHex = 'AABBCCDDEEFF0011'
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        goals: [{
+          id: goalIdHex,
+          name: 'Imported Goal',
+          target_int: 3000,
+          target_frac: 0,
+          due_date: '2027-06-01',
+          wallet: walletId,
+          updated_at: 1000,
+          tags: [],
+          note: 'from another device',
+        }],
+        deletions: [],
+      })
+
+      expect(result.imported.goals).toBe(1)
+
+      const db = getTestDatabase()
+      const goal = db.exec(`SELECT name, target_int, due_date FROM workspace.goal WHERE hex(id) = '${goalIdHex}'`)
+      expect(goal[0]?.values[0]).toEqual(['Imported Goal', 3000, '2027-06-01'])
+      const note = db.exec(`SELECT note FROM workspace.goal_note WHERE hex(goal_id) = '${goalIdHex}'`)
+      expect(note[0]?.values[0]).toEqual(['from another device'])
+    })
+
+    it('replaces an existing goal (including clearing its note) only when the incoming row is newer', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'goal_replace_test' })
+      const usdId = getCurrencyIdByCode('USD')
+      insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const db = getTestDatabase()
+      db.run(
+        `INSERT INTO workspace.goal (id, name, target_int, target_frac, due_date, wallet_id, updated_at) VALUES (X'AABBCCDDEEFF0011', 'Old Name', 1000, 0, NULL, ?, 500)`,
+        [walletId]
+      )
+      db.run(`INSERT INTO workspace.goal_note (goal_id, note) VALUES (X'AABBCCDDEEFF0011', 'old note')`)
+      // Pin a known baseline: the goal_note insert above bumps goal.updated_at
+      // via trg_goal_note_insert (real "now"), which would otherwise swamp the
+      // small updated_at values this test uses to compare stale vs. fresh.
+      db.run(`UPDATE workspace.goal SET updated_at = 500 WHERE hex(id) = 'AABBCCDDEEFF0011'`)
+
+      const staleResult = await importSyncPackage({
+        version: 2, sender_id: 'other', created_at: 1000, since: 0,
+        icons: [], tags: [], wallets: [], accounts: [], counterparties: [], currencies: [], transactions: [], budgets: [],
+        goals: [{ id: 'AABBCCDDEEFF0011', name: 'Stale Update', target_int: 1, target_frac: 0, due_date: null, wallet: walletId, updated_at: 100, tags: [], note: null }],
+        deletions: [],
+      })
+      expect(staleResult.imported.goals).toBe(0)
+      expect(db.exec(`SELECT name FROM workspace.goal WHERE hex(id) = 'AABBCCDDEEFF0011'`)[0].values[0][0]).toBe('Old Name')
+
+      const freshResult = await importSyncPackage({
+        version: 2, sender_id: 'other', created_at: 2000, since: 0,
+        icons: [], tags: [], wallets: [], accounts: [], counterparties: [], currencies: [], transactions: [], budgets: [],
+        goals: [{ id: 'AABBCCDDEEFF0011', name: 'New Name', target_int: 2000, target_frac: 0, due_date: '2028-01-01', wallet: walletId, updated_at: 900, tags: [], note: null }],
+        deletions: [],
+      })
+      expect(freshResult.imported.goals).toBe(1)
+      expect(db.exec(`SELECT name, target_int FROM workspace.goal WHERE hex(id) = 'AABBCCDDEEFF0011'`)[0].values[0]).toEqual(['New Name', 2000])
+      expect(db.exec(`SELECT * FROM workspace.goal_note WHERE hex(goal_id) = 'AABBCCDDEEFF0011'`)[0]).toBeUndefined()
     })
 
     it('imports transactions with lines and recalculates balances', async () => {
@@ -1518,6 +1630,39 @@ describe('Sync Integration', () => {
       expect(result.imported.deletions).toBe(1)
     })
 
+    it('deletes goal via deletion import', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const walletId = insertWallet({ name: 'goal_deletion_test' })
+      const usdId = getCurrencyIdByCode('USD')
+      insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const db = getTestDatabase()
+      db.run(
+        `INSERT INTO workspace.goal (id, name, target_int, target_frac, due_date, wallet_id) VALUES (X'1122334455667788', 'To Delete', 100, 0, NULL, ?)`,
+        [walletId]
+      )
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [{ entity: 'goal', entity_id: '1122334455667788', deleted_at: futureTs }],
+      })
+
+      expect(result.imported.deletions).toBe(1)
+      expect(db.exec(`SELECT * FROM workspace.goal WHERE hex(id) = '1122334455667788'`)[0]).toBeUndefined()
+    })
+
     it('handles deletion of unknown table gracefully', async () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
@@ -1567,6 +1712,7 @@ describe('Sync Integration', () => {
           { entity: 'trx', entity_id: 'DEADBEEFDEADBEEF', deleted_at: futureTs },
           { entity: 'budget', entity_id: 'DEADBEEFDEADBEEF', deleted_at: futureTs },
           { entity: 'account', entity_id: '99999', deleted_at: futureTs },
+          { entity: 'goal', entity_id: 'DEADBEEFDEADBEEF', deleted_at: futureTs },
         ],
       })
 
@@ -1698,6 +1844,57 @@ describe('Sync Integration', () => {
       expect(manyFractionRecalculated[0]?.values[0]).toEqual(['18', '0'])
 
       db.close()
+    })
+  })
+
+  describe('sync trigger drop/restore (goal regression — design.md Decision 9)', () => {
+    it('editing a goal survives a sync cycle (drop/restore of updated_at triggers) without crashing', async () => {
+      const { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } = await import('../../services/sync/syncTriggers')
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'goal_trigger_test' })
+      db.run(
+        `INSERT INTO workspace.goal (id, name, target_int, target_frac, due_date, wallet_id, updated_at) VALUES (randomblob(8), ?, ?, ?, ?, ?, 100)`,
+        ['Trigger Test Goal', 1000, 0, null, walletId]
+      )
+      const goalIdHex = String(db.exec(`SELECT hex(id) FROM workspace.goal WHERE wallet_id = ${walletId}`)[0].values[0][0])
+
+      // Simulate what every sync import cycle does around the actual import,
+      // even for a single, unlinked device (see src/services/sync/index.ts).
+      await dropUpdatedAtTriggers()
+      await restoreUpdatedAtTriggers()
+
+      // Before the fix, the restored trg_goal_update body referenced the old
+      // account_id-keyed schema and threw "no such column: account_id" here.
+      expect(() => {
+        db.run(`UPDATE workspace.goal SET due_date = '2028-01-01' WHERE hex(id) = ?`, [goalIdHex])
+      }).not.toThrow()
+
+      const row = db.exec(`SELECT due_date, updated_at FROM workspace.goal WHERE hex(id) = ?`, [goalIdHex])
+      expect(row[0].values[0][0]).toBe('2028-01-01')
+      expect(Number(row[0].values[0][1])).toBeGreaterThan(100)
+    })
+
+    it('editing a goal note after a sync cycle bumps the goal\'s own updated_at, without corrupting it via a stray drop', async () => {
+      const { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } = await import('../../services/sync/syncTriggers')
+      const db = getTestDatabase()
+
+      const walletId = insertWallet({ name: 'goal_note_trigger_test' })
+      db.run(
+        `INSERT INTO workspace.goal (id, name, target_int, target_frac, due_date, wallet_id, updated_at) VALUES (randomblob(8), ?, ?, ?, ?, ?, 100)`,
+        ['Note Trigger Goal', 1000, 0, null, walletId]
+      )
+      const goalIdHex = String(db.exec(`SELECT hex(id) FROM workspace.goal WHERE wallet_id = ${walletId}`)[0].values[0][0])
+
+      await dropUpdatedAtTriggers()
+      await restoreUpdatedAtTriggers()
+
+      expect(() => {
+        db.run(`INSERT INTO workspace.goal_note (goal_id, note) VALUES ((SELECT id FROM workspace.goal WHERE hex(id) = ?), ?)`, [goalIdHex, 'hello'])
+      }).not.toThrow()
+
+      const row = db.exec(`SELECT updated_at FROM workspace.goal WHERE hex(id) = ?`, [goalIdHex])
+      expect(Number(row[0].values[0][0])).toBeGreaterThan(100)
     })
   })
 

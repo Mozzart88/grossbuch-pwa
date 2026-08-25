@@ -446,6 +446,109 @@ describe('accountRepository', () => {
     })
   })
 
+  describe('moveAccountToWallet', () => {
+    it('throws when the account does not exist', async () => {
+      mockQueryOne.mockResolvedValueOnce(null) // account lookup
+
+      await expect(accountRepository.moveAccountToWallet(1, 2)).rejects.toThrow('Account not found')
+      expect(mockExecSQL).not.toHaveBeenCalled()
+    })
+
+    it('reassigns the source wallet default to another account, via trg_set_default_account, when the moved account was default', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 10 }) // account lookup
+        .mockResolvedValueOnce({ 1: 1 }) // is default
+        .mockResolvedValueOnce({ id: 99 }) // another account remains in source wallet
+        .mockResolvedValueOnce({ count: 1 }) // target wallet already has an account
+        .mockResolvedValueOnce({ count: 1 }) // source wallet still has accounts after move
+
+      await accountRepository.moveAccountToWallet(1, 20)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [99, SYSTEM_TAGS.DEFAULT]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith('UPDATE account SET wallet_id = ? WHERE id = ?', [20, 1])
+      expect(mockExecSQL).not.toHaveBeenCalledWith('DELETE FROM wallet WHERE id = ?', [10])
+      // No manual DELETE of the moved account's own default row: trg_set_default_account
+      // clears it as a side effect of the INSERT above.
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'DELETE FROM account_to_tags WHERE account_id = ? AND tag_id = ?',
+        [1, SYSTEM_TAGS.DEFAULT]
+      )
+    })
+
+    it('deletes the moved account default tag directly when it was the only account in the source wallet (no reassignment target)', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 10 }) // account lookup
+        .mockResolvedValueOnce({ 1: 1 }) // is default
+        .mockResolvedValueOnce(null) // no other account in source wallet
+        .mockResolvedValueOnce({ count: 1 }) // target wallet already has an account
+        .mockResolvedValueOnce({ count: 0 }) // source wallet now empty
+      mockQuerySQL.mockResolvedValueOnce([]) // source wallet's wallet_to_tags
+
+      await accountRepository.moveAccountToWallet(1, 20)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM account_to_tags WHERE account_id = ? AND tag_id = ?',
+        [1, SYSTEM_TAGS.DEFAULT]
+      )
+    })
+
+    it('does not touch account_to_tags for a non-default account move', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 10 }) // account lookup
+        .mockResolvedValueOnce(null) // not default
+        .mockResolvedValueOnce({ count: 1 }) // target wallet already has an account
+        .mockResolvedValueOnce({ count: 1 }) // source wallet still has accounts
+
+      await accountRepository.moveAccountToWallet(1, 20)
+
+      expect(mockExecSQL).toHaveBeenCalledTimes(1)
+      expect(mockExecSQL).toHaveBeenCalledWith('UPDATE account SET wallet_id = ? WHERE id = ?', [20, 1])
+    })
+
+    it('makes the moved account the default when the destination wallet was empty', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 10 }) // account lookup
+        .mockResolvedValueOnce(null) // not default
+        .mockResolvedValueOnce({ count: 0 }) // target wallet is empty
+        .mockResolvedValueOnce({ count: 1 }) // source wallet still has accounts
+
+      await accountRepository.moveAccountToWallet(1, 20)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)',
+        [1, SYSTEM_TAGS.DEFAULT]
+      )
+    })
+
+    it('deletes the source wallet once it has zero accounts left', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 10 }) // account lookup
+        .mockResolvedValueOnce(null) // not default
+        .mockResolvedValueOnce({ count: 1 }) // target wallet already has an account
+        .mockResolvedValueOnce({ count: 0 }) // source wallet now empty
+      mockQuerySQL.mockResolvedValueOnce([{ tag_id: 22 }]) // source wallet's wallet_to_tags (e.g. archived)
+
+      await accountRepository.moveAccountToWallet(1, 20)
+
+      expect(mockExecSQL).toHaveBeenCalledWith('DELETE FROM wallet WHERE id = ?', [10])
+    })
+
+    it('does not delete the source wallet while it still has other accounts', async () => {
+      mockQueryOne
+        .mockResolvedValueOnce({ wallet_id: 10 }) // account lookup
+        .mockResolvedValueOnce(null) // not default
+        .mockResolvedValueOnce({ count: 1 }) // target wallet already has an account
+        .mockResolvedValueOnce({ count: 1 }) // source wallet still has accounts
+
+      await accountRepository.moveAccountToWallet(1, 20)
+
+      expect(mockExecSQL).not.toHaveBeenCalledWith('DELETE FROM wallet WHERE id = ?', [10])
+    })
+  })
+
   describe('convertAmount', () => {
     it('returns same amount when currencies match', async () => {
       const result = await accountRepository.convertAmount(100, 0, 1, 1)

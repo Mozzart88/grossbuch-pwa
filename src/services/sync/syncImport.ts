@@ -17,6 +17,7 @@ import type {
   SyncRecurringPlan,
   SyncRecurringOccurrence,
   SyncRecurringBudget,
+  SyncGoal,
   SyncDeletion,
   SyncUnlinkCommand,
   SyncUnlinkConfirmCommand,
@@ -34,7 +35,7 @@ import type {
  */
 export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult> {
   const result: ImportResult = {
-    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, notifications: 0, recurringPlans: 0, recurringOccurrences: 0, recurringBudgets: 0, deletions: 0 },
+    imported: { icons: 0, tags: 0, wallets: 0, accounts: 0, counterparties: 0, currencies: 0, transactions: 0, budgets: 0, notifications: 0, recurringPlans: 0, recurringOccurrences: 0, recurringBudgets: 0, goals: 0, deletions: 0 },
     newAccountCurrencyIds: [],
     conflicts: 0,
     errors: [],
@@ -60,6 +61,7 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     result.imported.recurringPlans = await importRecurringPlans(pkg.recurringPlans ?? [])
     result.imported.recurringOccurrences = await importRecurringOccurrences(pkg.recurringOccurrences ?? [])
     result.imported.recurringBudgets = await importRecurringBudgets(pkg.recurringBudgets ?? [])
+    result.imported.goals = await importGoals(pkg.goals ?? [])
     result.imported.deletions = await importDeletions(pkg.deletions)
 
     await execSQL('COMMIT')
@@ -777,6 +779,63 @@ async function importRecurringBudgets(budgets: SyncRecurringBudget[]): Promise<n
   return count
 }
 
+// ======= Goals =======
+
+// The goal's own wallet/accounts sync generically via importWallets/importAccounts
+// (they're ordinary workspace rows); this only syncs the goal-specific overlay.
+// `note` rides the goal row's own updated_at (a trg_goal_note_* trigger bumps
+// it on every note edit — see workspaceMigrations.ts), so it's replaced
+// wholesale in the same gated block as the rest of the goal row, mirroring how
+// syncAccountData replaces account_data gated by the account's own updated_at.
+async function importGoals(goals: SyncGoal[]): Promise<number> {
+  let count = 0
+  for (const g of goals) {
+    const local = await queryOne<{ updated_at: number }>(
+      `SELECT updated_at FROM workspace.goal WHERE hex(id) = ?`,
+      [g.id]
+    )
+
+    if (!local) {
+      await execSQL(
+        `INSERT INTO workspace.goal (id, name, target_int, target_frac, due_date, wallet_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [hexToBlob(g.id), g.name, g.target_int, g.target_frac, g.due_date, g.wallet, g.updated_at]
+      )
+      await syncGoalTags(g.id, g.tags)
+      await syncGoalNote(g.id, g.note)
+      count++
+    } else if (g.updated_at > local.updated_at) {
+      await execSQL(
+        `UPDATE workspace.goal SET name = ?, target_int = ?, target_frac = ?, due_date = ?, wallet_id = ?, updated_at = ? WHERE hex(id) = ?`,
+        [g.name, g.target_int, g.target_frac, g.due_date, g.wallet, g.updated_at, g.id]
+      )
+      await syncGoalTags(g.id, g.tags)
+      await syncGoalNote(g.id, g.note)
+      count++
+    }
+  }
+  return count
+}
+
+async function syncGoalTags(goalIdHex: string, tagIds: number[]): Promise<void> {
+  await execSQL(`DELETE FROM workspace.goal_to_tags WHERE hex(goal_id) = ?`, [goalIdHex])
+  for (const tagId of tagIds) {
+    await execSQL(
+      `INSERT OR IGNORE INTO workspace.goal_to_tags (goal_id, tag_id) VALUES (?, ?)`,
+      [hexToBlob(goalIdHex), tagId]
+    )
+  }
+}
+
+async function syncGoalNote(goalIdHex: string, note: string | null): Promise<void> {
+  await execSQL(`DELETE FROM workspace.goal_note WHERE hex(goal_id) = ?`, [goalIdHex])
+  if (note) {
+    await execSQL(
+      `INSERT INTO workspace.goal_note (goal_id, note) VALUES (?, ?)`,
+      [hexToBlob(goalIdHex), note]
+    )
+  }
+}
+
 // ======= Deletions =======
 
 async function importDeletions(deletions: SyncDeletion[]): Promise<number> {
@@ -924,6 +983,17 @@ async function applyDeletion(del: SyncDeletion): Promise<boolean> {
       )
       if (local && del.deleted_at > local.updated_at) {
         await execSQL(`DELETE FROM workspace.recurring_occurrence WHERE hex(id) = ?`, [del.entity_id])
+        return true
+      }
+      return false
+    }
+    case 'goal': {
+      const local = await queryOne<{ updated_at: number }>(
+        `SELECT updated_at FROM workspace.goal WHERE hex(id) = ?`,
+        [del.entity_id]
+      )
+      if (local && del.deleted_at > local.updated_at) {
+        await execSQL(`DELETE FROM workspace.goal WHERE hex(id) = ?`, [del.entity_id])
         return true
       }
       return false

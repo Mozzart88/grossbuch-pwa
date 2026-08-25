@@ -419,6 +419,26 @@ export const walletRepository = {
     `, [SYSTEM_TAGS.DEFAULT, walletId, currencyId])
   },
 
+  // Find existing account in the same wallet matching both currency AND account
+  // type — the actual per-wallet uniqueness rule addAccount enforces (a wallet
+  // can legitimately hold a plain USD account and a savings USD account side
+  // by side). Used where currency-only matching would misidentify a same-
+  // currency-but-different-type account as a conflict (e.g. Convert-to-Goal).
+  async findAccountByCurrencyAndType(walletId: number, currencyId: number, accountType: AccountType): Promise<Account | null> {
+    return queryOne<Account>(`
+      SELECT
+        a.*,
+        c.code as currency,
+        c.symbol,
+        c.decimal_places,
+        ${accountTypeSelect('a')} as account_type,
+        EXISTS(SELECT 1 FROM account_to_tags WHERE account_id = a.id AND tag_id = ?) as is_default
+      FROM account a
+      JOIN currency c ON a.currency_id = c.id
+      WHERE a.wallet_id = ? AND a.currency_id = ? AND ${accountTypeSelect('a')} = ?
+    `, [SYSTEM_TAGS.DEFAULT, walletId, currencyId, accountType])
+  },
+
   // Create a virtual account marked with SYSTEM tag
   async createVirtualAccount(currencyId: number): Promise<Account> {
     // Find or create "Virtual" wallet with SYSTEM tag

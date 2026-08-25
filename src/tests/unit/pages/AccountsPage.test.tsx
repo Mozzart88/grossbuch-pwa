@@ -31,6 +31,9 @@ vi.mock('../../../services/repositories', () => ({
   transactionRepository: {
     createBalanceAdjustment: vi.fn(),
   },
+  goalRepository: {
+    convertWalletToGoal: vi.fn(),
+  },
 }))
 
 vi.mock('../../../services/exchangeRate/exchangeRateSync', () => ({
@@ -378,6 +381,52 @@ describe('AccountsPage', () => {
       expect(mockWalletRepository.findAll).toHaveBeenCalled()
       expect(mockCurrencyRepository.findAll).toHaveBeenCalled()
       expect(mockCurrencyRepository.findSystem).toHaveBeenCalled()
+    })
+  })
+
+  it('excludes a goal\'s hidden (system-tagged) wallet from the list', async () => {
+    mockWalletRepository.findAll.mockResolvedValue([
+      ...mockWallets,
+      { id: 3, name: 'goal_abc123', color: null, is_virtual: true, accounts: [{ ...mockAccount, id: 3, wallet_id: 3 }] },
+    ])
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Cash')).toBeInTheDocument()
+      expect(screen.getByText('Bank')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('goal_abc123')).not.toBeInTheDocument()
+  })
+
+  it('shows "Convert to Goal" in the kebab menu only for savings wallets, and opens the wizard', async () => {
+    mockWalletRepository.findAll.mockResolvedValue([
+      ...mockWallets,
+      { id: 3, name: 'Nest Egg', color: '#10B981', account_type: 'savings', accounts: [{ ...mockAccount, id: 3, wallet_id: 3 }] },
+    ])
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Nest Egg')).toBeInTheDocument()
+    })
+
+    const dropdownTriggers = () => screen.getAllByRole('button', { expanded: false })
+      .filter(btn => btn.getAttribute('aria-haspopup') === 'menu')
+
+    // Cash (plain wallet, index 0) has no "Convert to Goal" item.
+    fireEvent.click(dropdownTriggers()[0])
+    await waitFor(() => expect(screen.getByRole('menu')).toBeInTheDocument())
+    expect(screen.queryByText('Convert to Goal')).not.toBeInTheDocument()
+    fireEvent.mouseDown(document.body) // close the menu (click-outside listener)
+
+    // Nest Egg (savings wallet, index 2) does, and clicking it opens the wizard.
+    fireEvent.click(dropdownTriggers()[2])
+    await waitFor(() => expect(screen.getByRole('menu')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Convert to Goal'))
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Convert to Goal' })).toBeInTheDocument()
     })
   })
 

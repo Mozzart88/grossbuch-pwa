@@ -59,6 +59,9 @@ vi.mock('../../../services/repositories', () => ({
     delete: vi.fn(),
     getAll: vi.fn(),
   },
+  goalRepository: {
+    findActive: vi.fn().mockResolvedValue([]),
+  },
 }))
 
 // Mock toast

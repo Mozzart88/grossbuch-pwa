@@ -15,6 +15,7 @@ import type {
   SyncRecurringPlan,
   SyncRecurringOccurrence,
   SyncRecurringBudget,
+  SyncGoal,
 } from './syncTypes'
 
 const TRX_BATCH_SIZE = 100
@@ -28,7 +29,7 @@ export async function exportChunkedSyncPackages(
   senderId: string,
   batchSize = TRX_BATCH_SIZE
 ): Promise<SyncPackage[]> {
-  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, recurringPlans, recurringOccurrences, recurringBudgets, deletions] =
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, recurringPlans, recurringOccurrences, recurringBudgets, goals, deletions] =
     await Promise.all([
       exportIcons(0),
       exportTags(0),
@@ -42,6 +43,7 @@ export async function exportChunkedSyncPackages(
       exportRecurringPlans(0),
       exportRecurringOccurrences(0),
       exportRecurringBudgets(0),
+      exportGoals(0),
       getDeletionsSince(0),
     ])
 
@@ -62,6 +64,7 @@ export async function exportChunkedSyncPackages(
     recurringPlans,
     recurringOccurrences,
     recurringBudgets,
+    goals,
     deletions,
   })
 
@@ -84,7 +87,7 @@ export async function exportSyncPackage(
   sinceTimestamp: number,
   senderId: string
 ): Promise<SyncPackage> {
-  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, recurringPlans, recurringOccurrences, recurringBudgets, deletions] =
+  const [icons, tags, wallets, accounts, counterparties, currencies, transactions, budgets, notifications, recurringPlans, recurringOccurrences, recurringBudgets, goals, deletions] =
     await Promise.all([
       exportIcons(sinceTimestamp),
       exportTags(sinceTimestamp),
@@ -98,6 +101,7 @@ export async function exportSyncPackage(
       exportRecurringPlans(sinceTimestamp),
       exportRecurringOccurrences(sinceTimestamp),
       exportRecurringBudgets(sinceTimestamp),
+      exportGoals(sinceTimestamp),
       getDeletionsSince(sinceTimestamp),
     ])
 
@@ -118,6 +122,7 @@ export async function exportSyncPackage(
     recurringPlans,
     recurringOccurrences,
     recurringBudgets,
+    goals,
     deletions,
   }
 }
@@ -429,4 +434,31 @@ async function exportRecurringBudgets(since: number): Promise<SyncRecurringBudge
     WHERE updated_at >= ?`,
     [since]
   )
+}
+
+async function exportGoals(since: number): Promise<SyncGoal[]> {
+  return querySQL<SyncGoal>(
+    `SELECT
+      hex(g.id) as id,
+      g.name,
+      g.target_int,
+      g.target_frac,
+      g.due_date,
+      g.wallet_id AS wallet,
+      g.updated_at,
+      COALESCE(
+        (SELECT GROUP_CONCAT(tag_id, ',')
+         FROM workspace.goal_to_tags gt
+         WHERE gt.goal_id = g.id),
+        ''
+      ) as tags,
+      (SELECT gn.note FROM workspace.goal_note gn WHERE gn.goal_id = g.id) as note
+    FROM workspace.goal g
+    WHERE g.updated_at >= ?`,
+    [since]
+  ).then(rows => rows.map(r => ({
+    ...r,
+    tags: r.tags ? String(r.tags).split(',').map(id => parseInt(id)) : [],
+    note: r.note ?? null,
+  })))
 }

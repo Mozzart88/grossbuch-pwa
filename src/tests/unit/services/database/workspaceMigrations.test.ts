@@ -17,8 +17,8 @@ describe('workspaceMigrations', () => {
     mockExecSQL.mockResolvedValue(undefined)
   })
 
-  it('sets current workspace version to 3', () => {
-    expect(CURRENT_WORKSPACE_VERSION).toBe(3)
+  it('sets current workspace version to 4', () => {
+    expect(CURRENT_WORKSPACE_VERSION).toBe(4)
   })
 
   it('adds payment_pin and notify_days_before columns to recurring_plan when upgrading from workspace version 2', async () => {
@@ -38,8 +38,40 @@ describe('workspaceMigrations', () => {
     )
   })
 
-  it('does not run any migration when already at the current workspace version', async () => {
+  it('creates the standalone goal entity (goal/goal_to_tags/goal_note) when upgrading from workspace version 3', async () => {
     mockQueryOne.mockResolvedValue({ value: '3' })
+
+    await runWorkspaceMigrations()
+
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringMatching(/CREATE TABLE IF NOT EXISTS workspace\.goal\s*\(/)
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS workspace.goal_to_tags')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS workspace.goal_note')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_insert')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_update')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_note_insert')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('trg_sync_del_goal')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining(`VALUES ('schema_version', ?`),
+      ['4']
+    )
+  })
+
+  it('does not run any migration when already at the current workspace version', async () => {
+    mockQueryOne.mockResolvedValue({ value: '4' })
 
     await runWorkspaceMigrations()
 

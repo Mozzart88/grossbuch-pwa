@@ -10,6 +10,7 @@ import { formatAmountValue, formatCurrency } from '../utils/formatters';
 import { Badge } from '../components/ui/Badge';
 import { useLayoutContextSafe } from '../store/LayoutContext';
 import { useDataRefresh } from '../hooks/useDataRefresh';
+import { ConvertToGoalWizard } from '../components/goals/ConvertToGoalWizard';
 
 export function AccountsPage() {
   const navigate = useNavigate()
@@ -57,6 +58,9 @@ export function AccountsPage() {
 
   const [submitting, setSubmitting] = useState(false)
 
+  // Convert-to-Goal wizard state
+  const [convertingWallet, setConvertingWallet] = useState<Wallet | null>(null)
+
   const WALLET_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6', '#06B6D4', '#84CC16']
   const ACCOUNT_TYPE_OPTIONS: Array<{ value: AccountType; label: string }> = [
     { value: 'plain', label: 'Plain' },
@@ -80,6 +84,8 @@ export function AccountsPage() {
         accountRepository.getWalletBalancesInSystemCurrency(),
         currencyRepository.findSystem(),
       ])
+      // A goal's hidden wallet is `system`-tagged (is_virtual), so it's excluded
+      // here for free — it's only ever visible/manageable from the Goals page.
       setWallets(ws.filter(w => !w.is_virtual))
       setCurrencies(curs)
       setWalletBalances(balances)
@@ -491,6 +497,7 @@ export function AccountsPage() {
                       items={[
                         { label: '+ Currency', onClick: () => openCurrencyModal(wallet) },
                         ...(!wallet.is_default ? [{ label: 'Set Default', onClick: () => handleSetDefault(wallet) }] : []),
+                        ...(wallet.account_type === 'savings' ? [{ label: 'Convert to Goal', onClick: () => setConvertingWallet(wallet) }] : []),
                         { label: 'Edit', onClick: () => openWalletModal(wallet) },
                         { label: 'Delete', onClick: () => handleDeleteWallet(wallet), variant: 'danger' as const },
                       ] as DropdownMenuItem[]}
@@ -726,6 +733,16 @@ export function AccountsPage() {
           </div>
         </form>
       </Modal>
+
+      {convertingWallet && (
+        <ConvertToGoalWizard
+          wallet={convertingWallet}
+          currencies={currencies}
+          allWallets={wallets.filter(w => !w.is_archived)}
+          onClose={() => setConvertingWallet(null)}
+          onConverted={loadData}
+        />
+      )}
     </div>
   )
 }

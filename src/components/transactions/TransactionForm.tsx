@@ -377,14 +377,14 @@ export function TransactionForm({ initialData, initialDraft, initialMode, onSubm
         <TransferTransactionForm
           {...sharedProps}
           accounts={accounts}
-          defaultAccountId={defaultAccountId}
+          defaultAccountId={getDefaultFor(accounts)}
         />
       )}
       {mode === 'exchange' && (
         <ExchangeTransactionForm
           {...sharedProps}
           accounts={accounts}
-          defaultAccountId={defaultAccountId}
+          defaultAccountId={getDefaultFor(accounts)}
         />
       )}
 

@@ -139,6 +139,48 @@ export interface AccountInput {
   rate?: number | null
 }
 
+// Goal - a standalone entity that owns a dedicated hidden wallet. The goal's
+// target currency is whichever account in that wallet is marked default;
+// `balance` is the live total across every account in the goal's wallet,
+// converted into that currency (see goalRepository.ts / design.md Decision 1).
+export interface Goal {
+  id: Uint8Array // 8-byte BLOB
+  wallet_id: number
+  name: string
+  color: string | null
+  currency_id: number
+  currency: string
+  symbol: string
+  decimal_places: number
+  balance: number
+  target_int: number
+  target_frac: number
+  due_date: string | null
+  updated_at: number
+  is_achieved: boolean
+  is_archived: boolean
+  // Joined only where needed (Goal Details page)
+  accounts?: Account[]
+  note?: string | null
+}
+
+export interface GoalCreateInput {
+  name: string
+  color?: string
+  currency_id: number
+  initial_balance?: number
+  target_int: number
+  target_frac: number
+  due_date?: string | null
+}
+
+export interface GoalUpdateInput {
+  name?: string
+  target_int?: number
+  target_frac?: number
+  due_date?: string | null
+}
+
 // Counterparty - no timestamps, note in separate table
 export interface Counterparty {
   id: number
@@ -378,6 +420,8 @@ export interface TransactionLog {
   counterparty: string | null
   wallet: string
   wallet_color: string | null
+  goal_name: string | null
+  goal_id: string | null
   currency: string
   symbol: string
   decimal_places: number

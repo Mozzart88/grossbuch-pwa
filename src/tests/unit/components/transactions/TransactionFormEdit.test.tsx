@@ -59,6 +59,9 @@ vi.mock('../../../../services/repositories', () => ({
     createPlanFromTransaction: vi.fn(),
     derivePaymentPin: vi.fn().mockResolvedValue(null),
   },
+  goalRepository: {
+    findActive: vi.fn().mockResolvedValue([]),
+  },
 }))
 
 import {

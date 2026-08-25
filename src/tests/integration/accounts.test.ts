@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import {
   setupTestDatabase,
   closeTestDatabase,
   resetTestDatabase,
+  createDatabaseMock,
   insertWallet,
   insertAccount,
   insertTransaction,
@@ -528,6 +529,71 @@ describe('Accounts Integration', () => {
       expect(result[0].values[0][0]).toBeCloseTo(500, 5)
       // Expenses should be 200
       expect(result[0].values[0][1]).toBeCloseTo(200, 5)
+    })
+  })
+
+  describe('moveAccountToWallet (real triggers)', () => {
+    let dbMock: ReturnType<typeof createDatabaseMock>
+
+    beforeEach(() => {
+      dbMock = createDatabaseMock()
+      vi.doMock('../../services/database', () => dbMock)
+    })
+
+    const getRepository = async () => {
+      const { accountRepository } = await import('../../services/repositories/accountRepository')
+      return accountRepository
+    }
+
+    it('reassigns default via trg_set_default_account when the default account moves out', async () => {
+      const accountRepository = await getRepository()
+      const db = getTestDatabase()
+      const usdId = getCurrencyIdByCode('USD')
+
+      const sourceWalletId = insertWallet({ name: 'Source' })
+      const targetWalletId = insertWallet({ name: 'Target' })
+      const defaultAccountId = insertAccount({ wallet_id: sourceWalletId, currency_id: usdId })
+      const otherAccountId = insertAccount({ wallet_id: sourceWalletId, currency_id: getCurrencyIdByCode('EUR') })
+      insertAccount({ wallet_id: targetWalletId, currency_id: usdId }) // target already has an account/default
+
+      await accountRepository.moveAccountToWallet(defaultAccountId, targetWalletId)
+
+      const defaultRow = db.exec(`SELECT account_id FROM account_to_tags WHERE tag_id = ${SYSTEM_TAGS.DEFAULT} AND account_id IN (${defaultAccountId}, ${otherAccountId})`)
+      expect(defaultRow[0]?.values).toEqual([[otherAccountId]])
+
+      const movedWallet = db.exec(`SELECT wallet_id FROM account WHERE id = ${defaultAccountId}`)
+      expect(Number(movedWallet[0].values[0][0])).toBe(targetWalletId)
+    })
+
+    it('deletes the source wallet once its last account moves out', async () => {
+      const accountRepository = await getRepository()
+      const db = getTestDatabase()
+      const usdId = getCurrencyIdByCode('USD')
+
+      const sourceWalletId = insertWallet({ name: 'Solo Wallet' })
+      const targetWalletId = insertWallet({ name: 'Target' })
+      const accountId = insertAccount({ wallet_id: sourceWalletId, currency_id: usdId })
+
+      await accountRepository.moveAccountToWallet(accountId, targetWalletId)
+
+      const wallet = db.exec(`SELECT id FROM wallet WHERE id = ${sourceWalletId}`)
+      expect(wallet[0]).toBeUndefined()
+    })
+
+    it('makes the moved account default when the destination wallet was empty, without touching an existing destination default', async () => {
+      const accountRepository = await getRepository()
+      const db = getTestDatabase()
+      const usdId = getCurrencyIdByCode('USD')
+
+      const sourceWalletId = insertWallet({ name: 'Source' })
+      const emptyTargetWalletId = insertWallet({ name: 'Fresh Target' })
+      const accountId = insertAccount({ wallet_id: sourceWalletId, currency_id: usdId })
+      insertAccount({ wallet_id: sourceWalletId, currency_id: getCurrencyIdByCode('EUR') }) // keeps source non-empty
+
+      await accountRepository.moveAccountToWallet(accountId, emptyTargetWalletId)
+
+      const defaultRow = db.exec(`SELECT account_id FROM account_to_tags WHERE tag_id = ${SYSTEM_TAGS.DEFAULT} AND account_id = ${accountId}`)
+      expect(defaultRow[0]?.values).toEqual([[accountId]])
     })
   })
 })

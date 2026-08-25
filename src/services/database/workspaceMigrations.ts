@@ -6,7 +6,7 @@ import { execSQL, queryOne } from './connection'
 // currency, counterparty, notification) keep the column but drop the FK
 // clause: cross-database FK enforcement doesn't work, so these are soft
 // references, validated at the application level (see design.md).
-export const CURRENT_WORKSPACE_VERSION = 3
+export const CURRENT_WORKSPACE_VERSION = 4
 
 // Triggers that auto-write to a table this migration also bulk-copies directly
 // (account_to_tags/wallet_to_tags default-tag assignment, account balance from
@@ -633,6 +633,99 @@ export const workspaceMigrations: Record<number, string[]> = {
     // conversion pin" / "use the app-wide default lead time" respectively.
     `ALTER TABLE workspace.recurring_plan ADD COLUMN payment_pin TEXT;`,
     `ALTER TABLE workspace.recurring_plan ADD COLUMN notify_days_before INTEGER;`,
+  ],
+
+  4: [
+    // Goals: `goal` is a standalone entity that owns a dedicated hidden
+    // wallet (`wallet_id`) — see openspec change `goals-rearchitecture`.
+    // (Superseded an earlier, never-shipped account-id-keyed shape from the
+    // `goals` change; folded directly into v4 rather than a v5 migration,
+    // since that shape never reached a real device — see design.md Decision 7.)
+    `CREATE TABLE IF NOT EXISTS workspace.goal (
+      id BLOB NOT NULL PRIMARY KEY DEFAULT (randomblob(8)),
+      name TEXT NOT NULL,
+      target_int INTEGER NOT NULL,
+      target_frac INTEGER NOT NULL,
+      due_date TEXT,
+      wallet_id INTEGER NOT NULL REFERENCES wallet(id) ON DELETE CASCADE,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch(CURRENT_TIMESTAMP))
+    ) STRICT;`,
+
+    `CREATE TABLE IF NOT EXISTS workspace.goal_to_tags (
+      goal_id BLOB NOT NULL REFERENCES goal(id) ON DELETE CASCADE,
+      tag_id INTEGER NOT NULL -- soft reference -> shared.tag ('achieved', 'archived')
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS workspace.goal_note (
+      goal_id BLOB PRIMARY KEY REFERENCES goal(id) ON DELETE CASCADE,
+      note TEXT NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch(CURRENT_TIMESTAMP))
+    ) STRICT;`,
+
+    `CREATE INDEX IF NOT EXISTS workspace.idx_goal_wallet ON goal(wallet_id);`,
+    `CREATE INDEX IF NOT EXISTS workspace.idx_goal_to_tags_goal ON goal_to_tags(goal_id);`,
+    `CREATE INDEX IF NOT EXISTS workspace.idx_goal_to_tags_tag ON goal_to_tags(tag_id);`,
+
+    `CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_insert
+    AFTER INSERT ON goal
+    FOR EACH ROW
+    BEGIN
+      UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.id;
+    END;`,
+
+    `CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_update
+    AFTER UPDATE OF name, target_int, target_frac, due_date ON goal
+    FOR EACH ROW
+    BEGIN
+      UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.id;
+    END;`,
+
+    // Mirrors account_data's relationship to account: a note edit bumps the
+    // owning goal's own updated_at too, so sync can replace the note wholesale
+    // gated by the goal row's single LWW timestamp (including propagating a
+    // note *deletion*, which an independent goal_note.updated_at alone
+    // couldn't express once the row is gone).
+    `CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_note_insert
+    AFTER INSERT ON goal_note
+    FOR EACH ROW
+    BEGIN
+      UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.goal_id;
+    END;`,
+
+    `CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_note_update
+    AFTER UPDATE ON goal_note
+    FOR EACH ROW
+    BEGIN
+      UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = NEW.goal_id;
+    END;`,
+
+    `CREATE TRIGGER IF NOT EXISTS workspace.trg_goal_note_delete
+    AFTER DELETE ON goal_note
+    FOR EACH ROW
+    BEGIN
+      UPDATE goal SET updated_at = unixepoch(CURRENT_TIMESTAMP) WHERE id = OLD.goal_id;
+    END;`,
+
+    `CREATE TRIGGER IF NOT EXISTS workspace.trg_sync_del_goal
+    AFTER DELETE ON goal
+    FOR EACH ROW
+    BEGIN
+      INSERT OR REPLACE INTO sync_deletions (table_name, entity_id, deleted_at)
+      VALUES ('goal', hex(OLD.id), unixepoch(CURRENT_TIMESTAMP));
+    END;`,
+
+    // No seed statement here for the 'achieved' tag (unlike this comment's
+    // earlier draft): a migration-time INSERT into shared.tag risks colliding
+    // with a legacy (pre-db-split) install's one-time bulk copy of its real
+    // tag ids into `shared` — attachActiveWorkspace() (which runs this
+    // migration) attaches/builds a fresh empty workspace *before*
+    // migrateLegacyInstallation()'s SHARED_ENTITY_COPY_SQL populates `shared.tag`
+    // with the legacy database's actual explicit ids, so an autoincrement row
+    // inserted here can steal a low id (e.g. 1) that the bulk copy then needs.
+    // goalRepository.ts resolves/creates 'achieved' lazily at first real use
+    // instead, once `shared` is guaranteed to be the real, fully-migrated
+    // database — the same "resolved by name at runtime" precedent as
+    // 'savings'/'credits', just created on demand rather than pre-seeded.
   ],
 }
 

@@ -73,6 +73,24 @@ export interface SyncTransaction {
   lines: SyncTransactionLine[]
 }
 
+// The goal entity's own hidden wallet/accounts sync as ordinary SyncWallet/
+// SyncAccount rows (they're regular workspace tables); this carries only the
+// goal-specific fields, mirroring SyncBudget's shape. `note` piggybacks on the
+// same object (like SyncCounterparty's `note`) and rides the goal row's own
+// `updated_at` — a `trg_goal_note_*` trigger bumps it on every note edit, so a
+// note *deletion* still propagates correctly under a single LWW timestamp.
+export interface SyncGoal {
+  id: string // hex
+  name: string
+  target_int: number
+  target_frac: number
+  due_date: string | null
+  wallet: number
+  updated_at: number
+  tags: number[]
+  note: string | null
+}
+
 export interface SyncBudget {
   id: string // hex
   start: number
@@ -150,6 +168,7 @@ export interface SyncPackage {
   recurringPlans?: SyncRecurringPlan[]
   recurringOccurrences?: SyncRecurringOccurrence[]
   recurringBudgets?: SyncRecurringBudget[]
+  goals?: SyncGoal[]
   deletions: SyncDeletion[]
   commands?: SyncCommand[]
 }
@@ -233,6 +252,7 @@ export interface ImportResult {
     recurringPlans: number
     recurringOccurrences: number
     recurringBudgets: number
+    goals: number
     deletions: number
   }
   newAccountCurrencyIds: number[]

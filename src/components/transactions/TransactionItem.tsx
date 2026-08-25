@@ -28,6 +28,14 @@ function isTypeOf(trx: TransactionLog[], t: transactionT): boolean {
   })
 }
 
+// A Put/Take is a transfer where one leg belongs to a goal's hidden wallet
+// (surfaced via the `accounts` view's `goal_name` column — see design.md
+// Decision 12). Only that leg carries a non-null goal_name; the funding
+// savings account's leg never does.
+function getGoalLeg(trx: TransactionLog[]): TransactionLog | undefined {
+  return trx.find(l => l.goal_name)
+}
+
 // Detect multi-currency expense pattern: 2 exchange lines + 1 expense line
 const isMultiCurrencyExpense = (trx: TransactionLog[]): boolean => {
   const exchangeLines = trx.filter(l => l.tags.includes('exchange'))
@@ -94,11 +102,20 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
           text: formatCurrencyValue(amount, symbol),
           color: 'text-green-600 dark:text-green-400',
         }
-      case 'transfer':
+      case 'transfer': {
+        // Prefer whichever leg carries the real (non-zero) amount: a Put/Take's
+        // zero-amount counterparty leg can land at transaction[0] depending on
+        // query ordering, which would otherwise display as $0.00.
+        const transferLine = transaction.find(l => getUnsignedAmount(l) !== 0) ?? transaction[0]
+        const goalLeg = getGoalLeg(transaction)
+        const color = goalLeg
+          ? goalLeg.sign === '+' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+          : 'text-blue-600 dark:text-blue-400'
         return {
-          text: formatCurrencyValue(getUnsignedAmount(transaction[0]), symbol),
-          color: 'text-blue-600 dark:text-blue-400',
+          text: formatCurrencyValue(getUnsignedAmount(transferLine), transferLine.symbol),
+          color,
         }
+      }
       case 'exchange': {
         const from = transaction.find(l => l.sign === '-' && l.tags.includes('exchange'))!
         const to = transaction.find(l => l.sign === '+' && l.tags.includes('exchange'))!
@@ -141,14 +158,23 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       return <>{getColoredText(`${exchangeOut.wallet}:${exchangeOut.symbol}`, exchangeOut.wallet_color)}</>
     }
 
-    const from = transaction.find(l => getSignedAmount(l) < 0 && l.tags === transactionType)!
-    const to = transaction.find(l => getSignedAmount(l) >= 0 && l.tags === transactionType)!
+    // Uses `sign` directly rather than the derived signed amount: a Put/Take's
+    // zero-amount counterparty leg has a real `sign`, but its signed amount is
+    // 0 either way (-0 is not < 0), which would otherwise misidentify both
+    // legs as "to" and leave "from" undefined.
+    const from = transaction.find(l => l.sign === '-' && l.tags === transactionType)!
+    const to = transaction.find(l => l.sign === '+' && l.tags === transactionType)!
 
     switch (transactionType) {
-      case 'transfer':
+      case 'transfer': {
+        // Put/Take: show the goal's name instead of its internal hidden-wallet
+        // name for whichever leg belongs to the goal (see design.md Decision 12).
+        const fromLabel = from.goal_name ?? from.wallet
+        const toLabel = to.goal_name ?? to.wallet
         if (from.currency == to.currency)
-          return <>{getColoredText(from.wallet, from.wallet_color)} → {getColoredText(to.wallet, to.wallet_color)}</>
-        return <>{getColoredText(`${from.wallet}:${from.symbol}`, from.wallet_color)} → {getColoredText(`${to.wallet}:${to.symbol}`, to.wallet_color)}</>
+          return <>{getColoredText(fromLabel, from.wallet_color)} → {getColoredText(toLabel, to.wallet_color)}</>
+        return <>{getColoredText(`${fromLabel}:${from.symbol}`, from.wallet_color)} → {getColoredText(`${toLabel}:${to.symbol}`, to.wallet_color)}</>
+      }
       case 'exchange':
         if (from.wallet === to.wallet)
           return <>{getColoredText(from.currency, from.wallet_color)} → {getColoredText(to.currency, to.wallet_color)}</>
@@ -158,12 +184,13 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         if (line?.counterparty) {
           return getColoredText(line.counterparty, line.wallet_color)
         }
-        return getColoredText(transaction[0].wallet, transaction[0].wallet_color)
+        return getColoredText(transaction[0].goal_name ?? transaction[0].wallet, transaction[0].wallet_color)
       }
     }
   }
 
   const getIcon = () => {
+    if (transactionType === 'transfer' && getGoalLeg(transaction)) return '🎯'
     switch (transactionType) {
       case 'transfer': return '↔️'
       case 'exchange': return '💱'
@@ -193,6 +220,10 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
     }
     if (transactionType === 'adjustment') {
       return 'Adjustment'
+    }
+    if (transactionType === 'transfer') {
+      const goalLeg = getGoalLeg(transaction)
+      if (goalLeg) return goalLeg.sign === '+' ? 'Put' : 'Take'
     }
     if (['transfer', 'exchange'].includes(transactionType)) {
       return capitalize(transactionType)

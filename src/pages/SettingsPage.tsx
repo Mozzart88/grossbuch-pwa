@@ -7,8 +7,8 @@ import { currencyRepository } from '../services/repositories'
 import type { Currency } from '../types'
 
 const settingsLinks = [
-  { to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
-  { to: '/settings/import', label: 'Import Data', icon: '📥', description: 'Import transactions from CSV' },
+  ...(import.meta.env.DEV ? [{ to: '/settings/export', label: 'Export Data', icon: '📤', description: 'Export transactions to CSV' },
+  { to: '/settings/import', label: 'Import Data', icon: '📥', description: 'Import transactions from CSV' }] : []),
   // Raw whole-DB export is a debugging tool, not a user-facing data transfer path
   // (that's the sync/workspace-package flows) — dev-only. See design.md.
   ...(import.meta.env.DEV

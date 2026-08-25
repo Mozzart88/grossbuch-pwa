@@ -12,6 +12,7 @@ import { getRateForDate } from '../../services/exchangeRate/historicalRateServic
 
 interface TransferTransactionFormProps {
   accounts: AccountOption[]
+  sourceAccounts?: AccountOption[]
   defaultAccountId: string
   datetime: number
   onDateTimeChange: (value: number) => void
@@ -38,6 +39,7 @@ const renderAccountSelectedBadge = (option: AccountSelectUIOption) =>
 
 export function TransferTransactionForm({
   accounts,
+  sourceAccounts,
   defaultAccountId,
   datetime,
   onDateTimeChange,
@@ -124,7 +126,7 @@ export function TransferTransactionForm({
 
   const selectedAccount = accounts.find(a => a.id.toString() === accountId)
   const decimalPlaces = selectedAccount?.decimalPlaces ?? 2
-  const accountOptions = toAccountSelectUIOptions(accounts)
+  const accountOptions = toAccountSelectUIOptions(sourceAccounts ?? accounts)
   const toAccountOptions = toAccountSelectUIOptions(accounts
     .filter(a => a.id !== selectedAccount?.id)
     .filter(a => a.currency_id === selectedAccount?.currency_id))

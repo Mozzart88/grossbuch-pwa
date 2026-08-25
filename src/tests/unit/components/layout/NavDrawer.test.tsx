@@ -72,6 +72,12 @@ describe('NavDrawer', () => {
   })
 
   describe('Nav links', () => {
+    it('renders Goals link', () => {
+      renderDrawer(true)
+
+      expect(screen.getByText('Goals')).toBeInTheDocument()
+    })
+
     it('renders Tags link', () => {
       renderDrawer(true)
 
@@ -110,6 +116,16 @@ describe('NavDrawer', () => {
   })
 
   describe('Navigation', () => {
+    it('navigates to goals and closes drawer on Goals click', () => {
+      const onClose = vi.fn()
+      renderDrawer(true, onClose)
+
+      fireEvent.click(screen.getByText('Goals'))
+
+      expect(mockNavigate).toHaveBeenCalledWith('/goals')
+      expect(onClose).toHaveBeenCalled()
+    })
+
     it('navigates to tags and closes drawer on Tags click', () => {
       const onClose = vi.fn()
       renderDrawer(true, onClose)
