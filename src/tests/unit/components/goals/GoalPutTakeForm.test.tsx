@@ -97,7 +97,8 @@ describe('GoalPutTakeForm', () => {
 
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '2' } })
 
-    expect(screen.getByText('Amount ($): 500,00')).toBeInTheDocument()
+    const expectedBalance = (500).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    expect(screen.getByText(`Amount ($): ${expectedBalance}`)).toBeInTheDocument()
   })
 
   it('shows a static savings-only hint regardless of selection', () => {
@@ -144,7 +145,9 @@ describe('GoalPutTakeForm', () => {
       />
     )
 
-    expect((document.getElementById('amount') as HTMLInputElement).value).toBe('50,00')
+    expect((document.getElementById('amount') as HTMLInputElement).value).toBe(
+      (50).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    )
     expect(screen.getByPlaceholderText('Add notes...')).toHaveValue('existing note')
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
 
