@@ -5,10 +5,11 @@ import { PageHeader } from '../components/layout/PageHeader'
 import { MonthNavigator } from '../components/transactions/MonthNavigator'
 import { MonthSummary } from '../components/transactions/MonthSummary'
 import { PageTabs, Card, Spinner, DropdownMenu, Modal, AmountInput, Select, Button, useToast, ChevronIcon, LiveSearch, Badge } from '../components/ui'
-import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository } from '../services/repositories'
+import { transactionRepository, currencyRepository, accountRepository, budgetRepository, tagRepository, goalRepository } from '../services/repositories'
 import { getCurrentMonth } from '../utils/dateUtils'
 import { formatCurrencyValue } from '../utils/formatters'
 import { fromIntFrac, toIntFrac } from '../utils/amount'
+import { sumSuggestedContributions } from '../utils/goalContribution'
 import { encodeTagSelection, parseTagSelection, toTagLiveSearchOptions, type TagLiveSearchOption } from '../components/transactions/transactionFormShared'
 import type {
   MonthSummary as MonthSummaryType,
@@ -20,6 +21,7 @@ import type {
   Tag,
   TagContextOption,
   TagHierarchy,
+  Goal,
 } from '../types'
 import { SYSTEM_TAGS } from '../types'
 import { useDataRefresh } from '../hooks/useDataRefresh'
@@ -88,6 +90,7 @@ export function SummariesPage() {
   const [incomeTagOptions, setIncomeTagOptions] = useState<TagContextOption[]>([])
   const [expenseTagOptions, setExpenseTagOptions] = useState<TagContextOption[]>([])
   const [tagHierarchy, setTagHierarchy] = useState<TagHierarchy[]>([])
+  const [activeGoals, setActiveGoals] = useState<Goal[]>([])
   const [expandedSummaryTagIds, setExpandedSummaryTagIds] = useState<Set<string>>(new Set())
   const [modalOpen, setModalOpen] = useState(false)
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null)
@@ -140,7 +143,7 @@ export function SummariesPage() {
       setCurrencySymbol(symbol)
       setDecimalPlaces(decimals)
 
-      const [monthSum, totalBalance, tags, counterparties, breakdown, flatBreakdown, flatTags, monthBudgets, allIncomeTags, allExpenseTags, systemTags, incomeOptions, expenseOptions, hierarchy] = await Promise.all([
+      const [monthSum, totalBalance, tags, counterparties, breakdown, flatBreakdown, flatTags, monthBudgets, allIncomeTags, allExpenseTags, systemTags, incomeOptions, expenseOptions, hierarchy, goals] = await Promise.all([
         transactionRepository.getMonthSummary(month),
         accountRepository.getPlainTotalBalance(),
         transactionRepository.getMonthlyTagsSummary(month),
@@ -155,6 +158,7 @@ export function SummariesPage() {
         tagRepository.getContextOptions('income') ?? Promise.resolve([]),
         tagRepository.getContextOptions('expense') ?? Promise.resolve([]),
         tagRepository.getHierarchy?.() ?? Promise.resolve([]),
+        goalRepository.findActive(),
       ])
       const accountBudgetTags = (systemTags ?? []).filter(isAccountBudgetTag)
       const accountBudgetOptions: TagContextOption[] = accountBudgetTags.map((tag) => ({
@@ -188,6 +192,7 @@ export function SummariesPage() {
       setIncomeTagOptions(incomeOptions)
       setExpenseTagOptions([...(expenseOptions ?? []), ...accountBudgetOptions])
       setTagHierarchy(hierarchy)
+      setActiveGoals(goals ?? [])
       setExpandedSummaryTagIds(prev => {
         if (prev.size > 0) return prev
         return new Set(hierarchy.map(h => h.parent_id.toString()))
@@ -264,19 +269,38 @@ export function SummariesPage() {
     return options
   }
 
+  // The aggregate Savings budget's amount field pre-fills with the sum of
+  // the suggested-contribution figure across every active, due-dated goal —
+  // overriding the usual "actual spend this month" suggestion just for that
+  // one tag. The user can still type over it like any other prefilled
+  // default. See design.md's Decision 7 / spec.md's budget pre-fill scenario.
+  const isSavingsTag = (tagId: number): boolean =>
+    tagId === expenseTags.find(t => t.name === 'savings')?.id
+
+  const suggestedBudgetAmount = (tagId: number, fallback: number): number =>
+    isSavingsTag(tagId) ? sumSuggestedContributions(activeGoals) : fallback
+
   const parseAmountToIntFrac = (value: string): { int: number; frac: number } => {
     const parsed = parseFloat(value)
     if (isNaN(parsed)) return { int: 0, frac: 0 }
     return toIntFrac(Math.abs(parsed))
   }
 
-  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget, contextId?: number | null) => {
+  const openBudgetModal = (type: 'income' | 'expense', tagId: number, suggestedAmount: number, existingBudget?: Budget, contextId?: number | null, preferSuggestedAmount = false) => {
     setSelectedTagSelection(encodeTagSelection(tagId, existingBudget?.tag_context_id ?? contextId ?? null))
     setSelectedBudgetType(type)
     if (existingBudget) {
       setEditingBudget(existingBudget)
       setSelectedBudgetType(budgetType(existingBudget))
-      setBudgetAmount(fromIntFrac(existingBudget.amount_int, existingBudget.amount_frac).toString())
+      // The aggregate Savings budget always re-suggests the freshly computed
+      // goal-contribution sum on "Adjust budget" too, not just "Set budget" —
+      // the user's prior amount may be stale now that goal balances/targets
+      // have moved. Still just a suggestion: they can type over it.
+      setBudgetAmount(
+        preferSuggestedAmount
+          ? suggestedAmount.toFixed(decimalPlaces)
+          : fromIntFrac(existingBudget.amount_int, existingBudget.amount_frac).toString()
+      )
       // Convert budget start timestamp to YYYY-MM format
       const budgetDate = new Date(existingBudget.start * 1000)
       setBudgetPeriod(`${budgetDate.getFullYear()}-${String(budgetDate.getMonth() + 1).padStart(2, '0')}`)
@@ -725,8 +749,8 @@ export function SummariesPage() {
                     type={type}
                     onClick={() => handleCategoryClick(type, cat.tag_id)}
                     budget={budget}
-                    onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount, null) : undefined}
-                    onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, directBudget, directBudget.tag_context_id ?? null) : undefined}
+                    onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, suggestedBudgetAmount(cat.tag_id, cat.amount), null) : undefined}
+                    onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, suggestedBudgetAmount(cat.tag_id, cat.amount), directBudget, directBudget.tag_context_id ?? null, isSavingsTag(cat.tag_id)) : undefined}
                     onDeleteBudget={directBudget ? () => handleBudgetDelete(directBudget) : undefined}
                   />
                 )
@@ -828,8 +852,8 @@ export function SummariesPage() {
             onClick={() => hasVisibleChildren ? toggleSummaryTag(itemKey, cat.tag_id.toString()) : handleCategoryClick(type, cat.tag_id, false, cat.tag_context_id)}
             onTitleClick={hasVisibleChildren ? () => handleCategoryClick(type, cat.tag_id, true, currentBranchContextId) : undefined}
             budget={budget}
-            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, cat.amount, cat.tag_context_id ?? null) : undefined}
-            onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, cat.amount, directBudget, cat.tag_context_id ?? null) : undefined}
+            onSetBudget={canSetBudget ? () => openSetBudgetModal(type, cat.tag_id, suggestedBudgetAmount(cat.tag_id, cat.amount), cat.tag_context_id ?? null) : undefined}
+            onAdjustBudget={directBudget && isCurrentMonth ? () => openBudgetModal(type, cat.tag_id, suggestedBudgetAmount(cat.tag_id, cat.amount), directBudget, cat.tag_context_id ?? null, isSavingsTag(cat.tag_id)) : undefined}
             onDeleteBudget={directBudget ? () => handleBudgetDelete(directBudget) : undefined}
           />
       )

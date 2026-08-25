@@ -126,7 +126,15 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
     }
   }
 
-  const handleTransactionClick = (hexId: string) => {
+  const handleTransactionClick = (hexId: string, trxs: TransactionLog[]) => {
+    // Put/Take rows (either leg's goal_id set) route to the dedicated
+    // Put/Take edit page, not the generic transfer editor — see design.md
+    // Decision 18.
+    const goalId = trxs.find(l => l.goal_id)?.goal_id
+    if (goalId) {
+      navigate(`/goals/${goalId}/put-take/${hexId}`)
+      return
+    }
     navigate(`/transaction/${hexId}`)
   }
 
@@ -203,7 +211,7 @@ export function AccountTransactionList({ account, initialMonth, onMonthChange }:
                       <TransactionItem
                         key={`${hexId}-${index}`}
                         transaction={trxs}
-                        onClick={() => handleTransactionClick(hexId)}
+                        onClick={() => handleTransactionClick(hexId, trxs)}
                       />
                     ))}
                   </div>

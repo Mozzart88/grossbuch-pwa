@@ -6,6 +6,7 @@ interface NavDrawerProps {
 }
 
 const navItems = [
+  { to: '/goals', label: 'Goals', icon: '🎯' },
   { to: '/settings/tags', label: 'Tags', icon: '🏷️' },
   { to: '/settings/counterparties', label: 'Counterparties', icon: '👥' },
   { to: '/settings/recurring', label: 'Recurring Transactions', icon: '∞' },

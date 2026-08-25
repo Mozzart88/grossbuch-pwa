@@ -94,6 +94,7 @@ const mockAccountSavings: Account = {
   updated_at: 1704067200,
   wallet: 'Savings',
   currency: 'USD',
+  account_type: 'savings',
 }
 
 const mockWallets: Wallet[] = [
@@ -391,6 +392,29 @@ describe('TransactionForm', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/Fee.*optional/)).toBeInTheDocument()
+      })
+    })
+  })
+
+  describe('Savings-typed accounts', () => {
+    it('excludes a savings-typed account as an expense funding source', async () => {
+      renderForm()
+
+      await waitFor(() => {
+        const accountSelect = screen.getByRole('combobox', { name: /account/i })
+        expect(within(accountSelect).queryByRole('option', { name: /Savings/ })).not.toBeInTheDocument()
+      })
+    })
+
+    it('excludes a savings-typed account from the income account picker', async () => {
+      renderForm()
+
+      const incomeButton = await screen.findByRole('button', { name: 'Income' })
+      fireEvent.click(incomeButton)
+
+      await waitFor(() => {
+        const accountSelect = screen.getByRole('combobox', { name: /account/i })
+        expect(within(accountSelect).queryByRole('option', { name: /Savings/ })).not.toBeInTheDocument()
       })
     })
   })

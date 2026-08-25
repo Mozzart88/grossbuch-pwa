@@ -39,6 +39,12 @@ vi.mock('../../../../utils/dateUtils', async () => {
   }
 })
 
+const mockNavigate = vi.fn()
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual('react-router-dom')
+  return { ...actual, useNavigate: () => mockNavigate }
+})
+
 import {
   transactionRepository,
   accountRepository,
@@ -245,27 +251,34 @@ describe('TransactionList', () => {
   })
 
   it('navigates to transaction detail when clicking a transaction', async () => {
-    const mockNavigate = vi.fn()
-    vi.doMock('react-router-dom', async () => {
-      const actual = await vi.importActual('react-router-dom')
-      return {
-        ...actual,
-        useNavigate: () => mockNavigate,
-      }
-    })
-
     renderWithRouter()
 
     await waitFor(() => {
       expect(screen.getByText('Food')).toBeInTheDocument()
     })
 
-    // Click the transaction item
     const transactionButton = screen.getByRole('button', { name: /food/i })
     fireEvent.click(transactionButton)
 
-    // The navigation happens via the TransactionItem click handler
-    // Since we're using BrowserRouter, we can check if the component renders correctly
+    expect(mockNavigate).toHaveBeenCalledWith(`/transaction/${'00'.repeat(8)}`)
+  })
+
+  it('navigates to the goal Put/Take edit page when the row is a goal transfer', async () => {
+    const goalTransfer: TransactionLog[] = [
+      { ...sampleTransaction, tags: 'transfer', sign: '+', goal_id: 'aabbccdd', goal_name: 'Emergency Fund' },
+      { ...sampleTransaction, tags: 'transfer', sign: '-', wallet: 'Savings' },
+    ]
+    mockTransactionRepository.findByMonthFiltered.mockResolvedValue(goalTransfer)
+
+    renderWithRouter()
+
+    await waitFor(() => {
+      expect(screen.getByText('Put')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /put/i }))
+
+    expect(mockNavigate).toHaveBeenCalledWith(`/goals/aabbccdd/put-take/${'00'.repeat(8)}`)
   })
 
   describe('day summaries', () => {

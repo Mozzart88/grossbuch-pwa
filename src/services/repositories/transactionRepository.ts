@@ -53,6 +53,8 @@ export const transactionRepository = {
         c.name as counterparty,
         a.wallet as wallet,
         a.wallet_color as wallet_color,
+        a.goal_name as goal_name,
+        a.goal_id as goal_id,
         a.currency as currency,
         a.symbol as symbol,
         a.decimal_places as decimal_places,
@@ -1160,6 +1162,8 @@ export const transactionRepository = {
         datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
         c.name as counterparty,
         a.wallet as wallet,
+        a.goal_name as goal_name,
+        a.goal_id as goal_id,
         a.currency as currency,
         a.symbol as symbol,
         a.decimal_places as decimal_places,
@@ -1186,6 +1190,55 @@ export const transactionRepository = {
       ORDER BY t.timestamp DESC
     `
     return querySQL<TransactionLog>(sql, [`${yearMonth}%`, accountId])
+  },
+
+  // Generalizes findByAccountAndMonth to a set of accounts (a goal's wallet can
+  // hold more than one currency account) with an optional cap on the number of
+  // distinct transactions returned (not raw trx_base rows — a multi-leg
+  // transaction like Put/Take must not be split across the cutoff).
+  async findByAccountIds(accountIds: number[], limit?: number): Promise<TransactionLog[]> {
+    if (accountIds.length === 0) return []
+    const placeholders = accountIds.map(() => '?').join(',')
+    const trxFilter = limit
+      ? `t.id IN (
+          SELECT id FROM trx
+          WHERE id IN (SELECT DISTINCT trx_id FROM trx_base WHERE account_id IN (${placeholders}))
+          ORDER BY timestamp DESC LIMIT ?
+        )`
+      : `t.id IN (SELECT DISTINCT trx_id FROM trx_base WHERE account_id IN (${placeholders}))`
+    const params = limit ? [...accountIds, limit] : [...accountIds]
+
+    const sql = `
+      SELECT
+        t.id as id,
+        datetime(t.timestamp, 'unixepoch', 'localtime') as date_time,
+        c.name as counterparty,
+        a.wallet as wallet,
+        a.goal_name as goal_name,
+        a.goal_id as goal_id,
+        a.currency as currency,
+        a.symbol as symbol,
+        a.decimal_places as decimal_places,
+        tag.name as tags,
+        ctx.tag_id as tag_context_id,
+        ctx_tag.name as tag_context,
+        tb.amount_int as amount_int,
+        tb.amount_frac as amount_frac,
+        tb.sign as sign,
+        tb.rate_int as rate_int,
+        tb.rate_frac as rate_frac
+      FROM trx t
+      JOIN trx_base tb ON tb.trx_id = t.id
+      JOIN accounts a ON tb.account_id = a.id
+      JOIN tag ON tb.tag_id = tag.id
+      LEFT JOIN trx_base_tag_context ctx ON ctx.trx_base_id = tb.id
+      LEFT JOIN tag ctx_tag ON ctx_tag.id = ctx.tag_id
+      LEFT JOIN trx_to_counterparty t2c ON t2c.trx_id = t.id
+      LEFT JOIN counterparty c ON t2c.counterparty_id = c.id
+      WHERE ${trxFilter}
+      ORDER BY t.timestamp DESC
+    `
+    return querySQL<TransactionLog>(sql, params)
   },
 
   // Get day summary for a specific account (net amount in account's currency)

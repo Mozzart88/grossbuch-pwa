@@ -139,7 +139,8 @@ export interface AccountSelectUIOption extends SelectUIOption {
 
 export const getAccountTypeLabel = (account: AccountOption): string | null => {
   if (!account.account_type || account.account_type === 'plain') return null
-  return account.account_type === 'credits' ? 'Credit' : 'Savings'
+  if (account.account_type === 'credits') return 'Credit'
+  return 'Savings'
 }
 
 export const formatAccountSelectLabel = (account: AccountOption): string =>

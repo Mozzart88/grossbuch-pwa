@@ -32,6 +32,8 @@ export const TEMP_VIEW_STATEMENTS: string[] = [
     a.id as id,
     w.name as wallet,
     w.color as wallet_color,
+    g.name as goal_name,
+    hex(g.id) as goal_id,
     c.code as currency, c.symbol as symbol, c.decimal_places as decimal_places,
     group_concat(t.name, ', ') as tags,
     CASE
@@ -51,8 +53,9 @@ export const TEMP_VIEW_STATEMENTS: string[] = [
   LEFT JOIN workspace.account_to_tags a2t ON a2t.account_id = a.id
   LEFT JOIN shared.tag t ON a2t.tag_id = t.id
   LEFT JOIN workspace.account_data ad ON ad.account_id = a.id
+  LEFT JOIN workspace.goal g ON g.wallet_id = w.id
   GROUP BY a.id
-  ORDER BY wallet_id;`,
+  ORDER BY a.wallet_id;`,
 
   `CREATE TEMP VIEW trx_log AS
   SELECT
@@ -61,6 +64,7 @@ export const TEMP_VIEW_STATEMENTS: string[] = [
     c.name as counterparty,
     a.wallet as wallet,
     a.wallet_color as wallet_color,
+    a.goal_name as goal_name,
     a.currency as currency,
     a.symbol as symbol,
     a.decimal_places as decimal_places,

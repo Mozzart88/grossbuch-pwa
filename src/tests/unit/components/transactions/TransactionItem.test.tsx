@@ -72,6 +72,138 @@ describe('TransactionItem', () => {
     expect(screen.getByText('Cash → Bank')).toBeInTheDocument()
   })
 
+  it('renders a Put/Take transfer whose counterparty leg has a zero amount, without crashing', () => {
+    // A Put/Take's funding-account leg carries amount_int/frac = 0 (see
+    // goalRepository.ts) — getSignedAmount's -0/0 result for that leg is never
+    // strictly < 0, so from/to detection must key off `sign`, not signed amount.
+    const putTransaction: TransactionLog[] = [
+      {
+        ...baseTransaction,
+        wallet: 'Goal Wallet',
+        tags: 'transfer',
+        sign: '+',
+        amount_int: 50,
+        amount_frac: 0,
+      },
+      {
+        ...baseTransaction,
+        wallet: 'Savings',
+        tags: 'transfer',
+        sign: '-',
+        amount_int: 0,
+        amount_frac: 0,
+      },
+    ]
+    const onClick = vi.fn()
+    render(<TransactionItem transaction={putTransaction} onClick={onClick} />)
+
+    expect(screen.getByText('Transfer')).toBeInTheDocument()
+    expect(screen.getByText('Savings → Goal Wallet')).toBeInTheDocument()
+    // Shows the real (non-zero) amount, not the zero-amount leg's $0.00.
+    expect(screen.getByText(formatCurrencyValue(50, '$'))).toBeInTheDocument()
+  })
+
+  it('renders a Put distinctly from a plain Transfer, showing the goal name in place of its hidden wallet name', () => {
+    const putTransaction: TransactionLog[] = [
+      {
+        ...baseTransaction,
+        wallet: 'goal_a1b2c3d4',
+        goal_name: 'Emergency Fund',
+        tags: 'transfer',
+        sign: '+',
+        amount_int: 50,
+        amount_frac: 0,
+      },
+      {
+        ...baseTransaction,
+        wallet: 'Savings',
+        goal_name: null,
+        tags: 'transfer',
+        sign: '-',
+        amount_int: 0,
+        amount_frac: 0,
+      },
+    ]
+    render(<TransactionItem transaction={putTransaction} onClick={vi.fn()} />)
+
+    expect(screen.getByText('🎯')).toBeInTheDocument()
+    expect(screen.getByText('Put')).toBeInTheDocument()
+    expect(screen.getByText('Savings → Emergency Fund')).toBeInTheDocument()
+    expect(screen.queryByText('↔️')).not.toBeInTheDocument()
+    expect(screen.queryByText('Transfer')).not.toBeInTheDocument()
+  })
+
+  it('renders a Take distinctly from a plain Transfer', () => {
+    const takeTransaction: TransactionLog[] = [
+      {
+        ...baseTransaction,
+        wallet: 'goal_a1b2c3d4',
+        goal_name: 'Emergency Fund',
+        tags: 'transfer',
+        sign: '-',
+        amount_int: 20,
+        amount_frac: 0,
+      },
+      {
+        ...baseTransaction,
+        wallet: 'Savings',
+        goal_name: null,
+        tags: 'transfer',
+        sign: '+',
+        amount_int: 0,
+        amount_frac: 0,
+      },
+    ]
+    render(<TransactionItem transaction={takeTransaction} onClick={vi.fn()} />)
+
+    expect(screen.getByText('🎯')).toBeInTheDocument()
+    expect(screen.getByText('Take')).toBeInTheDocument()
+    expect(screen.getByText('Emergency Fund → Savings')).toBeInTheDocument()
+  })
+
+  it('colors a Put amount green', () => {
+    const putTransaction: TransactionLog[] = [
+      { ...baseTransaction, wallet: 'goal_a1b2c3d4', goal_name: 'Emergency Fund', tags: 'transfer', sign: '+', amount_int: 50, amount_frac: 0 },
+      { ...baseTransaction, wallet: 'Savings', goal_name: null, tags: 'transfer', sign: '-', amount_int: 0, amount_frac: 0 },
+    ]
+    render(<TransactionItem transaction={putTransaction} onClick={vi.fn()} />)
+
+    expect(screen.getByText(formatCurrencyValue(50, '$')).className).toContain('text-green-600')
+  })
+
+  it('colors a Take amount red', () => {
+    const takeTransaction: TransactionLog[] = [
+      { ...baseTransaction, wallet: 'goal_a1b2c3d4', goal_name: 'Emergency Fund', tags: 'transfer', sign: '-', amount_int: 20, amount_frac: 0 },
+      { ...baseTransaction, wallet: 'Savings', goal_name: null, tags: 'transfer', sign: '+', amount_int: 0, amount_frac: 0 },
+    ]
+    render(<TransactionItem transaction={takeTransaction} onClick={vi.fn()} />)
+
+    expect(screen.getByText(formatCurrencyValue(20, '$')).className).toContain('text-red-600')
+  })
+
+  it('keeps an ordinary (non-goal) transfer amount blue', () => {
+    const transferTransaction: TransactionLog[] = [
+      { ...baseTransaction, tags: 'transfer', sign: '-', amount_int: 50, amount_frac: 0 },
+      { ...baseTransaction, wallet: 'Bank', tags: 'transfer', sign: '+', amount_int: 50, amount_frac: 0 },
+    ]
+    render(<TransactionItem transaction={transferTransaction} onClick={vi.fn()} />)
+
+    expect(screen.getByText(formatCurrencyValue(50, '$')).className).toContain('text-blue-600')
+  })
+
+  it('substitutes the goal name for the hidden wallet name on an Initial Balance row', () => {
+    const initialTransaction: TransactionLog = {
+      ...baseTransaction,
+      wallet: 'goal_a1b2c3d4',
+      goal_name: 'Emergency Fund',
+      tags: 'initial',
+    }
+    render(<TransactionItem transaction={[initialTransaction]} onClick={vi.fn()} />)
+
+    expect(screen.getByText('Emergency Fund')).toBeInTheDocument()
+    expect(screen.queryByText('goal_a1b2c3d4')).not.toBeInTheDocument()
+  })
+
   it('renders transfer transaction in different currencies currency', () => {
     // this test case should not be exists in real live - transfer in different currencies = exchange
     const transferTransaction: TransactionLog[] = [

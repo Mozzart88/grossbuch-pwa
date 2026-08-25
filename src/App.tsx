@@ -33,6 +33,10 @@ import {
   ImportPage,
   DownloadPage,
   TagsPage,
+  GoalsPage,
+  GoalDetailsPage,
+  GoalTransactionsPage,
+  GoalPutTakePage,
   BudgetsPage,
   SummariesPage,
   PinSetupPage,
@@ -206,6 +210,11 @@ function AppContent() {
         <Route path="/settings/import" element={<ImportPage />} />
         <Route path="/settings/download" element={<DownloadPage />} />
         <Route path="/settings/tags" element={<TagsPage />} />
+        <Route path="/goals" element={<GoalsPage />} />
+        <Route path="/goals/:goalId" element={<GoalDetailsPage />} />
+        <Route path="/goals/:goalId/transactions" element={<GoalTransactionsPage />} />
+        <Route path="/goals/:goalId/put-take" element={<GoalPutTakePage />} />
+        <Route path="/goals/:goalId/put-take/:trxId" element={<GoalPutTakePage />} />
         <Route path="/settings/budgets" element={<BudgetsPage />} />
         <Route path="/settings/recurring" element={<RecurringTransactionsPage />} />
         <Route path="/settings/security" element={<ChangePinPage />} />

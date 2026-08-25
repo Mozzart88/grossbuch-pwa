@@ -366,6 +366,70 @@ export const accountRepository = {
     return result?.total ?? 0
   },
 
+  // Move an account to a different wallet. Replicates, in application code,
+  // the invariants `trg_del_default_account`/`trg_add_first_account` would
+  // have handled had this been a delete+insert of the `account` row instead
+  // of an `UPDATE account SET wallet_id`: reassigning the source wallet's
+  // default (via `trg_set_default_account`, the only trigger that actually
+  // fires here — see design.md's Decision 2 correction), deleting the source
+  // wallet once it's empty, and defaulting the moved account in a
+  // previously-empty target wallet without ever displacing an existing one.
+  async moveAccountToWallet(accountId: number, targetWalletId: number): Promise<void> {
+    const account = await queryOne<{ wallet_id: number }>('SELECT wallet_id FROM account WHERE id = ?', [accountId])
+    if (!account) throw new Error('Account not found')
+    const sourceWalletId = account.wallet_id
+
+    const isDefault = await queryOne<Record<string, unknown>>(
+      'SELECT 1 FROM account_to_tags WHERE account_id = ? AND tag_id = ?',
+      [accountId, SYSTEM_TAGS.DEFAULT]
+    )
+
+    if (isDefault) {
+      const other = await queryOne<{ id: number }>(
+        'SELECT id FROM account WHERE wallet_id = ? AND id != ? LIMIT 1',
+        [sourceWalletId, accountId]
+      )
+      if (other) {
+        // trg_set_default_account clears every DEFAULT row in the source wallet
+        // (including this account's own) as a side effect of this insert.
+        await execSQL('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [other.id, SYSTEM_TAGS.DEFAULT])
+        await tagReferences.increment(SYSTEM_TAGS.DEFAULT)
+        await tagReferences.decrement(SYSTEM_TAGS.DEFAULT)
+      } else {
+        await execSQL('DELETE FROM account_to_tags WHERE account_id = ? AND tag_id = ?', [accountId, SYSTEM_TAGS.DEFAULT])
+        await tagReferences.decrement(SYSTEM_TAGS.DEFAULT)
+      }
+    }
+
+    const targetCount = await queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM account WHERE wallet_id = ?',
+      [targetWalletId]
+    )
+    const targetWasEmpty = (targetCount?.count ?? 0) === 0
+
+    await execSQL('UPDATE account SET wallet_id = ? WHERE id = ?', [targetWalletId, accountId])
+
+    if (targetWasEmpty) {
+      await execSQL('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [accountId, SYSTEM_TAGS.DEFAULT])
+      await tagReferences.increment(SYSTEM_TAGS.DEFAULT)
+    }
+
+    const remaining = await queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM account WHERE wallet_id = ?',
+      [sourceWalletId]
+    )
+    if ((remaining?.count ?? 0) === 0) {
+      const walletTags = await querySQL<{ tag_id: number }>(
+        'SELECT tag_id FROM wallet_to_tags WHERE wallet_id = ?',
+        [sourceWalletId]
+      )
+      await execSQL('DELETE FROM wallet WHERE id = ?', [sourceWalletId])
+      for (const tag of walletTags) {
+        await tagReferences.decrement(tag.tag_id)
+      }
+    }
+  },
+
   // Convert amount from one currency to another using exchange rates
   async convertAmount(
     amountInt: number,
