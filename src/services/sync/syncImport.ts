@@ -1,5 +1,6 @@
 import { execSQL, queryOne } from '../database/connection'
 import { getActiveWorkspaceId } from '../database/workspace'
+import { RECOMPUTE_SHARED_COUNTERS_SQL } from '../database/sharedCounterRecompute'
 import { hexToBlob } from '../../utils/blobUtils'
 import { settingsRepository } from '../repositories/settingsRepository'
 import { linkedDeviceRepository } from '../repositories/linkedDeviceRepository'
@@ -63,6 +64,12 @@ export async function importSyncPackage(pkg: SyncPackage): Promise<ImportResult>
     result.imported.recurringBudgets = await importRecurringBudgets(pkg.recurringBudgets ?? [])
     result.imported.goals = await importGoals(pkg.goals ?? [])
     result.imported.deletions = await importDeletions(pkg.deletions)
+
+    // shared.tag_sort_order/counterparty_sort_order/tag_references are application-maintained
+    // (sortOrder.ts/tagReferences.ts), but those call sites are never hit by the raw-SQL
+    // imports above — recompute once, after everything else, so this import leaves them
+    // correct regardless of which entity types the package touched. See proposal.md.
+    await execSQL(RECOMPUTE_SHARED_COUNTERS_SQL)
 
     await execSQL('COMMIT')
   } catch (err) {

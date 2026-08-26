@@ -1996,6 +1996,64 @@ describe('Sync Integration', () => {
 
       db.close()
     })
+
+    it('recomputes shared counters after importing transaction history on a freshly-linked device (bug repro)', async () => {
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const db = getTestDatabase()
+      // Freshly-linked device: no local usage of this tag/counterparty yet, matching
+      // the reported repro — a newly-linked device's first pull lost tag/counterparty
+      // sort-order and reference counts for everything that arrived via sync.
+      const walletId = insertWallet({ name: 'LinkedWallet' })
+      const usdId = getCurrencyIdByCode('USD')
+      const accountId = insertAccount({ wallet_id: walletId, currency_id: usdId })
+      const tagId = insertTag({ name: 'ImportedTag' })
+      const cpId = insertCounterparty({ name: 'ImportedCounterparty' })
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'parent',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [
+          {
+            id: 'AAAA000000000001',
+            timestamp: 1000,
+            updated_at: 1000,
+            counterparty: cpId,
+            note: null,
+            lines: [{ id: 'BBBB000000000001', account: accountId, tag: tagId, sign: '-', amount_int: 10, amount_frac: 0, rate_int: 1, rate_frac: 0 }],
+          },
+          {
+            id: 'AAAA000000000002',
+            timestamp: 2000,
+            updated_at: 2000,
+            counterparty: cpId,
+            note: null,
+            lines: [{ id: 'BBBB000000000002', account: accountId, tag: tagId, sign: '-', amount_int: 20, amount_frac: 0, rate_int: 1, rate_frac: 0 }],
+          },
+        ],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.transactions).toBe(2)
+
+      const tagCount = db.exec(`SELECT count FROM shared.tag_sort_order WHERE tag_id = ${tagId}`)
+      const cpCount = db.exec(`SELECT count FROM shared.counterparty_sort_order WHERE counterparty_id = ${cpId}`)
+      const tagRefCount = db.exec(`SELECT count FROM shared.tag_references WHERE tag_id = ${tagId}`)
+
+      expect(Number(tagCount[0]?.values[0]?.[0])).toBe(2)
+      expect(Number(cpCount[0]?.values[0]?.[0])).toBe(2)
+      expect(Number(tagRefCount[0]?.values[0]?.[0])).toBe(2)
+    })
   })
 
   describe('sync trigger drop/restore (goal regression — design.md Decision 9)', () => {

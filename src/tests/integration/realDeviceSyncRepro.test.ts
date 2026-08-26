@@ -105,4 +105,64 @@ describe('Real device sync reproduction (regression)', () => {
       expect(row[0]?.values[0]?.[0]).toBe(name)
     }
   })
+
+  // Regression for the shared-counter-recompute bug: a freshly-linked device importing
+  // this same real device's tag set *and* transaction history ended up with
+  // shared.tag_sort_order/counterparty_sort_order/tag_references frozen at 0 for every
+  // tag/counterparty that only ever arrived via sync — see proposal.md.
+  it('recomputes tag_sort_order and tag_references for representative real tags after importing tag set + transaction history', async () => {
+    const { removeDefaultAssets } = await import('../../services/database/removeDefaultAssets')
+    await removeDefaultAssets()
+
+    // A small representative slice of the real device's tags: 'Food' (28) and 'Rent' (47),
+    // with their real parent links from the full tagToTag table above.
+    const tags = [
+      { id: 28, name: 'Food', updated_at: 1000, parents: [2, 10], children: [], icon: null },
+      { id: 47, name: 'Rent', updated_at: 1000, parents: [2, 9, 10], children: [], icon: null },
+    ]
+
+    const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+    const walletId = 900
+    const accountId = 900
+    const cpId = 900
+
+    const result = await importSyncPackage({
+      version: 2,
+      sender_id: 'device-a',
+      created_at: 1000,
+      since: 0,
+      icons: [],
+      tags,
+      wallets: [{ id: walletId, name: 'Real Wallet', color: null, updated_at: 1000, tags: [] }],
+      accounts: [{ id: accountId, wallet: walletId, currency: 1, updated_at: 1000, tags: [] }],
+      counterparties: [{ id: cpId, name: 'Landlord', updated_at: 1000, note: null, tags: [] }],
+      currencies: [],
+      transactions: [
+        { id: 'D0D0000000000001', timestamp: 1000, updated_at: 1000, counterparty: null, note: null, lines: [{ id: 'D0D1000000000001', account: accountId, tag: 28, sign: '-', amount_int: 10, amount_frac: 0, rate_int: 0, rate_frac: 0 }] },
+        { id: 'D0D0000000000002', timestamp: 1000, updated_at: 1000, counterparty: null, note: null, lines: [{ id: 'D0D1000000000002', account: accountId, tag: 28, sign: '-', amount_int: 20, amount_frac: 0, rate_int: 0, rate_frac: 0 }] },
+        { id: 'D0D0000000000003', timestamp: 1000, updated_at: 1000, counterparty: null, note: null, lines: [{ id: 'D0D1000000000003', account: accountId, tag: 28, sign: '-', amount_int: 30, amount_frac: 0, rate_int: 0, rate_frac: 0 }] },
+        { id: 'D0D0000000000004', timestamp: 1000, updated_at: 1000, counterparty: cpId, note: null, lines: [{ id: 'D0D1000000000004', account: accountId, tag: 47, sign: '-', amount_int: 500, amount_frac: 0, rate_int: 0, rate_frac: 0 }] },
+        { id: 'D0D0000000000005', timestamp: 1000, updated_at: 1000, counterparty: cpId, note: null, lines: [{ id: 'D0D1000000000005', account: accountId, tag: 47, sign: '-', amount_int: 500, amount_frac: 0, rate_int: 0, rate_frac: 0 }] },
+      ],
+      budgets: [],
+      deletions: [],
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.imported.transactions).toBe(5)
+
+    const db = getTestDatabase()
+    const foodSortOrder = Number(db.exec(`SELECT count FROM shared.tag_sort_order WHERE tag_id = 28`)[0].values[0][0])
+    const rentSortOrder = Number(db.exec(`SELECT count FROM shared.tag_sort_order WHERE tag_id = 47`)[0].values[0][0])
+    const foodReferences = Number(db.exec(`SELECT count FROM shared.tag_references WHERE tag_id = 28`)[0].values[0][0])
+    const rentReferences = Number(db.exec(`SELECT count FROM shared.tag_references WHERE tag_id = 47`)[0].values[0][0])
+    const landlordSortOrder = Number(db.exec(`SELECT count FROM shared.counterparty_sort_order WHERE counterparty_id = ${cpId}`)[0].values[0][0])
+
+    expect(foodSortOrder).toBe(3)
+    expect(rentSortOrder).toBe(2)
+    expect(foodReferences).toBe(3)
+    expect(rentReferences).toBe(2)
+    expect(landlordSortOrder).toBe(2)
+  })
 })

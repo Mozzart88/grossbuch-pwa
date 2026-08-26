@@ -566,6 +566,59 @@ describe('syncImport', () => {
     })
   })
 
+  describe('shared counter recompute', () => {
+    it('recomputes shared counters exactly once, after all other imports, for an empty package', async () => {
+      await importSyncPackage(emptyPackage())
+
+      const recomputeCalls = mockExecSQL.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string).includes('UPDATE shared.tag_sort_order')
+      )
+      expect(recomputeCalls).toHaveLength(1)
+
+      const recomputeIndex = mockExecSQL.mock.calls.findIndex(
+        (c: unknown[]) => (c[0] as string).includes('UPDATE shared.tag_sort_order')
+      )
+      const commitIndex = mockExecSQL.mock.calls.findIndex((c: unknown[]) => c[0] === 'COMMIT')
+      expect(recomputeIndex).toBeGreaterThan(-1)
+      expect(commitIndex).toBeGreaterThan(recomputeIndex)
+    })
+
+    it('recomputes shared counters exactly once when the package has transactions, budgets, wallets, and accounts', async () => {
+      const pkg = emptyPackage()
+      pkg.wallets = [{ id: 1, name: 'Wallet', color: null, updated_at: 1000, tags: [] }]
+      pkg.accounts = [{ id: 1, wallet: 1, currency: 1, updated_at: 1000, tags: [], note: null, due_date: null, rate: null }]
+      pkg.budgets = [{ id: 'aa', start: 0, end: 100, tag: 5, tag_context: null, type: 'expense', amount_int: 10, amount_frac: 0, updated_at: 1000 }]
+      pkg.transactions = [{
+        id: 'bb', timestamp: 1000, updated_at: 1000, counterparty: null, note: null,
+        lines: [{ id: 'cc', account: 1, tag: 5, tag_context: null, sign: '-', amount_int: 10, amount_frac: 0, rate_int: 0, rate_frac: 0 }],
+      }]
+
+      await importSyncPackage(pkg)
+
+      const recomputeCalls = mockExecSQL.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string).includes('UPDATE shared.tag_sort_order')
+      )
+      expect(recomputeCalls).toHaveLength(1)
+    })
+
+    it('does not recompute when the import fails and rolls back', async () => {
+      mockExecSQL.mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO shared.icon')) return Promise.reject(new Error('boom'))
+        return Promise.resolve(undefined)
+      })
+
+      const pkg = emptyPackage()
+      pkg.icons = [{ id: 1, value: 'star', updated_at: 5000 }]
+
+      await importSyncPackage(pkg)
+
+      const recomputeCalls = mockExecSQL.mock.calls.filter(
+        (c: unknown[]) => (c[0] as string).includes('UPDATE shared.tag_sort_order')
+      )
+      expect(recomputeCalls).toHaveLength(0)
+    })
+  })
+
   describe('skip when local is newer', () => {
     it('does not update icon when local updated_at is newer', async () => {
       mockQueryOne.mockImplementation((sql: string) => {
