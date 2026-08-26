@@ -177,6 +177,14 @@ export function createDatabaseMock() {
       database.run(sql, bind as (string | number | null | Uint8Array)[])
     }),
 
+    // Mirrors worker.ts's execBatchSQL: run each statement's own bind values in
+    // order, first thrown error aborts the remaining statements and propagates.
+    execBatch: vi.fn(async (statements: { sql: string; bind?: unknown[] }[]) => {
+      for (const { sql, bind } of statements) {
+        database.run(sql, bind as (string | number | null | Uint8Array)[])
+      }
+    }),
+
     // No-ops: `shared`/`workspace` are already permanently attached to their
     // real in-memory data by setupTestDatabase(), so there's no separate file
     // to switch to in this environment. Sufficient for testing call sequencing

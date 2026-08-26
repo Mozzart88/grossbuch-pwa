@@ -1,4 +1,9 @@
 import { execSQL, queryOne } from './connection'
+import {
+  RECOMPUTE_TAG_SORT_ORDER_SQL,
+  RECOMPUTE_COUNTERPARTY_SORT_ORDER_SQL,
+  RECOMPUTE_TAG_REFERENCES_SQL,
+} from './sharedCounterRecompute'
 
 // Current-state schema for a single workspace-{n}.db file, sourced from
 // log/schema.sql (the real, current v23 dump — not replayed from migration
@@ -6,7 +11,7 @@ import { execSQL, queryOne } from './connection'
 // currency, counterparty, notification) keep the column but drop the FK
 // clause: cross-database FK enforcement doesn't work, so these are soft
 // references, validated at the application level (see design.md).
-export const CURRENT_WORKSPACE_VERSION = 4
+export const CURRENT_WORKSPACE_VERSION = 5
 
 // Triggers that auto-write to a table this migration also bulk-copies directly
 // (account_to_tags/wallet_to_tags default-tag assignment, account balance from
@@ -726,6 +731,23 @@ export const workspaceMigrations: Record<number, string[]> = {
     // instead, once `shared` is guaranteed to be the real, fully-migrated
     // database — the same "resolved by name at runtime" precedent as
     // 'savings'/'credits', just created on demand rather than pre-seeded.
+  ],
+
+  5: [
+    // counterparty_sort_order's recompute below now runs on every sync import (not just
+    // this one-time migration), so the pre-existing lack of an index on
+    // trx_to_counterparty.counterparty_id becomes a repeated cost instead of a one-time
+    // one — see design.md. trx_base.tag_id already has idx_trx_base_tag (v2).
+    `CREATE INDEX IF NOT EXISTS workspace.idx_trx_to_counterparty_counterparty ON trx_to_counterparty(counterparty_id);`,
+
+    // Self-heals any installation whose shared.tag_sort_order/counterparty_sort_order/
+    // tag_references counters were left stale or zeroed by sync imports processed before
+    // this fix shipped (syncImport.ts didn't call sortOrder.ts/tagReferences.ts) — see
+    // proposal.md and specs/shared-counter-integrity/spec.md. Same statements syncImport.ts
+    // now runs after every import, reused here rather than re-typed (design.md).
+    RECOMPUTE_TAG_SORT_ORDER_SQL,
+    RECOMPUTE_COUNTERPARTY_SORT_ORDER_SQL,
+    RECOMPUTE_TAG_REFERENCES_SQL,
   ],
 }
 

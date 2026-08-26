@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { execSQL, queryOne } from '../../../../services/database/connection'
+import { execSQL, execBatch, queryOne, querySQL } from '../../../../services/database/connection'
 import { importSyncPackage } from '../../../../services/sync/syncImport'
 import type { SyncPackage } from '../../../../services/sync/syncTypes'
 
 vi.mock('../../../../services/database/connection', () => ({
   execSQL: vi.fn(),
+  execBatch: vi.fn(),
   queryOne: vi.fn(),
+  querySQL: vi.fn(),
 }))
 
 vi.mock('../../../../services/repositories/settingsRepository', () => ({
@@ -16,7 +18,9 @@ vi.mock('../../../../services/repositories/settingsRepository', () => ({
 }))
 
 const mockExecSQL = vi.mocked(execSQL)
+const mockExecBatch = vi.mocked(execBatch)
 const mockQueryOne = vi.mocked(queryOne)
+const mockQuerySQL = vi.mocked(querySQL)
 
 const recurringPlan = {
   id: '0102030405060708',
@@ -74,11 +78,13 @@ function packageWith(overrides: Partial<SyncPackage>): SyncPackage {
 describe('syncImport recurring entities', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockExecSQL.mockResolvedValue(undefined)
+    mockExecBatch.mockResolvedValue(undefined)
+    mockQueryOne.mockResolvedValue(null)
+    mockQuerySQL.mockResolvedValue([])
   })
 
   it('imports new recurring plans, occurrences, and budget links', async () => {
-    mockQueryOne.mockResolvedValue(null)
-
     const result = await importSyncPackage(packageWith({
       recurringPlans: [recurringPlan],
       recurringOccurrences: [recurringOccurrence],
@@ -89,21 +95,33 @@ describe('syncImport recurring entities', () => {
     expect(result.imported.recurringPlans).toBe(1)
     expect(result.imported.recurringOccurrences).toBe(1)
     expect(result.imported.recurringBudgets).toBe(1)
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO workspace.recurring_plan'),
-      expect.arrayContaining([expect.any(Uint8Array), recurringPlan.schedule, recurringPlan.transaction_draft])
-    )
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR IGNORE INTO workspace.recurring_occurrence'),
-      expect.arrayContaining([expect.any(Uint8Array), expect.any(Uint8Array), recurringOccurrence.due_date, expect.any(Uint8Array)])
-    )
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT OR IGNORE INTO workspace.recurring_budget'),
-      expect.arrayContaining([expect.any(Uint8Array), expect.any(Uint8Array), recurringBudget.due_month])
-    )
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sql: expect.stringContaining('INSERT INTO workspace.recurring_plan'),
+        bind: expect.arrayContaining([expect.any(Uint8Array), recurringPlan.schedule, recurringPlan.transaction_draft]),
+      }),
+    ])
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sql: expect.stringContaining('INSERT OR IGNORE INTO workspace.recurring_occurrence'),
+        bind: expect.arrayContaining([expect.any(Uint8Array), expect.any(Uint8Array), recurringOccurrence.due_date, expect.any(Uint8Array)]),
+      }),
+    ])
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sql: expect.stringContaining('INSERT OR IGNORE INTO workspace.recurring_budget'),
+        bind: expect.arrayContaining([expect.any(Uint8Array), expect.any(Uint8Array), recurringBudget.due_month]),
+      }),
+    ])
   })
 
   it('updates older recurring entities and applies recurring deletions', async () => {
+    mockQuerySQL.mockImplementation((sql: string) => {
+      if (sql.includes('FROM workspace.recurring_plan')) return Promise.resolve([{ id: recurringPlan.id, updated_at: 1 }])
+      if (sql.includes('FROM workspace.recurring_occurrence')) return Promise.resolve([{ id: recurringOccurrence.id, updated_at: 1 }])
+      if (sql.includes('FROM workspace.recurring_budget')) return Promise.resolve([{ id: recurringBudget.budget_id, updated_at: 1 }])
+      return Promise.resolve([])
+    })
     mockQueryOne.mockResolvedValue({ updated_at: 1 })
 
     const result = await importSyncPackage(packageWith({
@@ -121,25 +139,29 @@ describe('syncImport recurring entities', () => {
     expect(result.imported.recurringOccurrences).toBe(1)
     expect(result.imported.recurringBudgets).toBe(1)
     expect(result.imported.deletions).toBe(2)
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workspace.recurring_plan'),
-      expect.arrayContaining([recurringPlan.schedule, recurringPlan.transaction_draft, recurringPlan.mode])
-    )
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workspace.recurring_occurrence'),
-      expect.arrayContaining([expect.any(Uint8Array), recurringOccurrence.due_date, null])
-    )
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      expect.stringContaining('UPDATE workspace.recurring_budget'),
-      expect.arrayContaining([expect.any(Uint8Array), recurringBudget.due_month, recurringBudget.updated_at])
-    )
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      `DELETE FROM workspace.recurring_plan WHERE hex(id) = ?`,
-      [recurringPlan.id]
-    )
-    expect(mockExecSQL).toHaveBeenCalledWith(
-      `DELETE FROM workspace.recurring_occurrence WHERE hex(id) = ?`,
-      [recurringOccurrence.id]
-    )
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sql: expect.stringContaining('UPDATE workspace.recurring_plan'),
+        bind: expect.arrayContaining([recurringPlan.schedule, recurringPlan.transaction_draft, recurringPlan.mode]),
+      }),
+    ])
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sql: expect.stringContaining('UPDATE workspace.recurring_occurrence'),
+        bind: expect.arrayContaining([expect.any(Uint8Array), recurringOccurrence.due_date, null]),
+      }),
+    ])
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        sql: expect.stringContaining('UPDATE workspace.recurring_budget'),
+        bind: expect.arrayContaining([expect.any(Uint8Array), recurringBudget.due_month, recurringBudget.updated_at]),
+      }),
+    ])
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      { sql: `DELETE FROM workspace.recurring_plan WHERE hex(id) IN (?)`, bind: [recurringPlan.id] },
+    ])
+    expect(mockExecBatch).toHaveBeenCalledWith([
+      { sql: `DELETE FROM workspace.recurring_occurrence WHERE hex(id) IN (?)`, bind: [recurringOccurrence.id] },
+    ])
   })
 })

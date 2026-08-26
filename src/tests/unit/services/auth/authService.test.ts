@@ -59,6 +59,11 @@ vi.mock('../../../../services/database/migrations', () => ({
   runMigrations: vi.fn().mockResolvedValue(undefined),
 }))
 
+// Mock default asset removal
+vi.mock('../../../../services/database/removeDefaultAssets', () => ({
+  removeDefaultAssets: vi.fn().mockResolvedValue(undefined),
+}))
+
 // Mock shared migrations
 vi.mock('../../../../services/database/sharedMigrations', () => ({
   runSharedMigrations: vi.fn().mockResolvedValue(undefined),
@@ -85,6 +90,7 @@ import { deriveEncryptionKey, hashPin, generateJwtSalt, generateRSAKeyPair, gene
 import { createSessionToken, validateSessionToken, storeSessionToken, getStoredSessionToken, clearSessionToken } from '../../../../services/auth/sessionToken'
 import { checkDatabaseExists, checkIsEncrypted, initEncryptedDatabase, migrateToEncrypted, rekeyDatabase, wipeDatabase, execSQL, queryOne, attachDatabase, rekeySchema } from '../../../../services/database/connection'
 import { runMigrations } from '../../../../services/database/migrations'
+import { removeDefaultAssets } from '../../../../services/database/removeDefaultAssets'
 import { attachActiveWorkspace, setSessionDekShared, clearWorkspaceSession, getActiveWorkspaceId } from '../../../../services/database/workspace'
 import { authenticateWithWebAuthn, registerWebAuthn, clearWebAuthnCredential } from '../../../../services/auth/webauthn'
 
@@ -112,6 +118,7 @@ const mockWipeDatabase = vi.mocked(wipeDatabase)
 const mockExecSQL = vi.mocked(execSQL)
 const mockQueryOne = vi.mocked(queryOne)
 const mockRunMigrations = vi.mocked(runMigrations)
+const mockRemoveDefaultAssets = vi.mocked(removeDefaultAssets)
 const mockAttachDatabase = vi.mocked(attachDatabase)
 const mockRekeySchema = vi.mocked(rekeySchema)
 const mockAttachActiveWorkspace = vi.mocked(attachActiveWorkspace)
@@ -274,6 +281,24 @@ describe('authService', () => {
       await setupPin('mypin123')
 
       expect(mockRunMigrations).toHaveBeenCalled()
+    })
+
+    it('keeps default asset tags (Tips/VAT) seeded by migrations for a standalone install (no SHARED_UUID)', async () => {
+      localStorage.removeItem(AUTH_STORAGE_KEYS.SHARED_UUID)
+
+      await setupPin('mypin123')
+
+      expect(mockRemoveDefaultAssets).not.toHaveBeenCalled()
+    })
+
+    it('removes default asset tags for a new linked device (SHARED_UUID present)', async () => {
+      localStorage.setItem(AUTH_STORAGE_KEYS.SHARED_UUID, 'shared-device-uuid')
+
+      await setupPin('mypin123')
+
+      expect(mockRemoveDefaultAssets).toHaveBeenCalled()
+      // SHARED_UUID stays owned by ShareLinkCapture/useInstallationRegistration
+      expect(localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)).toBe('shared-device-uuid')
     })
 
     it('saves auth settings to database', async () => {

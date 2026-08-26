@@ -17,8 +17,8 @@ describe('workspaceMigrations', () => {
     mockExecSQL.mockResolvedValue(undefined)
   })
 
-  it('sets current workspace version to 4', () => {
-    expect(CURRENT_WORKSPACE_VERSION).toBe(4)
+  it('sets current workspace version to 5', () => {
+    expect(CURRENT_WORKSPACE_VERSION).toBe(5)
   })
 
   it('adds payment_pin and notify_days_before columns to recurring_plan when upgrading from workspace version 2', async () => {
@@ -70,8 +70,31 @@ describe('workspaceMigrations', () => {
     )
   })
 
-  it('does not run any migration when already at the current workspace version', async () => {
+  it('adds the trx_to_counterparty index and recomputes shared counters when upgrading from workspace version 4', async () => {
     mockQueryOne.mockResolvedValue({ value: '4' })
+
+    await runWorkspaceMigrations()
+
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('CREATE INDEX IF NOT EXISTS workspace.idx_trx_to_counterparty_counterparty ON trx_to_counterparty(counterparty_id)')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE shared.tag_sort_order')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE shared.counterparty_sort_order')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO shared.tag_references')
+    )
+    expect(mockExecSQL).toHaveBeenCalledWith(
+      expect.stringContaining(`VALUES ('schema_version', ?`),
+      ['5']
+    )
+  })
+
+  it('does not run any migration when already at the current workspace version', async () => {
+    mockQueryOne.mockResolvedValue({ value: '5' })
 
     await runWorkspaceMigrations()
 
