@@ -64,6 +64,7 @@ function getWorker(): Worker {
 interface SendMessageOptions {
   sql?: string
   bind?: unknown[]
+  statements?: { sql: string; bind?: unknown[] }[]
   key?: string
   newKey?: string
   filename?: string
@@ -153,6 +154,12 @@ export async function exportDecryptedDatabase(filename: string, key: string): Pr
 
 export async function execSQL(sql: string, bind?: unknown[]): Promise<void> {
   await sendMessage('exec', { sql, bind })
+  notifyWriteListeners()
+}
+
+export async function execBatch(statements: { sql: string; bind?: unknown[] }[]): Promise<void> {
+  if (statements.length === 0) return
+  await sendMessage('exec_batch', { statements })
   notifyWriteListeners()
 }
 

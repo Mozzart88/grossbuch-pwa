@@ -2,6 +2,7 @@ import { vi } from 'vitest'
 
 // Mock database functions
 export const mockExecSQL = vi.fn()
+export const mockExecBatch = vi.fn()
 export const mockQuerySQL = vi.fn()
 export const mockQueryOne = vi.fn()
 export const mockRunSQL = vi.fn()
@@ -12,6 +13,7 @@ export const mockCloseDatabase = vi.fn()
 // Reset all mocks
 export function resetDatabaseMocks() {
   mockExecSQL.mockReset()
+  mockExecBatch.mockReset()
   mockQuerySQL.mockReset()
   mockQueryOne.mockReset()
   mockRunSQL.mockReset()
@@ -36,6 +38,7 @@ export function mockLastInsertId(id: number) {
 // Database module mock
 export const databaseMock = {
   execSQL: mockExecSQL,
+  execBatch: mockExecBatch,
   querySQL: mockQuerySQL,
   queryOne: mockQueryOne,
   runSQL: mockRunSQL,

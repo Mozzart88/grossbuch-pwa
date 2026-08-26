@@ -93,6 +93,50 @@ describe('database connection', () => {
     })
   })
 
+  describe('execBatch', () => {
+    it('sends exec_batch message with the statements array', async () => {
+      const { execBatch } = await import('../../../../services/database/connection')
+
+      const postMessagePromise = new Promise<void>((resolve) => {
+        mockPostMessage.mockImplementation((message) => {
+          if (message.type === 'exec_batch') resolve()
+        })
+      })
+
+      const statements = [
+        { sql: 'UPDATE shared.tag SET name = ? WHERE id = ?', bind: ['a', 1] },
+        { sql: 'UPDATE shared.tag SET name = ? WHERE id = ?', bind: ['b', 2] },
+      ]
+      execBatch(statements)
+      await postMessagePromise
+
+      expect(mockPostMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'exec_batch', statements })
+      )
+    })
+
+    it('resolves without posting a message for an empty array', async () => {
+      const { execBatch } = await import('../../../../services/database/connection')
+
+      mockPostMessage.mockClear()
+      await execBatch([])
+
+      expect(mockPostMessage).not.toHaveBeenCalled()
+    })
+
+    it('propagates a worker-reported error', async () => {
+      const { execBatch } = await import('../../../../services/database/connection')
+
+      mockPostMessage.mockImplementation((message) => {
+        setTimeout(() => {
+          latestWorkerInstance?.onmessage?.({ data: { id: message.id, success: false, error: 'mid-batch failure' } })
+        }, 0)
+      })
+
+      await expect(execBatch([{ sql: 'INVALID SQL' }])).rejects.toThrow('mid-batch failure')
+    })
+  })
+
   describe('querySQL', () => {
     it('returns array of results', async () => {
       const { querySQL } = await import('../../../../services/database/connection')

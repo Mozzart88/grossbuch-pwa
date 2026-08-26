@@ -15,9 +15,10 @@ declare type SqlValue =
 
 interface WorkerMessage {
   id: number
-  type: 'init' | 'init_encrypted' | 'exec' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
+  type: 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
   sql?: string
   bind?: SqlValue[]
+  statements?: { sql: string; bind?: SqlValue[] }[]
   key?: string      // Hex-encoded encryption key
   newKey?: string   // Hex-encoded new key for rekey operation
   filename?: string // Source filename for export_decrypted, or target file for attach/finalize_main_rebuild/delete_file
@@ -353,6 +354,18 @@ function execSQL(sql: string, bind?: SqlValue[]): void {
   db.exec({ sql, bind })
 }
 
+// Executes each statement's own { sql, bind } pair in order, in a single worker round-trip.
+// Does not open its own BEGIN/COMMIT — callers needing atomicity already have an outer
+// transaction. On the first thrown error the loop stops and the error propagates to the
+// caller via the message dispatcher's existing try/catch (see design.md Decision 1).
+function execBatchSQL(statements: { sql: string; bind?: SqlValue[] }[]): void {
+  if (!db) throw new Error('Database not initialized')
+
+  for (const { sql, bind } of statements) {
+    db.exec({ sql, bind })
+  }
+}
+
 function querySQL<T>(sql: string, bind?: SqlValue[]): T[] {
   if (!db) throw new Error('Database not initialized')
   const results: T[] = []
@@ -454,7 +467,7 @@ async function exportDecrypted(filename: string, key: string): Promise<ArrayBuff
 }
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const { id, type, sql, bind, key, newKey, filename, schema } = event.data
+  const { id, type, sql, bind, statements, key, newKey, filename, schema } = event.data
   const response: WorkerResponse = { id, success: false }
 
   try {
@@ -537,6 +550,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         execSQL(sql, bind)
         response.success = true
         response.data = { changes: getChanges(), lastInsertId: getLastInsertId() }
+        break
+
+      case 'exec_batch':
+        if (!statements) throw new Error('Statements required for exec_batch')
+        execBatchSQL(statements)
+        response.success = true
         break
 
       case 'query':
