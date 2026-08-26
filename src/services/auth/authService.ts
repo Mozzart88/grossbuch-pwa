@@ -32,6 +32,7 @@ import {
 } from '../database/connection'
 import { SHARED_DB_FILENAME, workspaceDbFilename } from '../database/paths'
 import { runMigrations } from '../database/migrations'
+import { removeDefaultAssets } from '../database/removeDefaultAssets'
 import { runSharedMigrations } from '../database/sharedMigrations'
 import { attachActiveWorkspace, setSessionDekShared, clearWorkspaceSession, getActiveWorkspaceId } from '../database/workspace'
 import { needsLegacyMigration, migrateLegacyInstallation } from '../database/legacyMigration'
@@ -332,8 +333,19 @@ export async function setupPin(pin: string): Promise<void> {
   // Initialize encrypted database
   await initEncryptedDatabase(encryptionKey)
 
-  // Run migrations to create tables (includes currency seeding in v4)
+  // Run migrations to create tables (includes currency seeding in v4, and
+  // default asset tag seeding e.g. Tips/VAT in v16 — unconditional so every
+  // fresh install gets identical ids for the structural tags seeded around
+  // them, matching any pre-existing real install).
   await runMigrations()
+
+  // A new linked device doesn't want the migration's default asset tags —
+  // it's about to receive the parent account's own copy via its first sync
+  // pull, and keeping a local copy would collide with it by name. Remove
+  // them now, before sync can run.
+  if (localStorage.getItem(AUTH_STORAGE_KEYS.SHARED_UUID)) {
+    await removeDefaultAssets()
+  }
 
   // Generate DEK_shared, wrap it under DEK_app, and attach the Shared DB
   await unwrapAndAttachSharedDatabase(encryptionKey)

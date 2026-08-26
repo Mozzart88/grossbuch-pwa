@@ -595,12 +595,7 @@ describe('syncImport', () => {
       const PARENT_TS = 500
 
       mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
-        if (sql === 'SELECT id FROM shared.tag WHERE id = ?') {
-          const id = params[0]
-          if (id === 24 || id === 25) return Promise.resolve({ id })
-          return Promise.resolve(null)
-        }
-        if (sql === 'SELECT id FROM shared.tag WHERE name = ?') {
+        if (sql === 'SELECT id FROM shared.tag WHERE name = ? AND id != ?') {
           const name = params[0]
           if (name === 'Tips') return Promise.resolve({ id: 24 })
           if (name === 'add-on') return Promise.resolve({ id: 25 })
@@ -652,11 +647,7 @@ describe('syncImport', () => {
       // Child has Tips=24 from migration; parent package only has Tips=44 (no id=24 at all).
       // Pre-flight should remap 24→44 across all reference tables then delete id=24.
       mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
-        if (sql === 'SELECT id FROM shared.tag WHERE id = ?') {
-          if (params[0] === 24) return Promise.resolve({ id: 24 })
-          return Promise.resolve(null)
-        }
-        if (sql === 'SELECT id FROM shared.tag WHERE name = ?') {
+        if (sql === 'SELECT id FROM shared.tag WHERE name = ? AND id != ?') {
           if (params[0] === 'Tips') return Promise.resolve({ id: 24 })
           return Promise.resolve(null)
         }
@@ -685,6 +676,140 @@ describe('syncImport', () => {
       )
       expect(result.errors).toHaveLength(0)
     })
+
+    it('resolves a rename cycle where both colliding IDs already exist locally (regression: previously skipped whenever the incoming tag\'s own ID already had a local row)', async () => {
+      // Local: id=10 named 'Groceries', id=20 named 'Bills' (both pre-exist, e.g. two
+      // independently-evolved real installs). Parent wants a straight swap: 10->Bills,
+      // 20->Groceries. The old pre-flight bailed out via `if (localById) continue` for
+      // BOTH of these (since 10 and 20 already exist locally), skipping conflict
+      // detection entirely and leaving the plain UPDATE in the main loop to hit
+      // `UNIQUE constraint failed: tag.name`.
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM shared.tag WHERE name = ? AND id != ?') {
+          const [name, excludeId] = params as [string, number]
+          if (name === 'Bills' && excludeId !== 20) return Promise.resolve({ id: 20 })
+          if (name === 'Groceries' && excludeId !== 10) return Promise.resolve({ id: 10 })
+          return Promise.resolve(null)
+        }
+        if (sql.includes('SELECT name, updated_at FROM shared.tag WHERE id = ?')) {
+          const id = params[0]
+          if (id === 10) return Promise.resolve({ name: 'Bills', updated_at: 200 })
+          if (id === 20) return Promise.resolve({ name: 'Groceries', updated_at: 200 })
+          return Promise.resolve(null)
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.tags = [
+        { id: 10, name: 'Bills', updated_at: 100, parents: [], children: [], icon: null },
+        { id: 20, name: 'Groceries', updated_at: 100, parents: [], children: [], icon: null },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      // Pre-flight resolves the swap via force-rename on the OTHER side of each pair —
+      // no INSERT is needed since both ids already exist locally.
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE shared.tag SET name = ?, updated_at = ? WHERE id = ?',
+        ['Groceries', 100, 20]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE shared.tag SET name = ?, updated_at = ? WHERE id = ?',
+        ['Bills', 100, 10]
+      )
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('merges an orphaned local tag into an incoming ID that already has its own local row', async () => {
+      // Local: id=5 named 'Orphan' (not in the incoming package at all), id=10 named
+      // 'WillBeRenamed' (already exists locally, e.g. structural tag seeded by
+      // migrations). Incoming: {id:10, name:'Orphan'}. Old code's resolveTagIdConflict
+      // did a bare `UPDATE tag_sort_order SET tag_id=10 WHERE tag_id=5`, which throws
+      // `UNIQUE constraint failed: tag_sort_order.tag_id` since id=10 already has its
+      // own tag_sort_order row (same shape for counterparty_to_tags/currency_to_tags).
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM shared.tag WHERE name = ? AND id != ?') {
+          if (params[0] === 'Orphan') return Promise.resolve({ id: 5 })
+          return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id FROM shared.tag WHERE id = ?') {
+          if (params[0] === 10) return Promise.resolve({ id: 10 }) // newId already exists locally
+          return Promise.resolve(null)
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.tags = [
+        { id: 10, name: 'Orphan', updated_at: 600, parents: [], children: [], icon: null },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE OR IGNORE shared.tag_sort_order SET tag_id = ? WHERE tag_id = ?', [10, 5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.tag_sort_order WHERE tag_id = ?', [5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE OR IGNORE shared.counterparty_to_tags SET tag_id = ? WHERE tag_id = ?', [10, 5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.counterparty_to_tags WHERE tag_id = ?', [5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE OR IGNORE shared.currency_to_tags SET tag_id = ? WHERE tag_id = ?', [10, 5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.currency_to_tags WHERE tag_id = ?', [5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.tag WHERE id = ?', [5]
+      )
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('does not pre-move tag_sort_order when merging into an incoming ID that has no local tag row yet', async () => {
+      // Local: id=5 named 'Orphan' only — id=10 (the incoming id) doesn't exist locally at
+      // all yet. The main import loop creates it later via a plain INSERT, which fires
+      // trg_tag_sort_order_new_tag and auto-creates a tag_sort_order row for it. If
+      // resolveTagIdConflict had already moved id=5's row onto id=10, that auto-insert
+      // would collide with it (`UNIQUE constraint failed: tag_sort_order.tag_id`).
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM shared.tag WHERE name = ? AND id != ?') {
+          if (params[0] === 'Orphan') return Promise.resolve({ id: 5 })
+          return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id FROM shared.tag WHERE id = ?') {
+          return Promise.resolve(null) // id=10 does not exist locally yet
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.tags = [
+        { id: 10, name: 'Orphan', updated_at: 600, parents: [], children: [], icon: null },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'UPDATE OR IGNORE shared.tag_sort_order SET tag_id = ? WHERE tag_id = ?', [10, 5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.tag_sort_order WHERE tag_id = ?', [5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.tag WHERE id = ?', [5]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'INSERT INTO shared.tag (id, name, updated_at) VALUES (?, ?, ?)',
+        [10, 'Orphan', 600]
+      )
+      expect(result.errors).toHaveLength(0)
+    })
   })
 
   describe('counterparty name conflict resolution', () => {
@@ -693,12 +818,7 @@ describe('syncImport', () => {
       const PARENT_TS = 500
 
       mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
-        if (sql === 'SELECT id FROM shared.counterparty WHERE id = ?') {
-          const id = params[0]
-          if (id === 10) return Promise.resolve({ id })
-          return Promise.resolve(null)
-        }
-        if (sql === 'SELECT id FROM shared.counterparty WHERE name = ?') {
+        if (sql === 'SELECT id FROM shared.counterparty WHERE name = ? AND id != ?') {
           const name = params[0]
           if (name === 'Landlord') return Promise.resolve({ id: 10 })
           return Promise.resolve(null)
@@ -730,15 +850,18 @@ describe('syncImport', () => {
       expect(result.errors).toHaveLength(0)
     })
 
-    it('remaps all FK references when the conflicting local ID is absent from the package', async () => {
+    it('remaps all FK references when the conflicting local ID is absent from the package, and the target ID has no local row yet', async () => {
+      // newId=30 doesn't exist locally yet (the main import loop creates it via a plain
+      // INSERT later), so counterparty_sort_order must NOT be pre-moved onto it — that
+      // INSERT's trg_counterparty_sort_order_new_counterparty auto-creates a fresh row for
+      // 30, which would collide with a pre-moved one (see resolveTagIdConflict's analog).
       mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
-        if (sql === 'SELECT id FROM shared.counterparty WHERE id = ?') {
-          if (params[0] === 10) return Promise.resolve({ id: 10 })
-          return Promise.resolve(null)
-        }
-        if (sql === 'SELECT id FROM shared.counterparty WHERE name = ?') {
+        if (sql === 'SELECT id FROM shared.counterparty WHERE name = ? AND id != ?') {
           if (params[0] === 'Landlord') return Promise.resolve({ id: 10 })
           return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id FROM shared.counterparty WHERE id = ?') {
+          return Promise.resolve(null) // id=30 does not exist locally yet
         }
         return Promise.resolve(null)
       })
@@ -754,10 +877,16 @@ describe('syncImport', () => {
         'UPDATE shared.counterparty_note SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
       )
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'UPDATE shared.counterparty_to_tags SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
+        'UPDATE OR IGNORE shared.counterparty_to_tags SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
       )
       expect(mockExecSQL).toHaveBeenCalledWith(
-        'UPDATE shared.counterparty_sort_order SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
+        'DELETE FROM shared.counterparty_to_tags WHERE counterparty_id = ?', [10]
+      )
+      expect(mockExecSQL).not.toHaveBeenCalledWith(
+        'UPDATE OR IGNORE shared.counterparty_sort_order SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.counterparty_sort_order WHERE counterparty_id = ?', [10]
       )
       expect(mockExecSQL).toHaveBeenCalledWith(
         'UPDATE workspace.trx_to_counterparty SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
@@ -768,6 +897,71 @@ describe('syncImport', () => {
       expect(mockExecSQL).toHaveBeenCalledWith(
         'INSERT INTO shared.counterparty (id, name, updated_at) VALUES (?, ?, ?)',
         [30, 'Landlord', 600]
+      )
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('pre-moves counterparty_sort_order when merging into a target ID that already has its own local row', async () => {
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM shared.counterparty WHERE name = ? AND id != ?') {
+          if (params[0] === 'Landlord') return Promise.resolve({ id: 10 })
+          return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id FROM shared.counterparty WHERE id = ?') {
+          if (params[0] === 30) return Promise.resolve({ id: 30 }) // newId already exists locally
+          return Promise.resolve(null)
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.counterparties = [
+        { id: 30, name: 'Landlord', updated_at: 600, note: null, tags: [] },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE OR IGNORE shared.counterparty_sort_order SET counterparty_id = ? WHERE counterparty_id = ?', [30, 10]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'DELETE FROM shared.counterparty_sort_order WHERE counterparty_id = ?', [10]
+      )
+      expect(result.errors).toHaveLength(0)
+    })
+
+    it('resolves a rename cycle where both colliding IDs already exist locally', async () => {
+      mockQueryOne.mockImplementation((sql: string, params: unknown[]) => {
+        if (sql === 'SELECT id FROM shared.counterparty WHERE name = ? AND id != ?') {
+          const [name, excludeId] = params as [string, number]
+          if (name === 'Landlord' && excludeId !== 20) return Promise.resolve({ id: 20 })
+          if (name === 'Grocer' && excludeId !== 10) return Promise.resolve({ id: 10 })
+          return Promise.resolve(null)
+        }
+        if (sql === 'SELECT id, updated_at FROM shared.counterparty WHERE id = ?') {
+          const id = params[0]
+          if (id === 10) return Promise.resolve({ id: 10, updated_at: 200 })
+          if (id === 20) return Promise.resolve({ id: 20, updated_at: 200 })
+          return Promise.resolve(null)
+        }
+        return Promise.resolve(null)
+      })
+
+      const pkg = emptyPackage()
+      pkg.counterparties = [
+        { id: 10, name: 'Landlord', updated_at: 100, note: null, tags: [] },
+        { id: 20, name: 'Grocer', updated_at: 100, note: null, tags: [] },
+      ]
+
+      const result = await importSyncPackage(pkg)
+
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE shared.counterparty SET name = ?, updated_at = ? WHERE id = ?',
+        ['Grocer', 100, 20]
+      )
+      expect(mockExecSQL).toHaveBeenCalledWith(
+        'UPDATE shared.counterparty SET name = ?, updated_at = ? WHERE id = ?',
+        ['Landlord', 100, 10]
       )
       expect(result.errors).toHaveLength(0)
     })

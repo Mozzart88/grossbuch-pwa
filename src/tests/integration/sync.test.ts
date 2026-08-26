@@ -1328,6 +1328,44 @@ describe('Sync Integration', () => {
       ])
     })
 
+    it('imports a parent-owned default asset tag (Tips) cleanly on a linked device that removed its local default asset tags', async () => {
+      // setupTestDatabase() replays the full migration chain, which seeds Tips/VAT
+      // unconditionally (same as any real install). A new linked device removes
+      // that local copy right after migrations (removeDefaultAssets(), gated on
+      // SHARED_UUID in authService.setupPin()) because it's about to receive the
+      // parent account's own Tips/VAT via its first sync pull.
+      const { removeDefaultAssets } = await import('../../services/database/removeDefaultAssets')
+      await removeDefaultAssets()
+
+      const db = getTestDatabase()
+      const localTips = db.exec(`SELECT id FROM tag WHERE name = 'Tips'`)
+      expect(localTips[0]?.values ?? []).toHaveLength(0)
+
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: 1000,
+        since: 0,
+        icons: [],
+        tags: [{ id: 7000, name: 'Tips', updated_at: 1000, parents: [SYSTEM_TAGS.EXPENSE], children: [], icon: null }],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.tags).toBe(1)
+
+      const tag = db.exec(`SELECT id FROM tag WHERE name = 'Tips'`)
+      expect(tag[0]?.values[0]?.[0]).toBe(7000)
+    })
+
     it('updates existing tag with last-write-wins', async () => {
       const { importSyncPackage } = await import('../../services/sync/syncImport')
 
@@ -1351,6 +1389,82 @@ describe('Sync Integration', () => {
       })
 
       expect(result.imported.tags).toBe(1)
+    })
+
+    it('merges an orphaned local tag into an incoming ID that already has its own local row, without a tag_sort_order collision (regression)', async () => {
+      // Two independently-evolved installs can each already have their own row at the
+      // OTHER's canonical id for a given tag name. resolveTagIdConflict used to do a bare
+      // `UPDATE tag_sort_order SET tag_id = newId WHERE tag_id = oldId`, which throws
+      // `UNIQUE constraint failed: tag_sort_order.tag_id` once newId already has its own
+      // row (every tag gets one automatically via trg_tag_sort_order_new_tag).
+      const db = getTestDatabase()
+      const orphanId = insertTag({ name: 'Orphan' })
+      const targetId = insertTag({ name: 'WillBeRenamed' })
+
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [{ id: targetId, name: 'Orphan', updated_at: futureTs, parents: [], children: [], icon: null }],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.tags).toBe(1)
+
+      expect(db.exec(`SELECT id FROM tag WHERE id = ${orphanId}`)[0]?.values ?? []).toHaveLength(0)
+      const renamed = db.exec(`SELECT name FROM tag WHERE id = ${targetId}`)
+      expect(renamed[0].values[0][0]).toBe('Orphan')
+
+      const sortOrderRows = db.exec(`SELECT tag_id FROM tag_sort_order WHERE tag_id IN (${orphanId}, ${targetId})`)
+      expect((sortOrderRows[0]?.values ?? []).map(row => row[0])).toEqual([targetId])
+    })
+
+    it('resolves a two-way rename swap between two pre-existing local tags, without a tag.name collision (regression)', async () => {
+      // Both colliding ids already exist locally — the old pre-flight's `if (localById)
+      // continue` skipped conflict detection entirely for both sides, leaving the plain
+      // UPDATE in the main import loop to hit `UNIQUE constraint failed: tag.name`.
+      const db = getTestDatabase()
+      const idA = insertTag({ name: 'Groceries' })
+      const idB = insertTag({ name: 'Bills' })
+
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [
+          { id: idA, name: 'Bills', updated_at: futureTs, parents: [], children: [], icon: null },
+          { id: idB, name: 'Groceries', updated_at: futureTs, parents: [], children: [], icon: null },
+        ],
+        wallets: [],
+        accounts: [],
+        counterparties: [],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.errors).toHaveLength(0)
+
+      expect(db.exec(`SELECT name FROM tag WHERE id = ${idA}`)[0].values[0][0]).toBe('Bills')
+      expect(db.exec(`SELECT name FROM tag WHERE id = ${idB}`)[0].values[0][0]).toBe('Groceries')
     })
 
     it('updates existing counterparty with last-write-wins', async () => {
@@ -1380,6 +1494,43 @@ describe('Sync Integration', () => {
       const db = getTestDatabase()
       const note = db.exec(`SELECT note FROM counterparty_note cn JOIN counterparty c ON c.id = cn.counterparty_id WHERE c.name = 'UpdateMe'`)
       expect(note[0]?.values[0]?.[0]).toBe('new note')
+    })
+
+    it('merges an orphaned local counterparty into an incoming ID that already has its own local row, without a counterparty_sort_order collision (regression)', async () => {
+      // Same shape as the tag_sort_order regression above, for counterparty_sort_order
+      // (also UNIQUE(counterparty_id), also auto-populated per counterparty via trigger).
+      const db = getTestDatabase()
+      const orphanId = insertCounterparty({ name: 'OrphanCo' })
+      const targetId = insertCounterparty({ name: 'WillBeRenamedCo' })
+
+      const { importSyncPackage } = await import('../../services/sync/syncImport')
+
+      const futureTs = Math.floor(Date.now() / 1000) + 10000
+      const result = await importSyncPackage({
+        version: 2,
+        sender_id: 'other',
+        created_at: futureTs,
+        since: 0,
+        icons: [],
+        tags: [],
+        wallets: [],
+        accounts: [],
+        counterparties: [{ id: targetId, name: 'OrphanCo', updated_at: futureTs, note: null, tags: [] }],
+        currencies: [],
+        transactions: [],
+        budgets: [],
+        deletions: [],
+      })
+
+      expect(result.errors).toHaveLength(0)
+      expect(result.imported.counterparties).toBe(1)
+
+      expect(db.exec(`SELECT id FROM counterparty WHERE id = ${orphanId}`)[0]?.values ?? []).toHaveLength(0)
+      const renamed = db.exec(`SELECT name FROM counterparty WHERE id = ${targetId}`)
+      expect(renamed[0].values[0][0]).toBe('OrphanCo')
+
+      const sortOrderRows = db.exec(`SELECT counterparty_id FROM counterparty_sort_order WHERE counterparty_id IN (${orphanId}, ${targetId})`)
+      expect((sortOrderRows[0]?.values ?? []).map(row => row[0])).toEqual([targetId])
     })
 
     it('updates existing account tags with last-write-wins', async () => {

@@ -208,23 +208,37 @@ async function importTags(tags: SyncTag[]): Promise<number> {
   return count
 }
 
-// Pre-flight: resolve tag name conflicts caused by migration-assigned IDs diverging from
-// the parent device's canonical IDs for the same tag names (e.g. v16 seeded Tips=24 on
-// child but parent had Tips=44 as a user-created tag before v16 ran).
+// Pre-flight: resolve tag name conflicts caused by local tag ids diverging from the
+// parent device's canonical ids for the same tag names — whether from migration-assigned
+// ids (e.g. v16 seeded Tips=24 on child but parent had Tips=44 as a user-created tag
+// before v16 ran) or from two independently-evolved real installs drifting apart over
+// their own histories. Runs for every incoming tag regardless of whether its own id
+// already has a local row: a rename cycle can involve two ids that BOTH already exist
+// locally (not just one orphaned + one new) — e.g. local id A holds the name incoming id
+// B wants, while local id B holds the name incoming id A wants (a direct two-way swap).
+//
+// Detection (read-only) runs as a single pass over the untouched local state, then every
+// row that must give up its current name — whether by rename or by being merged/deleted
+// entirely — is cleared out FIRST, and only THEN are the real target names written. A
+// direct A<->B swap can't be done as two sequential real-name UPDATEs (renaming B to A's
+// name collides with A, which still holds it until A is moved out of the way first), and
+// the same is true when a target id's name is currently held by an orphaned row that's
+// about to be merged away: the merge's delete must happen before the rename that wants
+// that name, not after — a single incoming package can need both for the same local slot
+// (e.g. local id 12 holds a name an orphaned merge must free, while local id 28 — the
+// merge's target — is itself mid-rename to that exact name).
 // Must run inside the import transaction with foreign_keys = OFF.
 async function resolveTagNameConflicts(tags: SyncTag[]): Promise<void> {
   const incomingById = new Map(tags.map(t => [t.id, t]))
 
-  for (const tag of tags) {
-    const localById = await queryOne<{ id: number }>(
-      `SELECT id FROM shared.tag WHERE id = ?`, [tag.id]
-    )
-    if (localById) continue // ID already exists locally, no INSERT conflict possible
+  const toRename: { id: number; finalName: string; finalUpdatedAt: number }[] = []
+  const toMerge: { oldId: number; newId: number }[] = []
 
+  for (const tag of tags) {
     const nameConflict = await queryOne<{ id: number }>(
-      `SELECT id FROM shared.tag WHERE name = ?`, [tag.name]
+      `SELECT id FROM shared.tag WHERE name = ? AND id != ?`, [tag.name, tag.id]
     )
-    if (!nameConflict) continue // No conflict, INSERT will succeed
+    if (!nameConflict) continue // No other local row holds this name
 
     const conflictingLocalId = nameConflict.id
     const incomingForConflictId = incomingById.get(conflictingLocalId)
@@ -233,29 +247,58 @@ async function resolveTagNameConflicts(tags: SyncTag[]): Promise<void> {
       // The conflicting local ID is claimed by a different incoming tag (different name).
       // Force-assign the incoming name to that local ID to free this name slot.
       // This overrides LWW because the parent's ID space is the source of truth.
-      await execSQL(
-        'UPDATE shared.tag SET name = ?, updated_at = ? WHERE id = ?',
-        [incomingForConflictId.name, incomingForConflictId.updated_at, conflictingLocalId]
-      )
+      toRename.push({ id: conflictingLocalId, finalName: incomingForConflictId.name, finalUpdatedAt: incomingForConflictId.updated_at })
     } else {
-      // The conflicting local ID does not appear in the package (orphaned migration tag).
-      // Remap all its FK references to the incoming ID and delete it.
-      await resolveTagIdConflict(conflictingLocalId, tag.id)
+      // The conflicting local ID does not appear in the package at all — an orphaned
+      // migration/legacy tag, or (now that tag.id may itself already have a local row
+      // too) a genuine rename cycle between two pre-existing local ids. Either way, merge
+      // its data into the incoming tag's canonical id and drop it.
+      toMerge.push({ oldId: conflictingLocalId, newId: tag.id })
     }
+  }
+
+  // Clear every row that must give up its current name — vacate renames to a placeholder,
+  // and run merges to completion (which deletes the orphaned row outright) — before any
+  // real target name is written.
+  for (const { id } of toRename) {
+    await execSQL('UPDATE shared.tag SET name = ? WHERE id = ?', [`__sync_tmp__${id}`, id])
+  }
+  for (const { oldId, newId } of toMerge) {
+    await resolveTagIdConflict(oldId, newId)
+  }
+  for (const { id, finalName, finalUpdatedAt } of toRename) {
+    await execSQL('UPDATE shared.tag SET name = ?, updated_at = ? WHERE id = ?', [finalName, finalUpdatedAt, id])
   }
 }
 
 // Remap every FK reference from oldId to newId (FK constraints are OFF during import),
-// then delete the old tag row so the incoming tag can be inserted under newId.
+// then delete the old tag row so the incoming tag can be inserted/updated under newId.
+// newId may already hold its own local row (both ids pre-existed locally): any UPDATE
+// into a column with a UNIQUE constraint uses OR IGNORE so it can't collide, then
+// whatever's left behind at oldId is deleted explicitly — ON DELETE CASCADE doesn't run
+// here since foreign_keys is OFF for the whole import.
 async function resolveTagIdConflict(oldId: number, newId: number): Promise<void> {
   await execSQL(`UPDATE shared.tag_to_tag SET child_id = ? WHERE child_id = ?`, [newId, oldId])
   await execSQL(`UPDATE shared.tag_to_tag SET parent_id = ? WHERE parent_id = ?`, [newId, oldId])
   await execSQL(`UPDATE shared.tag_icon SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
-  await execSQL(`UPDATE shared.tag_sort_order SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+
+  // Only move oldId's tag_sort_order row onto newId if newId's own tag row already
+  // exists locally. If it doesn't yet, the main import loop creates it later in this
+  // same transaction via a plain INSERT, which fires trg_tag_sort_order_new_tag and
+  // auto-creates a fresh tag_sort_order row for it — pre-moving oldId's row here would
+  // collide with that later auto-insert. In that case just drop it (losing oldId's
+  // historical sort count, a minor cosmetic loss, not a correctness one).
+  const newTagExists = await queryOne<{ id: number }>(`SELECT id FROM shared.tag WHERE id = ?`, [newId])
+  if (newTagExists) {
+    await execSQL(`UPDATE OR IGNORE shared.tag_sort_order SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  }
+  await execSQL(`DELETE FROM shared.tag_sort_order WHERE tag_id = ?`, [oldId])
   await execSQL(`UPDATE workspace.wallet_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE workspace.account_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
-  await execSQL(`UPDATE shared.counterparty_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
-  await execSQL(`UPDATE shared.currency_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE OR IGNORE shared.counterparty_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`DELETE FROM shared.counterparty_to_tags WHERE tag_id = ?`, [oldId])
+  await execSQL(`UPDATE OR IGNORE shared.currency_to_tags SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
+  await execSQL(`DELETE FROM shared.currency_to_tags WHERE tag_id = ?`, [oldId])
   await execSQL(`UPDATE workspace.trx_base SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE workspace.trx_base_tag_context SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
   await execSQL(`UPDATE workspace.budget SET tag_id = ? WHERE tag_id = ?`, [newId, oldId])
@@ -399,23 +442,23 @@ async function importCounterparties(counterparties: SyncCounterparty[]): Promise
   return count
 }
 
-// Pre-flight: resolve counterparty name conflicts caused by migration-assigned IDs diverging
-// from the parent device's canonical IDs for the same counterparty name — the same class of
-// bug documented for tags above (resolveTagNameConflicts). Must run inside the import
-// transaction with foreign_keys = OFF.
+// Pre-flight: resolve counterparty name conflicts caused by local counterparty ids
+// diverging from the parent device's canonical ids for the same name — the same class of
+// bug documented for tags above (resolveTagNameConflicts), including a direct two-way
+// swap between two pre-existing local ids, resolved the same way (vacate to a placeholder
+// before writing any real name, since sequential real-name UPDATEs can't do a swap without
+// a transient collision). Must run inside the import transaction with foreign_keys = OFF.
 async function resolveCounterpartyNameConflicts(counterparties: SyncCounterparty[]): Promise<void> {
   const incomingById = new Map(counterparties.map(c => [c.id, c]))
 
-  for (const cp of counterparties) {
-    const localById = await queryOne<{ id: number }>(
-      `SELECT id FROM shared.counterparty WHERE id = ?`, [cp.id]
-    )
-    if (localById) continue // ID already exists locally, no INSERT conflict possible
+  const toRename: { id: number; finalName: string; finalUpdatedAt: number }[] = []
+  const toMerge: { oldId: number; newId: number }[] = []
 
+  for (const cp of counterparties) {
     const nameConflict = await queryOne<{ id: number }>(
-      `SELECT id FROM shared.counterparty WHERE name = ?`, [cp.name]
+      `SELECT id FROM shared.counterparty WHERE name = ? AND id != ?`, [cp.name, cp.id]
     )
-    if (!nameConflict) continue // No conflict, INSERT will succeed
+    if (!nameConflict) continue // No other local row holds this name
 
     const conflictingLocalId = nameConflict.id
     const incomingForConflictId = incomingById.get(conflictingLocalId)
@@ -423,24 +466,51 @@ async function resolveCounterpartyNameConflicts(counterparties: SyncCounterparty
     if (incomingForConflictId) {
       // The conflicting local ID is claimed by a different incoming counterparty (different
       // name). Force-assign the incoming name to that local ID to free this name slot.
-      await execSQL(
-        'UPDATE shared.counterparty SET name = ?, updated_at = ? WHERE id = ?',
-        [incomingForConflictId.name, incomingForConflictId.updated_at, conflictingLocalId]
-      )
+      toRename.push({ id: conflictingLocalId, finalName: incomingForConflictId.name, finalUpdatedAt: incomingForConflictId.updated_at })
     } else {
-      // The conflicting local ID does not appear in the package (orphaned migration entry).
-      // Remap all its FK references to the incoming ID and delete it.
-      await resolveCounterpartyIdConflict(conflictingLocalId, cp.id)
+      // The conflicting local ID does not appear in the package at all — an orphaned
+      // migration/legacy entry, or (now that cp.id may itself already have a local row too)
+      // a genuine rename cycle between two pre-existing local ids. Either way, merge its
+      // data into the incoming counterparty's canonical id and drop it.
+      toMerge.push({ oldId: conflictingLocalId, newId: cp.id })
     }
+  }
+
+  // Clear every row that must give up its current name — vacate renames to a placeholder,
+  // and run merges to completion (which deletes the orphaned row outright) — before any
+  // real target name is written (see resolveTagNameConflicts for why order matters here).
+  for (const { id } of toRename) {
+    await execSQL('UPDATE shared.counterparty SET name = ? WHERE id = ?', [`__sync_tmp__${id}`, id])
+  }
+  for (const { oldId, newId } of toMerge) {
+    await resolveCounterpartyIdConflict(oldId, newId)
+  }
+  for (const { id, finalName, finalUpdatedAt } of toRename) {
+    await execSQL('UPDATE shared.counterparty SET name = ?, updated_at = ? WHERE id = ?', [finalName, finalUpdatedAt, id])
   }
 }
 
-// Remap every FK reference from oldId to newId (FK constraints are OFF during import),
-// then delete the old counterparty row so the incoming counterparty can be inserted under newId.
+// Remap every FK reference from oldId to newId (FK constraints are OFF during import), then
+// delete the old counterparty row so the incoming counterparty can be inserted/updated under
+// newId. newId may already hold its own local row (both ids pre-existed locally): the
+// UPDATE into counterparty_to_tags/counterparty_sort_order (both have a UNIQUE constraint
+// involving counterparty_id) uses OR IGNORE so it can't collide, then whatever's left behind
+// at oldId is deleted explicitly — ON DELETE CASCADE doesn't run here since foreign_keys is
+// OFF for the whole import.
 async function resolveCounterpartyIdConflict(oldId: number, newId: number): Promise<void> {
   await execSQL(`UPDATE shared.counterparty_note SET counterparty_id = ? WHERE counterparty_id = ?`, [newId, oldId])
-  await execSQL(`UPDATE shared.counterparty_to_tags SET counterparty_id = ? WHERE counterparty_id = ?`, [newId, oldId])
-  await execSQL(`UPDATE shared.counterparty_sort_order SET counterparty_id = ? WHERE counterparty_id = ?`, [newId, oldId])
+  await execSQL(`UPDATE OR IGNORE shared.counterparty_to_tags SET counterparty_id = ? WHERE counterparty_id = ?`, [newId, oldId])
+  await execSQL(`DELETE FROM shared.counterparty_to_tags WHERE counterparty_id = ?`, [oldId])
+
+  // Only move oldId's counterparty_sort_order row onto newId if newId's own counterparty
+  // row already exists locally — see resolveTagIdConflict's tag_sort_order comment for why:
+  // otherwise the main import loop's later plain INSERT auto-creates a fresh row via
+  // trg_counterparty_sort_order_new_counterparty, colliding with the one moved here early.
+  const newCounterpartyExists = await queryOne<{ id: number }>(`SELECT id FROM shared.counterparty WHERE id = ?`, [newId])
+  if (newCounterpartyExists) {
+    await execSQL(`UPDATE OR IGNORE shared.counterparty_sort_order SET counterparty_id = ? WHERE counterparty_id = ?`, [newId, oldId])
+  }
+  await execSQL(`DELETE FROM shared.counterparty_sort_order WHERE counterparty_id = ?`, [oldId])
   await execSQL(`UPDATE workspace.trx_to_counterparty SET counterparty_id = ? WHERE counterparty_id = ?`, [newId, oldId])
   await execSQL(`DELETE FROM shared.counterparty WHERE id = ?`, [oldId])
 }
