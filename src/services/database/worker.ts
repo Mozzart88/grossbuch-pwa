@@ -3,6 +3,8 @@ import wasmUrl from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3.wasm?url'
 import proxyUri from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3-opfs-async-proxy.js?url'
 import type { OpfsDatabase, Sqlite3Static } from '../../sqlite-wasm'
 import { MAIN_DB_FILENAME, LEGACY_DB_FILENAME } from './paths'
+import { exportDecrypted } from './decryptedExport'
+import type { DecryptedExportRequest } from './decryptedExportTypes'
 
 declare type SqlValue =
   | string
@@ -15,13 +17,14 @@ declare type SqlValue =
 
 interface WorkerMessage {
   id: number
-  type: 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
+  exportRequest?: DecryptedExportRequest
+  type: 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'export_session' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
   sql?: string
   bind?: SqlValue[]
   statements?: { sql: string; bind?: SqlValue[] }[]
   key?: string      // Hex-encoded encryption key
   newKey?: string   // Hex-encoded new key for rekey operation
-  filename?: string // Source filename for export_decrypted, or target file for attach/finalize_main_rebuild/delete_file
+  filename?: string // Target file for attach/finalize_main_rebuild/delete_file
   schema?: string   // Schema name for attach/detach/rekey_schema (e.g. "shared")
 }
 
@@ -33,6 +36,9 @@ interface WorkerResponse {
 }
 
 let db: OpfsDatabase | null = null
+let exportSession = 0
+const exportInstance = crypto.randomUUID()
+const exportSessionToken = () => `${exportInstance}:${exportSession}`
 let sqlite3Module: Sqlite3Static | null = null
 
 // The App DB's actual on-disk filename for the current session — MAIN_DB_FILENAME
@@ -81,6 +87,7 @@ async function getSqlite3(): Promise<Sqlite3Static> {
 
 async function initDatabase(key?: string) {
   if (db) return
+  exportSession++
 
   const sqlite3 = await getSqlite3()
   currentMainFilename = await resolveMainFilename()
@@ -116,6 +123,7 @@ async function checkDatabaseExists(): Promise<boolean> {
 }
 
 async function rekeyDatabase(_oldKey: string, newKey: string): Promise<void> {
+  exportSession++
   if (!db) throw new Error('Database not initialized')
 
   // Rekey the database - oldKey is not needed since DB is already open with it
@@ -123,6 +131,7 @@ async function rekeyDatabase(_oldKey: string, newKey: string): Promise<void> {
 }
 
 async function attachDatabase(schema: string, filename: string, key: string): Promise<void> {
+  if (schema === 'shared') exportSession++
   if (!db) throw new Error('Database not initialized')
 
   try {
@@ -141,11 +150,13 @@ async function attachDatabase(schema: string, filename: string, key: string): Pr
 }
 
 async function detachDatabase(schema: string): Promise<void> {
+  if (schema === 'shared') exportSession++
   if (!db) throw new Error('Database not initialized')
   db.exec(`DETACH DATABASE ${schema}`)
 }
 
 async function rekeyAttachedSchema(schema: string, newKey: string): Promise<void> {
+  if (schema === 'shared') exportSession++
   if (!db) throw new Error('Database not initialized')
 
   // Schema-qualified PRAGMA rekey — the same "x'<hex>'" raw-key text form used
@@ -160,6 +171,7 @@ async function rekeyAttachedSchema(schema: string, newKey: string): Promise<void
 }
 
 async function wipeDatabase(): Promise<void> {
+  exportSession++
   // Close existing connection if any
   if (db) {
     db.close()
@@ -312,6 +324,7 @@ async function deleteFile(filename: string): Promise<void> {
  * re-attach them.
  */
 async function finalizeMainRebuild(tempFilename: string, key: string): Promise<void> {
+  exportSession++
   if (!db) throw new Error('Database not initialized')
   const sqlite3 = await getSqlite3()
   const sourceFilename = currentMainFilename
@@ -392,81 +405,14 @@ function getChanges(): number {
 }
 
 function closeDatabase(): void {
+  exportSession++
   if (db) {
     db.close()
     db = null
   }
 }
 
-async function exportDecrypted(filename: string, key: string): Promise<ArrayBuffer> {
-  const sqlite3 = await getSqlite3()
-  const tempFilename = '/export-temp-decrypted.sqlite3'
-
-  // Close existing connection if any
-  if (db) {
-    db.close()
-    db = null
-  }
-
-  let sqlite3OpenFlags = 'cw'
-  if (import.meta.env.DEV) {
-    sqlite3OpenFlags += 't'
-  }
-  // 1. Open encrypted source database in read-only mode
-  const sourceDb = new sqlite3.oo1.OpfsDb(filename, sqlite3OpenFlags)
-
-  try {
-    // Set encryption key and verify
-    sourceDb.exec([
-      `PRAGMA key = "x'${key}'";`,
-      'SELECT count(*) FROM sqlite_master;'
-    ].join(' '))
-
-    // 2. Create temp file in OPFS for decrypted export
-    await createFile(tempFilename.replace('/', ''))
-
-    // 3. Attach temp as unencrypted database (empty key = no encryption)
-    sourceDb.exec(`ATTACH DATABASE '${tempFilename}' AS plaintext KEY ''`)
-
-    // 4. Export data to plaintext database
-    sourceDb.exec(`SELECT sqlcipher_export('plaintext')`)
-
-    // 5. Detach
-    sourceDb.exec('DETACH DATABASE plaintext')
-
-    // 6. Close source database
-    sourceDb.close()
-
-    // 7. Read temp file as ArrayBuffer from OPFS
-    const root = await navigator.storage.getDirectory()
-    const tempHandle = await root.getFileHandle(tempFilename.replace('/', ''))
-    const tempFile = await tempHandle.getFile()
-    const decryptedContent = await tempFile.arrayBuffer()
-
-    // 8. Delete temp file from OPFS
-    await root.removeEntry(tempFilename.replace('/', ''))
-
-    // 9. Return ArrayBuffer
-    return decryptedContent
-
-  } catch (error) {
-    try {
-      sourceDb.close()
-    } catch {
-      // Ignore close errors
-    }
-    // Clean up temp file if it exists
-    try {
-      const root = await navigator.storage.getDirectory()
-      await root.removeEntry(tempFilename.replace('/', ''))
-    } catch {
-      // Ignore cleanup errors
-    }
-    throw error
-  }
-}
-
-self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
+async function handleMessage(event: MessageEvent<WorkerMessage>) {
   const { id, type, sql, bind, statements, key, newKey, filename, schema } = event.data
   const response: WorkerResponse = { id, success: false }
 
@@ -527,9 +473,17 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         response.success = true
         break
 
+      case 'export_session':
+        if (!db) throw new Error('No active database session.')
+        response.data = exportSessionToken()
+        response.success = true
+        break
+
       case 'export_decrypted':
-        if (!filename || !key) throw new Error('Filename and key required for export_decrypted')
-        response.data = await exportDecrypted(filename, key)
+        if (!db || !event.data.exportRequest || event.data.exportRequest.session !== exportSessionToken()) {
+          throw new Error('The database session changed. Unlock the application and try again.')
+        }
+        response.data = await exportDecrypted(db, await getSqlite3(), event.data.exportRequest)
         response.success = true
         break
 
@@ -578,4 +532,24 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   }
 
   self.postMessage(response)
+}
+
+// Reserve exports on arrival, including while waiting behind an earlier request.
+// Serial dispatch prevents asynchronous OPFS work from racing logout, workspace
+// switches or writes. Multi-message transactions keep their existing ownership.
+let requestQueue: Promise<void> = Promise.resolve()
+let exportPending = false
+self.onmessage = (event: MessageEvent<WorkerMessage>) => {
+  const isExport = event.data.type === 'export_decrypted'
+  if (isExport && exportPending) {
+    self.postMessage({ id: event.data.id, success: false, error: 'Database export is busy. Try again after it finishes.' })
+    return
+  }
+  if (isExport) exportPending = true
+  const run = async () => {
+    try { await handleMessage(event) } finally {
+      if (isExport) exportPending = false
+    }
+  }
+  requestQueue = requestQueue.then(run, run)
 }

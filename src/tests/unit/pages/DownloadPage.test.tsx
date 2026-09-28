@@ -13,13 +13,10 @@ vi.mock('../../../services/export/opfsUtils', () => ({
   uploadFileWithName: vi.fn(),
 }))
 
-vi.mock('../../../services/database/connection', () => ({
+vi.mock('../../../services/export/decryptedDatabaseExport', () => ({
   exportDecryptedDatabase: vi.fn(),
 }))
 
-vi.mock('../../../services/auth/crypto', () => ({
-  deriveEncryptionKey: vi.fn(),
-}))
 
 vi.mock('../../../components/ui', async () => {
   const actual = await vi.importActual('../../../components/ui')
@@ -31,14 +28,12 @@ vi.mock('../../../components/ui', async () => {
 
 import { downloadFile } from '../../../services/export/csvExport'
 import { renameOpfsFile, uploadFileWithName } from '../../../services/export/opfsUtils'
-import { exportDecryptedDatabase } from '../../../services/database/connection'
-import { deriveEncryptionKey } from '../../../services/auth/crypto'
+import { exportDecryptedDatabase } from '../../../services/export/decryptedDatabaseExport'
 
 const mockDownloadFile = vi.mocked(downloadFile)
 const mockRenameOpfsFile = vi.mocked(renameOpfsFile)
 const mockUploadFileWithName = vi.mocked(uploadFileWithName)
 const mockExportDecryptedDatabase = vi.mocked(exportDecryptedDatabase)
-const mockDeriveEncryptionKey = vi.mocked(deriveEncryptionKey)
 const mockShowToast = vi.fn()
 
 // Mock FileSystemFileHandle
@@ -317,95 +312,57 @@ describe('DownloadPage', () => {
   })
 
   describe('Download Decrypted functionality', () => {
-    it('opens PIN prompt when Download Decrypted is clicked', async () => {
-      const mockFileHandle = createMockFileHandle('test.sqlite3')
-      mockGetDirectory.mockResolvedValue(
-        createMockDirectoryHandle([['test.sqlite3', mockFileHandle]])
-      )
-
+    const openExport = async (name = 'main.db') => {
+      mockGetDirectory.mockResolvedValue(createMockDirectoryHandle([[name, createMockFileHandle(name)]]))
       renderWithRouter()
-
-      await waitFor(() => {
-        expect(screen.getByText('test.sqlite3')).toBeInTheDocument()
-      })
-
+      await screen.findByText(name)
       await openDropdownAndClick('Download Decrypted')
-
-      await waitFor(() => {
-        expect(screen.getByText('Enter PIN to Decrypt')).toBeInTheDocument()
-      })
-    })
-
-    it('exports decrypted database when PIN is submitted', async () => {
-      const mockFileHandle = createMockFileHandle('test.sqlite3')
-      mockGetDirectory.mockResolvedValue(
-        createMockDirectoryHandle([['test.sqlite3', mockFileHandle]])
-      )
-
-      // Setup mocks
-      const mockSalt = 'abcd1234'
-      localStorage.setItem('gb_pbkdf2_salt', mockSalt)
-      mockDeriveEncryptionKey.mockResolvedValue({ key: 'derivedkey123', salt: mockSalt })
+      expect(screen.getByText(/readable without a PIN/)).toBeInTheDocument()
+    }
+    const submitPin = () => {
+      fireEvent.change(screen.getByLabelText('Enter PIN'), { target: { value: '123456' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+    }
+    it.each(['main.db', 'shared.db', 'workspace-2.db', 'expense-tracker.sqlite3'])('downloads the authenticated plaintext %s with its existing filename convention', async name => {
       mockExportDecryptedDatabase.mockResolvedValue(new ArrayBuffer(100))
-
-      renderWithRouter()
-
-      await waitFor(() => {
-        expect(screen.getByText('test.sqlite3')).toBeInTheDocument()
-      })
-
-      await openDropdownAndClick('Download Decrypted')
-
-      await waitFor(() => {
-        expect(screen.getByText('Enter PIN to Decrypt')).toBeInTheDocument()
-      })
-
-      // Enter PIN and submit
-      const pinInput = screen.getByLabelText('Enter PIN')
-      fireEvent.change(pinInput, { target: { value: '123456' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-
-      await waitFor(() => {
-        expect(mockDeriveEncryptionKey).toHaveBeenCalledWith('123456', mockSalt)
-        expect(mockExportDecryptedDatabase).toHaveBeenCalledWith('/test.sqlite3', 'derivedkey123')
-        expect(mockDownloadFile).toHaveBeenCalled()
-        expect(mockShowToast).toHaveBeenCalledWith('Decrypted export successful', 'success')
-      })
-
-      // Cleanup
-      localStorage.removeItem('gb_pbkdf2_salt')
+      await openExport(name)
+      submitPin()
+      await waitFor(() => expect(mockDownloadFile).toHaveBeenCalledWith(
+        expect.any(Blob), name.replace(/(\.[^.]+)$/, '-decrypted$1')
+      ))
+      expect(mockExportDecryptedDatabase).toHaveBeenCalledWith(name, '123456')
+      expect(mockShowToast).toHaveBeenCalledWith('Decrypted export successful', 'success')
     })
-
-    it('throws error when salt is not found', async () => {
-      const mockFileHandle = createMockFileHandle('test.sqlite3')
-      mockGetDirectory.mockResolvedValue(
-        createMockDirectoryHandle([['test.sqlite3', mockFileHandle]])
-      )
-
-      // Ensure no salt in localStorage
-      localStorage.removeItem('gb_pbkdf2_salt')
-
-      renderWithRouter()
-
-      await waitFor(() => {
-        expect(screen.getByText('test.sqlite3')).toBeInTheDocument()
-      })
-
-      await openDropdownAndClick('Download Decrypted')
-
-      await waitFor(() => {
-        expect(screen.getByText('Enter PIN to Decrypt')).toBeInTheDocument()
-      })
-
-      // Enter PIN and submit
-      const pinInput = screen.getByLabelText('Enter PIN')
-      fireEvent.change(pinInput, { target: { value: '123456' } })
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-
-      // Should show error in modal
-      await waitFor(() => {
-        expect(screen.getByText('Encryption salt not found')).toBeInTheDocument()
-      })
+    it('does not export when PIN entry is cancelled', async () => {
+      await openExport()
+      fireEvent.click(screen.getByRole('button', {name:'Cancel'}))
+      expect(screen.queryByText('Enter PIN to Decrypt')).not.toBeInTheDocument()
+      expect(mockExportDecryptedDatabase).not.toHaveBeenCalled()
+      expect(mockDownloadFile).not.toHaveBeenCalled()
+    })
+    it.each(['Incorrect PIN', 'Database export failed during copy.'])('shows %s without downloading or reporting success', async message => {
+      mockExportDecryptedDatabase.mockRejectedValue(new Error(message))
+      await openExport()
+      submitPin()
+      expect(await screen.findByText(message)).toBeInTheDocument()
+      expect(mockDownloadFile).not.toHaveBeenCalled()
+      expect(mockShowToast).not.toHaveBeenCalled()
+    })
+    it('prevents repeated submissions and disables decrypted actions until bytes are ready', async () => {
+      let finish!: (value: ArrayBuffer) => void
+      mockExportDecryptedDatabase.mockImplementation(() => new Promise(resolve => {finish=resolve}))
+      await openExport()
+      submitPin()
+      const pending = screen.getByRole('button', {name:'Processing...'})
+      expect(pending).toBeDisabled()
+      fireEvent.click(pending)
+      fireEvent.keyDown(screen.getByLabelText('Enter PIN'), {key:'Enter'})
+      fireEvent.click(screen.getByRole('button', {expanded:false}))
+      expect(screen.getByRole('menuitem', {name:'Download Decrypted'})).toBeDisabled()
+      expect(mockExportDecryptedDatabase).toHaveBeenCalledTimes(1)
+      expect(mockDownloadFile).not.toHaveBeenCalled()
+      finish(new ArrayBuffer(100))
+      await waitFor(() => expect(mockDownloadFile).toHaveBeenCalledTimes(1))
     })
   })
 

@@ -1,18 +1,19 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, useToast, DropdownMenu, PinPromptModal, TextInputModal } from '../components/ui'
 import type { DropdownMenuItem } from '../components/ui'
 import { downloadFile } from '../services/export/csvExport'
 import { renameOpfsFile, uploadFileWithName } from '../services/export/opfsUtils'
-import { exportDecryptedDatabase } from '../services/database/connection'
-import { deriveEncryptionKey } from '../services/auth/crypto'
-import { AUTH_STORAGE_KEYS } from '../types/auth'
+import { exportDecryptedDatabase } from '../services/export/decryptedDatabaseExport'
 
 type OpfsList = { name: string, handle: FileSystemFileHandle }[]
 
 export function DownloadPage() {
   const { showToast } = useToast()
   const [files, setFiles] = useState<OpfsList>([])
+
+  const exportPending = useRef(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   // Modal states
   const [pinPromptModal, setPinPromptModal] = useState<{
@@ -58,32 +59,20 @@ export function DownloadPage() {
   }
 
   const handleDownloadDecrypted = async (pin: string) => {
-    if (!pinPromptModal.filename) return
-
-    // Get PBKDF2 salt from localStorage
-    const saltHex = localStorage.getItem(AUTH_STORAGE_KEYS.PBKDF2_SALT)
-    if (!saltHex) {
-      throw new Error('Encryption salt not found')
+    if (!pinPromptModal.filename || exportPending.current) return
+    const filename = pinPromptModal.filename
+    exportPending.current = true
+    setIsExporting(true)
+    try {
+      const decryptedData = await exportDecryptedDatabase(filename, pin)
+      const blob = new Blob([decryptedData], { type: 'application/x-sqlite3' })
+      const decryptedFilename = filename.replace(/(\.[^.]+)$/, '-decrypted$1')
+      downloadFile(blob, decryptedFilename)
+      showToast('Decrypted export successful', 'success')
+    } finally {
+      exportPending.current = false
+      setIsExporting(false)
     }
-
-    // Derive key from PIN
-    const { key } = await deriveEncryptionKey(pin, saltHex)
-
-    // Export decrypted database
-    const decryptedData = await exportDecryptedDatabase(
-      '/' + pinPromptModal.filename,
-      key
-    )
-
-    // Create blob and download
-    const blob = new Blob([decryptedData], { type: 'application/x-sqlite3' })
-    // Extension-agnostic (main.db/shared.db/workspace-N.db as well as any
-    // legacy .sqlite3 file still lingering in OPFS) — inserts "-decrypted"
-    // before the last extension rather than assuming '.sqlite3' specifically.
-    const decryptedFilename = pinPromptModal.filename.replace(/(\.[^.]+)$/, '-decrypted$1')
-    downloadFile(blob, decryptedFilename)
-
-    showToast('Decrypted export successful', 'success')
   }
 
   const handleDelete = async (filename: string, fileHandler: FileSystemFileHandle) => {
@@ -172,6 +161,7 @@ export function DownloadPage() {
       },
       {
         label: 'Download Decrypted',
+        disabled: isExporting,
         onClick: () => setPinPromptModal({
           isOpen: true,
           filename: entry.name,
@@ -233,7 +223,9 @@ export function DownloadPage() {
       {/* PIN Prompt Modal for Decrypted Export */}
       <PinPromptModal
         isOpen={pinPromptModal.isOpen}
-        onClose={() => setPinPromptModal({ isOpen: false, filename: '', fileHandle: null })}
+        onClose={() => {
+          if (!exportPending.current) setPinPromptModal({ isOpen: false, filename: '', fileHandle: null })
+        }}
         onSubmit={handleDownloadDecrypted}
         title="Enter PIN to Decrypt"
         description="Enter your PIN to export a decrypted copy of the database. The exported file will be readable without a PIN."
