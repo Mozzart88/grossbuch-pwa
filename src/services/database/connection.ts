@@ -1,3 +1,5 @@
+import type { DecryptedExportRequest } from './decryptedExportTypes'
+
 interface WorkerResponse {
   id: number
   success: boolean
@@ -62,6 +64,7 @@ function getWorker(): Worker {
 }
 
 interface SendMessageOptions {
+  exportRequest?: DecryptedExportRequest
   sql?: string
   bind?: unknown[]
   statements?: { sql: string; bind?: unknown[] }[]
@@ -147,8 +150,12 @@ export async function validateReferenceExists(qualifiedTable: string, idColumn: 
   return row !== null
 }
 
-export async function exportDecryptedDatabase(filename: string, key: string): Promise<ArrayBuffer> {
-  const result = await sendMessage('export_decrypted', { filename, key })
+export async function getExportSession(): Promise<string> {
+  return await sendMessage('export_session') as string
+}
+
+export async function exportDecryptedDatabase(exportRequest: DecryptedExportRequest): Promise<ArrayBuffer> {
+  const result = await sendMessage('export_decrypted', { exportRequest })
   return result as ArrayBuffer
 }
 
