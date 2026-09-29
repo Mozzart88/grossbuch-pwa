@@ -239,11 +239,11 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
     // For expense/income: collect all non-common, non-system tag names
     // System/special tag names to exclude from display
-    const systemTagNames = new Set(['exchange', 'transfer', 'initial', 'adjustment', 'fee'])
+    const systemTagNames = new Set(['exchange', 'transfer', 'initial', 'adjustment'])
 
     // Lines to search for display tags (for multi-currency expense, exclude exchange/transfer lines)
     const relevantLines = transactionType === 'expense' && isMultiCurrencyExpense(transaction)
-      ? transaction.filter(l => !l.tags.includes('exchange') && l.tags !== 'transfer')
+      ? transaction.filter(l => !['exchange', 'transfer'].includes(l.tags))
       : transaction
 
     // Primary (non-add-on) category tags
