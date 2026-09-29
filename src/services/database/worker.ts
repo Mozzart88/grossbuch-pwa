@@ -1,3 +1,6 @@
+import { processRestore } from '../restore/engine'
+import { restoreWorkerIO } from '../restore/workerIO'
+import type { RestoreRequest } from '../restore/types'
 import sqlite3InitModule from '../../sqlite-wasm'
 import wasmUrl from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3.wasm?url'
 import proxyUri from '../../sqlite-wasm/sqlite-wasm/jswasm/sqlite3-opfs-async-proxy.js?url'
@@ -18,8 +21,9 @@ declare type SqlValue =
 interface WorkerMessage {
   id: number
   owner?: string
+  restoreRequest?: RestoreRequest
   exportRequest?: DecryptedExportRequest
-  type: 'acquire_operation' | 'release_operation' | 'invalidate_operation' | 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'export_session' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
+  type: 'restore_barrier' | 'restore_inspect' | 'restore_prepare' | 'acquire_operation' | 'release_operation' | 'invalidate_operation' | 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'export_session' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
   sql?: string
   bind?: SqlValue[]
   statements?: { sql: string; bind?: SqlValue[] }[]
@@ -423,6 +427,20 @@ async function handleMessage(event: MessageEvent<WorkerMessage>) {
     if (event.data.owner && event.data.owner !== operationOwner) throw new Error('Database operation expired')
     if (unusable && !['init', 'init_encrypted', 'close'].includes(type)) throw new Error('Database connection requires reinitialization')
     switch (type) {
+      case 'restore_barrier':
+        response.success = true
+        break
+
+      case 'restore_inspect':
+      case 'restore_prepare': {
+        const request = event.data.restoreRequest
+        if (!request) throw new Error('Restore request required')
+        if (request.session && (!db || request.session !== exportSessionToken())) throw new Error('Restore session changed; unlock and retry')
+        response.data = await processRestore(await restoreWorkerIO(await getSqlite3()), request, db ?? undefined, type === 'restore_prepare')
+        response.success = true
+        break
+      }
+
       case 'acquire_operation':
         if (!db || operationOwner) throw new Error('Database operation unavailable')
         if (sqlite3Module!.wasm.exports.sqlite3_get_autocommit(db.pointer) === 0) throw new Error('Database transaction already active')

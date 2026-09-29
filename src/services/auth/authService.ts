@@ -1,3 +1,4 @@
+import { runDatabaseActivity, assertDatabaseActivityAllowed } from '../restore/lifecycle'
 import type { AuthSettings } from '../../types/auth'
 import { AUTH_STORAGE_KEYS } from '../../types/auth'
 import {
@@ -247,7 +248,7 @@ export async function needsMigration(): Promise<boolean> {
 /**
  * Migrate an unencrypted database to encrypted with PIN
  */
-export async function migrateDatabase(pin: string): Promise<void> {
+async function migrateDatabaseOperation(pin: string): Promise<void> {
   // Generate encryption key from PIN
   const { key: encryptionKey, salt: pbkdf2Salt } = await deriveEncryptionKey(pin)
 
@@ -317,7 +318,7 @@ export async function hasValidSession(): Promise<boolean> {
 /**
  * First-time PIN setup - creates encrypted database
  */
-export async function setupPin(pin: string): Promise<void> {
+async function setupPinOperation(pin: string): Promise<void> {
   // Generate encryption key from PIN
   const { key: encryptionKey, salt: pbkdf2Salt } = await deriveEncryptionKey(pin)
 
@@ -373,7 +374,7 @@ export async function setupPin(pin: string): Promise<void> {
  * Login with PIN
  * @returns true if login successful, false if PIN incorrect
  */
-export async function login(pin: string): Promise<boolean> {
+async function loginOperation(pin: string): Promise<boolean> {
   // Get stored salt
   const storedSalt = getStoredSalt()
   if (!storedSalt) {
@@ -433,6 +434,7 @@ export async function login(pin: string): Promise<boolean> {
  * Logout - clear session token and DEK cache
  */
 export function logout(): void {
+  assertDatabaseActivityAllowed()
   clearSessionToken()
   sessionDEK = null
   clearWorkspaceSession()
@@ -442,7 +444,7 @@ export function logout(): void {
  * Change PIN
  * @returns true if successful, false if old PIN is incorrect
  */
-export async function changePin(oldPin: string, newPin: string): Promise<boolean> {
+async function changePinOperation(oldPin: string, newPin: string): Promise<boolean> {
   const storedSalt = getStoredSalt()
   if (!storedSalt) {
     throw new Error('No salt found. Database may be corrupted.')
@@ -505,7 +507,7 @@ export async function changePin(oldPin: string, newPin: string): Promise<boolean
 /**
  * Wipe all data and reset - for "forgot PIN" flow
  */
-export async function wipeAndReset(): Promise<void> {
+async function wipeAndResetOperation(): Promise<void> {
   // Clear session token
   clearSessionToken()
 
@@ -526,7 +528,7 @@ export async function wipeAndReset(): Promise<void> {
  * Login using a stored WebAuthn credential (biometric unlock).
  * Returns true on success, false if no credential stored or authentication fails.
  */
-export async function loginWithBiometrics(): Promise<boolean> {
+async function loginWithBiometricsOperation(): Promise<boolean> {
   const dek = await authenticateWithWebAuthn()
   if (!dek) return false
 
@@ -550,7 +552,7 @@ export async function loginWithBiometrics(): Promise<boolean> {
  * Requires an active PIN session (sessionDEK must be set).
  * Returns true on success, false if PRF unsupported or registration fails.
  */
-export async function enableBiometrics(): Promise<boolean> {
+async function enableBiometricsOperation(): Promise<boolean> {
   if (!sessionDEK) throw new Error('No active session — log in with PIN first')
   return registerWebAuthn(sessionDEK)
 }
@@ -559,6 +561,7 @@ export async function enableBiometrics(): Promise<boolean> {
  * Disable biometric unlock by removing the stored credential.
  */
 export function disableBiometrics(): void {
+  assertDatabaseActivityAllowed()
   clearWebAuthnCredential()
 }
 
@@ -587,3 +590,33 @@ export async function validateAndRefreshSession(): Promise<boolean> {
     return false
   }
 }
+
+export function migrateDatabase(pin: string): Promise<void> {
+  return runDatabaseActivity(() => migrateDatabaseOperation(pin))
+}
+
+export function setupPin(pin: string): Promise<void> {
+  return runDatabaseActivity(() => setupPinOperation(pin))
+}
+
+export function login(pin: string): Promise<boolean> {
+  return runDatabaseActivity(() => loginOperation(pin))
+}
+
+export function changePin(oldPin: string, newPin: string): Promise<boolean> {
+  return runDatabaseActivity(() => changePinOperation(oldPin, newPin))
+}
+
+export function wipeAndReset(): Promise<void> {
+  return runDatabaseActivity(() => wipeAndResetOperation())
+}
+
+export function loginWithBiometrics(): Promise<boolean> {
+  return runDatabaseActivity(() => loginWithBiometricsOperation())
+}
+
+export function enableBiometrics(): Promise<boolean> {
+  return runDatabaseActivity(() => enableBiometricsOperation())
+}
+
+export function getSessionAppKey(): string | null { return sessionDEK }

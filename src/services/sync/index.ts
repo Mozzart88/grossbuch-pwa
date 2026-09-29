@@ -1,3 +1,4 @@
+import { runDatabaseActivity } from '../restore/lifecycle'
 import { queryOne, withDatabaseOperation } from '../database/connection'
 import { settingsRepository } from '../repositories/settingsRepository'
 import { linkedDeviceRepository } from '../repositories/linkedDeviceRepository'
@@ -63,7 +64,7 @@ interface PushSyncOptions {
  * Exports changes since last push, encrypts for all linked installations, uploads.
  * When targetUuid is set, pushes full history encrypted only for the target device.
  */
-export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> {
+async function pushSyncOperation(options: PushSyncOptions = {}): Promise<boolean> {
   const { targetUuid } = options
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) return false
@@ -110,7 +111,7 @@ export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> 
 /**
  * Pull pending sync packages from the server, decrypt, import, and acknowledge.
  */
-export async function pullSync(): Promise<ImportResult[]> {
+async function pullSyncOperation(): Promise<ImportResult[]> {
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) return []
 
@@ -291,3 +292,11 @@ export async function sendRenameCommand(targetId: string, name: string): Promise
 }
 
 export type { ImportResult } from './syncTypes'
+
+export function pushSync(options: PushSyncOptions = {}): Promise<boolean> {
+  return runDatabaseActivity(() => pushSyncOperation(options))
+}
+
+export function pullSync(): Promise<ImportResult[]> {
+  return runDatabaseActivity(pullSyncOperation)
+}

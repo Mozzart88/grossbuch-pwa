@@ -1,3 +1,6 @@
+import { pauseDatabaseActivities, assertDatabaseUsable, requireDatabaseRecovery } from '../restore/lifecycle'
+import { acquireDatabaseLease, requireRestoreLease } from '../restore/lease'
+import type { RestoreRequest } from '../restore/types'
 import type { DecryptedExportRequest } from './decryptedExportTypes'
 
 interface WorkerResponse {
@@ -69,6 +72,7 @@ function getWorker(): Worker {
 }
 
 interface SendMessageOptions {
+  restoreRequest?: RestoreRequest
   owner?: string
   exportRequest?: DecryptedExportRequest
   sql?: string
@@ -80,7 +84,19 @@ interface SendMessageOptions {
   schema?: string
 }
 
+let restoring = false
+
 function sendMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
+  try { assertDatabaseUsable() } catch (error) { return Promise.reject(error) }
+  if (restoring && !options.owner) return Promise.reject(new Error('Database restore is in progress'))
+  if (navigator.locks) return acquireDatabaseLease().then(() => {
+    if (restoring && !options.owner) throw new Error('Database restore is in progress')
+    return postMessage(type, options)
+  })
+  return postMessage(type, options)
+}
+
+function postMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++messageId
     pendingRequests.set(id, { resolve, reject })
@@ -292,4 +308,30 @@ export async function withTransaction<T>(action: (db: DatabaseExecutor) => Promi
       throw error
     }
   })
+}
+
+export async function withRestoreAccess<T>(action: (send: (type: string, options: Record<string, unknown>) => Promise<unknown>) => Promise<T>): Promise<T> {
+  if (restoring) throw new Error('Database restore is already in progress')
+  const resume = await pauseDatabaseActivities()
+  restoring = true
+  try {
+    await requireRestoreLease()
+    // A queued barrier drains preexisting owned transactions before inspection.
+    await postMessage('restore_barrier')
+    return await action(async (type, options) => {
+      let result: unknown
+      try { result = await postMessage(type, options) } catch (error) {
+        if (error instanceof Error && error.message.includes('temporary-file cleanup failed')) {
+          requireDatabaseRecovery()
+          worker?.terminate()
+          worker = null
+          initPromise = null
+        }
+        throw error
+      }
+      if (type === 'close') initPromise = null
+      return result
+    })
+  } finally { restoring = false; resume() }
+
 }

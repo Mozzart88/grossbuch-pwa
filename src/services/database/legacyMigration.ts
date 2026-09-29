@@ -266,7 +266,7 @@ const NEW_MAIN_ALIAS = 'new_main'
 // syncTriggers.ts — see design.md). Definitions mirror versions/v24.ts
 // (app_settings, linked_device) and versions/v14.ts + v24.ts's ALTER TABLE
 // (sync_state, sync_deletions) exactly.
-const NEW_MAIN_SCHEMA_SQL = `
+export const NEW_MAIN_SCHEMA_SQL = `
   CREATE TABLE new_main.app_settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,

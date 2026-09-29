@@ -324,3 +324,11 @@ it('an export waits outside an owned transaction and succeeds after commit', asy
   await successful('release_operation', { owner })
   expect((await exporting).success).toBe(true)
 })
+
+it('admits a restore barrier without an unlocked database and rejects stale restore sessions', async () => {
+  await successful('close')
+  await successful('restore_barrier')
+  const result = await request('restore_inspect', { restoreRequest: { inputs: [], session: 'old-session', sharedKey } })
+  expect(result.success).toBe(false)
+  expect(result.error).toMatch(/session/i)
+})

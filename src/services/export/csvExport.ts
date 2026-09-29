@@ -1,3 +1,4 @@
+import { uploadFileWithName } from './opfsUtils'
 import { transactionRepository } from '../repositories'
 import { blobToHex } from '../../utils/blobUtils'
 import { fromIntFrac } from '../../utils/amount'
@@ -84,9 +85,5 @@ export function downloadFile(data: File | Blob, filename: string): void {
 
 // TODO: move to separate file
 export async function uploadFile(file: File) {
-  const root = await navigator.storage.getDirectory()
-  const opfsFH = await root.getFileHandle(file.name, { create: true })
-  const writable = await opfsFH.createWritable()
-  await writable.write(await file.arrayBuffer())
-  await writable.close()
+  await uploadFileWithName(file, file.name)
 }

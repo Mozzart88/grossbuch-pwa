@@ -59,3 +59,28 @@ it('a throwing observer cannot turn a committed save into a reported failure', a
   db.onDbWrite(() => { throw new Error('observer failed') })
   await expect(db.withTransaction(async scope => { await scope.execSQL('write'); return 'saved' })).resolves.toBe('saved')
 })
+
+it('blocks unrelated queries during restore while allowing its scoped worker commands', async () => {
+  const db = await import('../../../../services/database/connection')
+  const lease = await import('../../../../services/restore/lease')
+  vi.spyOn(lease, 'requireRestoreLease').mockResolvedValue()
+  await db.withRestoreAccess(async send => {
+    await expect(db.querySQL('unrelated')).rejects.toThrow(/restore/i)
+    await send('restore_inspect', { restoreRequest: { inputs: [] } })
+  })
+  await expect(db.querySQL('after')).resolves.toEqual([])
+})
+
+it('keeps normal access blocked after restore rollback cannot finish', async () => {
+  const db = await import('../../../../services/database/connection')
+  const lease = await import('../../../../services/restore/lease')
+  const lifecycle = await import('../../../../services/restore/lifecycle')
+  vi.spyOn(lease, 'requireRestoreLease').mockResolvedValue()
+  await expect(db.withRestoreAccess(async () => {
+    lifecycle.requireDatabaseRecovery()
+    throw new Error('rollback failed')
+  })).rejects.toThrow('rollback failed')
+  await expect(db.querySQL('would write later')).rejects.toThrow(/recovery/i)
+  await expect(db.initEncryptedDatabase('11'.repeat(32))).rejects.toThrow(/recovery/i)
+  await expect(lifecycle.runDatabaseActivity(async () => 'login')).rejects.toThrow(/recovery/i)
+})
