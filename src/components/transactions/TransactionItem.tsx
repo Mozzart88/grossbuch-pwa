@@ -79,6 +79,12 @@ const getTransactionType = (trx: TransactionLog[]): transactionT => {
 //   )
 // }
 
+const getFees = (transaction: TransactionLog[]): string | undefined => {
+
+  const feeLine = transaction.find(l => l.tags.toLocaleLowerCase() === 'fees')
+  return feeLine ? formatCurrencyValue(getUnsignedAmount(feeLine), feeLine.symbol) : undefined
+}
+
 export function TransactionItem({ transaction, onClick }: TransactionItemProps) {
   const getAmountDisplay = () => {
     const transactionType = getTransactionType(transaction)
@@ -114,6 +120,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         return {
           text: formatCurrencyValue(getUnsignedAmount(transferLine), transferLine.symbol),
           color,
+          fee: getFees(transaction)
         }
       }
       case 'exchange': {
@@ -122,6 +129,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         return {
           text: `${formatCurrencyValue(getUnsignedAmount(from), from.symbol)} → ${formatCurrencyValue(getUnsignedAmount(to), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
+          fee: getFees(transaction)
         }
       }
       case 'initial':
@@ -310,7 +318,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       {/* Amount and time */}
       <div className="shrink-0 text-right">
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{amount.fee ? `${amount.fee} ` : ''}{formatTime(transaction[0].date_time)}</p>
       </div>
     </div>
   )
