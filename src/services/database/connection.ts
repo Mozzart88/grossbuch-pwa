@@ -1,3 +1,6 @@
+import { pauseDatabaseActivities, assertDatabaseUsable, requireDatabaseRecovery } from '../restore/lifecycle'
+import { acquireDatabaseLease, requireRestoreLease } from '../restore/lease'
+import type { RestoreRequest } from '../restore/types'
 import type { DecryptedExportRequest } from './decryptedExportTypes'
 
 interface WorkerResponse {
@@ -33,7 +36,7 @@ export function onDbWrite(listener: DbWriteListener): () => void {
 function notifyWriteListeners() {
   if (suppressWriteNotifications) return
   for (const listener of writeListeners) {
-    listener()
+    try { listener() } catch (error) { console.error('Database write observer failed:', error) }
   }
 }
 
@@ -57,6 +60,11 @@ function getWorker(): Worker {
 
     worker.onerror = (error) => {
       console.error('Worker error:', error)
+      for (const pending of pendingRequests.values()) pending.reject(new Error('Database worker failed; reinitialize the connection'))
+      pendingRequests.clear()
+      worker?.terminate()
+      worker = null
+      initPromise = null
     }
   }
 
@@ -64,6 +72,8 @@ function getWorker(): Worker {
 }
 
 interface SendMessageOptions {
+  restoreRequest?: RestoreRequest
+  owner?: string
   exportRequest?: DecryptedExportRequest
   sql?: string
   bind?: unknown[]
@@ -74,11 +84,26 @@ interface SendMessageOptions {
   schema?: string
 }
 
+let restoring = false
+
 function sendMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
+  try { assertDatabaseUsable() } catch (error) { return Promise.reject(error) }
+  if (restoring && !options.owner) return Promise.reject(new Error('Database restore is in progress'))
+  if (navigator.locks) return acquireDatabaseLease().then(() => {
+    if (restoring && !options.owner) throw new Error('Database restore is in progress')
+    return postMessage(type, options)
+  })
+  return postMessage(type, options)
+}
+
+function postMessage(type: string, options: SendMessageOptions = {}): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const id = ++messageId
     pendingRequests.set(id, { resolve, reject })
-    getWorker().postMessage({ id, type, ...options })
+    try { getWorker().postMessage({ id, type, ...options }) } catch (error) {
+      pendingRequests.delete(id)
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
   })
 }
 
@@ -199,5 +224,114 @@ export async function closeDatabase(): Promise<void> {
     worker.terminate()
     worker = null
     initPromise = null
+    for (const pending of pendingRequests.values()) pending.reject(new Error('Database connection closed'))
+    pendingRequests.clear()
   }
+}
+
+
+export interface DatabaseExecutor {
+  execSQL(sql: string, bind?: unknown[]): Promise<void>
+  execBatch(statements: { sql: string; bind?: unknown[] }[]): Promise<void>
+  querySQL<T>(sql: string, bind?: unknown[]): Promise<T[]>
+  queryOne<T>(sql: string, bind?: unknown[]): Promise<T | null>
+}
+
+export interface DatabaseOperation extends DatabaseExecutor {
+  invalidate(): Promise<void>
+}
+
+// Ownership is carried explicitly, never inherited by unrelated async callers.
+export async function withDatabaseOperation<T>(
+  action: (db: DatabaseOperation) => Promise<T>,
+  options: { notify?: boolean } = {},
+): Promise<T> {
+  const owner = await sendMessage('acquire_operation') as string
+  const operationWorker = worker
+  let active = true
+  let dirty = false
+  const send = (type: string, args: SendMessageOptions) => {
+    if (!active || worker !== operationWorker) return Promise.reject(new Error('Database operation expired'))
+    return sendMessage(type, { ...args, owner })
+  }
+  const scope: DatabaseOperation = {
+    async execSQL(sql, bind) {
+      await send('exec', { sql, bind })
+      dirty = true
+    },
+    async execBatch(statements) {
+      if (statements.length) {
+        await send('exec_batch', { statements })
+        dirty = true
+      }
+    },
+    async querySQL<T>(sql: string, bind?: unknown[]) {
+      const rows = await send('query', { sql, bind }) as T[]
+      if (/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql)) dirty = true
+      return rows
+    },
+    async queryOne<T>(sql: string, bind?: unknown[]) { return (await scope.querySQL<T>(sql, bind))[0] ?? null },
+    async invalidate() {
+      if (!active) return
+      try {
+        if (worker === operationWorker) await sendMessage('invalidate_operation', { owner })
+      } finally {
+        active = false
+        initPromise = null
+      }
+    },
+  }
+  let outcome: { value: T } | { error: unknown }
+  try { outcome = { value: await action(scope) } } catch (error) { outcome = { error } }
+  if (active) {
+    try { await send('release_operation', {}) } catch (error) {
+      await scope.invalidate()
+      throw error
+    } finally { active = false }
+  }
+  if ('error' in outcome) throw outcome.error
+  if (dirty && options.notify !== false) notifyWriteListeners()
+  return outcome.value
+}
+
+export async function withTransaction<T>(action: (db: DatabaseExecutor) => Promise<T>): Promise<T> {
+  return withDatabaseOperation(async db => {
+    await db.execSQL('BEGIN IMMEDIATE')
+    try {
+      const result = await action(db)
+      await db.execSQL('COMMIT')
+      return result
+    } catch (error) {
+      try { await db.execSQL('ROLLBACK') } catch {
+        await db.invalidate()
+      }
+      throw error
+    }
+  })
+}
+
+export async function withRestoreAccess<T>(action: (send: (type: string, options: Record<string, unknown>) => Promise<unknown>) => Promise<T>): Promise<T> {
+  if (restoring) throw new Error('Database restore is already in progress')
+  const resume = await pauseDatabaseActivities()
+  restoring = true
+  try {
+    await requireRestoreLease()
+    // A queued barrier drains preexisting owned transactions before inspection.
+    await postMessage('restore_barrier')
+    return await action(async (type, options) => {
+      let result: unknown
+      try { result = await postMessage(type, options) } catch (error) {
+        if (error instanceof Error && error.message.includes('temporary-file cleanup failed')) {
+          requireDatabaseRecovery()
+          worker?.terminate()
+          worker = null
+          initPromise = null
+        }
+        throw error
+      }
+      if (type === 'close') initPromise = null
+      return result
+    })
+  } finally { restoring = false; resume() }
+
 }

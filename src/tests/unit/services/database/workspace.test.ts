@@ -182,3 +182,20 @@ describe('workspace', () => {
     })
   })
 })
+
+it('drains a workspace switch before restore can inspect the installation', async () => {
+  const { pauseDatabaseActivities } = await import('../../../../services/restore/lifecycle')
+  setSessionDekShared('shared-key')
+  mockValidateReferenceExists.mockResolvedValue(true)
+  let release!: () => void
+  let entered!: () => void
+  const detached = new Promise<void>(resolve => { entered = resolve })
+  mockDetachDatabase.mockImplementationOnce(async () => { entered(); await new Promise<void>(resolve => { release = resolve }) })
+  const switching = switchWorkspace(7)
+  await detached
+  let paused = false
+  const pause = pauseDatabaseActivities().then(resume => { paused = true; return resume })
+  await Promise.resolve()
+  try { expect(paused).toBe(false) } finally { release(); await switching; (await pause)() }
+  expect(getActiveWorkspaceId()).toBe(7)
+})

@@ -1,4 +1,4 @@
-import { execSQL, querySQL, queryOne } from '../database/connection'
+import { execSQL, querySQL, queryOne, type DatabaseExecutor } from '../database/connection'
 import type { SyncState, SyncDeletion } from './syncTypes'
 
 export async function getSyncState(installationId: string): Promise<SyncState | null> {
@@ -19,8 +19,8 @@ export async function ensureSyncState(installationId: string): Promise<SyncState
   return { installation_id: installationId, last_sync_at: 0, last_push_at: 0 }
 }
 
-export async function updatePushTimestamp(installationId: string, timestamp: number): Promise<void> {
-  await execSQL(
+export async function updatePushTimestamp(installationId: string, timestamp: number, db: Pick<DatabaseExecutor, 'execSQL'> = { execSQL }): Promise<void> {
+  await db.execSQL(
     `UPDATE sync_state SET last_push_at = ? WHERE installation_id = ?`,
     [timestamp, installationId]
   )

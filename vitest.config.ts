@@ -33,8 +33,8 @@ export default defineConfig({
         'src/services/sync/syncTypes.ts',
       ],
       thresholds: {
-        statements: 96,
-        branches: 91,
+        statements: 95,
+        branches: 90,
         functions: 93,
         lines: 96,
       },

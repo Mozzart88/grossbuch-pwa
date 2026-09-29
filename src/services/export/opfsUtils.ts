@@ -1,8 +1,19 @@
+import { assertDatabaseActivityAllowed } from '../restore/lifecycle'
+
+function protectDatabase(name: string) {
+  assertDatabaseActivityAllowed()
+  if (/^(?:main\.db|shared\.db|workspace-\d+\.db)(?:$|-)/.test(name) || name.startsWith('gb-restore-')) {
+    throw new Error('Use database restore to replace installed database files')
+  }
+}
+
 /**
  * Rename a file in OPFS (Origin Private File System)
  * OPFS has no native rename, so we copy content to new name and delete old
  */
 export async function renameOpfsFile(oldName: string, newName: string): Promise<void> {
+  protectDatabase(oldName)
+  protectDatabase(newName)
   const root = await navigator.storage.getDirectory()
 
   // Get old file handle and read content
@@ -24,6 +35,7 @@ export async function renameOpfsFile(oldName: string, newName: string): Promise<
  * Upload a file to OPFS with a custom name
  */
 export async function uploadFileWithName(file: File, customName: string): Promise<void> {
+  protectDatabase(customName)
   const root = await navigator.storage.getDirectory()
   const opfsFH = await root.getFileHandle(customName, { create: true })
   const writable = await opfsFH.createWritable()

@@ -110,3 +110,16 @@ describe('opfsUtils', () => {
     })
   })
 })
+
+it('requires coordinated restore for canonical databases and their sidecars', async () => {
+  for (const name of ['main.db', 'shared.db', 'workspace-1.db', 'main.db-wal', 'gb-restore-private.stage']) {
+    await expect(uploadFileWithName(new File(['data'], 'source.db'), name)).rejects.toThrow(/restore/i)
+    await expect(renameOpfsFile('old.db', name)).rejects.toThrow(/restore/i)
+  }
+  await expect(renameOpfsFile('main.db', 'saved.db')).rejects.toThrow(/restore/i)
+})
+
+it('protects canonical destinations through the older upload helper too', async () => {
+  const { uploadFile } = await import('../../../../services/export/csvExport')
+  await expect(uploadFile(new File(['data'], 'shared.db'))).rejects.toThrow(/restore/i)
+})

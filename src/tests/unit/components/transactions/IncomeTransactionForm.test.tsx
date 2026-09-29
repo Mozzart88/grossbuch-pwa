@@ -124,6 +124,30 @@ describe('IncomeTransactionForm', () => {
     })
   })
 
+
+  it('accepts one rapid submission and allows retry after failure', async () => {
+    let rejectSave!: (reason: Error) => void
+    mockTransactionRepository.create.mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject }))
+    render(<IncomeTransactionForm {...defaultProps} />)
+
+    fireEvent.change(screen.getByLabelText(/^Amount/i), { target: { value: '1500' } })
+
+    const categoryInput = screen.getByLabelText(/category/i)
+    fireEvent.focus(categoryInput)
+    fireEvent.change(categoryInput, { target: { value: 'Salary' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Salary' })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('option', { name: 'Salary' }))
+
+
+    const form = document.querySelector('form')!
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+    await waitFor(() => expect(mockTransactionRepository.create).toHaveBeenCalledTimes(1))
+    rejectSave(new Error('Synthetic save failure'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled())
+    fireEvent.submit(form)
+    await waitFor(() => expect(mockTransactionRepository.create).toHaveBeenCalledTimes(2))
+  })
   it('submits correct payload for income transaction', async () => {
     render(<IncomeTransactionForm {...defaultProps} />)
 

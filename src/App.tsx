@@ -76,7 +76,7 @@ function InstallGate({ children }: { children: React.ReactNode }) {
 }
 
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { status } = useAuth()
+  const { status, error: authError } = useAuth()
 
   // Checking auth status
   if (status === 'checking') {
@@ -88,19 +88,23 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     )
   }
 
+  if (status === 'auth_failed' && authError && /^Database (recovery|is open)/.test(authError)) {
+    return <div className="max-w-xl mx-auto p-4 space-y-4"><p role="alert">{authError}</p><button type="button" onClick={() => window.location.reload()}>Retry database startup</button></div>
+  }
+
   // First time setup
   if (status === 'first_time_setup') {
-    return <PinSetupPage />
+    return <><PinSetupPage /></>
   }
 
   // Needs migration (unencrypted database detected)
   if (status === 'needs_migration') {
-    return <MigrationPage />
+    return <><MigrationPage /></>
   }
 
   // Needs authentication or auth failed
   if (status === 'needs_auth' || status === 'auth_failed') {
-    return <PinLoginPage />
+    return <><PinLoginPage /></>
   }
 
   // Authenticated - show app
@@ -231,23 +235,23 @@ export default function App() {
       <ThemeProvider>
         <ToastProvider>
           <ShareLinkCapture>
-          <InstallGate>
-            <DatabaseProvider>
-              <AuthProvider>
-                <AuthGate>
-                  <LayoutProvider>
-                    <TransactionListUiProvider>
-                      <SyncProvider>
-                        <SyncGate>
-                          <AppContent />
-                        </SyncGate>
-                      </SyncProvider>
-                    </TransactionListUiProvider>
-                  </LayoutProvider>
-                </AuthGate>
-              </AuthProvider>
-            </DatabaseProvider>
-          </InstallGate>
+            <InstallGate>
+              <DatabaseProvider>
+                <AuthProvider>
+                  <AuthGate>
+                    <LayoutProvider>
+                      <TransactionListUiProvider>
+                        <SyncProvider>
+                          <SyncGate>
+                            <AppContent />
+                          </SyncGate>
+                        </SyncProvider>
+                      </TransactionListUiProvider>
+                    </LayoutProvider>
+                  </AuthGate>
+                </AuthProvider>
+              </DatabaseProvider>
+            </InstallGate>
           </ShareLinkCapture>
         </ToastProvider>
       </ThemeProvider>

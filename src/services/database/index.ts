@@ -2,7 +2,7 @@
 // import { runMigrations } from './migrations'
 // import { seedDatabase } from './seed'
 
-export { execSQL, querySQL, queryOne, runSQL, getLastInsertId, closeDatabase } from './connection'
+export { execSQL, execBatch, querySQL, queryOne, runSQL, getLastInsertId, closeDatabase } from './connection'
 
 // let initialized = false
 // let initPromise: Promise<void> | null = null
@@ -20,3 +20,6 @@ export { execSQL, querySQL, queryOne, runSQL, getLastInsertId, closeDatabase } f
 //
 //   return initPromise
 // }
+
+export { withTransaction, withDatabaseOperation } from './connection'
+export type { DatabaseExecutor, DatabaseOperation } from './connection'

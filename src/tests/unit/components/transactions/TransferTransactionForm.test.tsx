@@ -121,6 +121,23 @@ describe('TransferTransactionForm', () => {
     })
   })
 
+
+  it('accepts one rapid submission and allows retry after failure', async () => {
+    let rejectSave!: (reason: Error) => void
+    mockTransactionRepository.create.mockImplementationOnce(() => new Promise((_, reject) => { rejectSave = reject }))
+    render(<TransferTransactionForm {...defaultProps} />)
+    fireEvent.change(document.getElementById('amount')!, { target: { value: '250' } })
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: '2' } })
+
+    const form = document.querySelector('form')!
+    fireEvent.submit(form)
+    fireEvent.submit(form)
+    await waitFor(() => expect(mockTransactionRepository.create).toHaveBeenCalledTimes(1))
+    rejectSave(new Error('Synthetic save failure'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add' })).not.toBeDisabled())
+    fireEvent.submit(form)
+    await waitFor(() => expect(mockTransactionRepository.create).toHaveBeenCalledTimes(2))
+  })
   it('submits correct transfer payload', async () => {
     render(<TransferTransactionForm {...defaultProps} />)
     fireEvent.change(document.getElementById('amount')!, { target: { value: '250' } })

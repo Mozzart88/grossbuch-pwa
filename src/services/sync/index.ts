@@ -1,9 +1,9 @@
-import { queryOne, setSuppressWriteNotifications } from '../database/connection'
+import { runDatabaseActivity } from '../restore/lifecycle'
+import { queryOne, withDatabaseOperation } from '../database/connection'
 import { settingsRepository } from '../repositories/settingsRepository'
 import { linkedDeviceRepository } from '../repositories/linkedDeviceRepository'
 import { exportSyncPackage, exportChunkedSyncPackages } from './syncExport'
 import { importSyncPackage } from './syncImport'
-import { dropUpdatedAtTriggers, restoreUpdatedAtTriggers } from './syncTriggers'
 import { encryptSyncPackage, decryptSyncPackage } from './syncCrypto'
 import {
   ensureSyncState,
@@ -64,7 +64,7 @@ interface PushSyncOptions {
  * Exports changes since last push, encrypts for all linked installations, uploads.
  * When targetUuid is set, pushes full history encrypted only for the target device.
  */
-export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> {
+async function pushSyncOperation(options: PushSyncOptions = {}): Promise<boolean> {
   const { targetUuid } = options
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) return false
@@ -103,12 +103,7 @@ export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> 
 
   await syncApi.push({ package: encrypted }, installData.jwt)
 
-  setSuppressWriteNotifications(true)
-  try {
-    await updatePushTimestamp(installData.id, pushTimestamp)
-  } finally {
-    setSuppressWriteNotifications(false)
-  }
+  await withDatabaseOperation(db => updatePushTimestamp(installData.id, pushTimestamp, db), { notify: false })
 
   return true
 }
@@ -116,7 +111,7 @@ export async function pushSync(options: PushSyncOptions = {}): Promise<boolean> 
 /**
  * Pull pending sync packages from the server, decrypt, import, and acknowledge.
  */
-export async function pullSync(): Promise<ImportResult[]> {
+async function pullSyncOperation(): Promise<ImportResult[]> {
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) return []
 
@@ -133,30 +128,19 @@ export async function pullSync(): Promise<ImportResult[]> {
   const results: ImportResult[] = []
   const ackedIds: string[] = []
 
-  setSuppressWriteNotifications(true)
-  try {
-    await dropUpdatedAtTriggers()
+  for (const { id, package: encrypted } of response.packages) {
     try {
-      for (const { id, package: encrypted } of response.packages) {
-        try {
-          const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
-          const result = await importSyncPackage(pkg)
-          results.push(result)
-          if (result.errors.length > 0) {
-            console.error('[pullSync] Import errors for package:', id, result.errors)
-            // Don't ack — package stays on server for retry
-          } else {
-            ackedIds.push(id)
-          }
-        } catch (err) {
-          console.error('[pullSync] Failed to process package:', id, err)
-        }
+      const pkg = await decryptSyncPackage(encrypted, installData.id, privateKey)
+      const result = await importSyncPackage(pkg)
+      results.push(result)
+      if (result.errors.length > 0) {
+        console.error('[pullSync] Import errors for package:', id, result.errors)
+      } else {
+        ackedIds.push(id)
       }
-    } finally {
-      await restoreUpdatedAtTriggers()
+    } catch (err) {
+      console.error('[pullSync] Failed to process package:', id, err)
     }
-  } finally {
-    setSuppressWriteNotifications(false)
   }
 
   if (ackedIds.length > 0) {
@@ -164,12 +148,7 @@ export async function pullSync(): Promise<ImportResult[]> {
     await updateSyncTimestamp(installData.id)
 
     // Always advance last_push_at so imported rows are not re-pushed
-    setSuppressWriteNotifications(true)
-    try {
-      await updatePushTimestamp(installData.id, pullStartedAt)
-    } finally {
-      setSuppressWriteNotifications(false)
-    }
+    await withDatabaseOperation(db => updatePushTimestamp(installData.id, pullStartedAt, db), { notify: false })
 
     const pendingInitialSync = await settingsRepository.get('pending_initial_sync')
     if (pendingInitialSync === '1') {
@@ -313,3 +292,11 @@ export async function sendRenameCommand(targetId: string, name: string): Promise
 }
 
 export type { ImportResult } from './syncTypes'
+
+export function pushSync(options: PushSyncOptions = {}): Promise<boolean> {
+  return runDatabaseActivity(() => pushSyncOperation(options))
+}
+
+export function pullSync(): Promise<ImportResult[]> {
+  return runDatabaseActivity(pullSyncOperation)
+}

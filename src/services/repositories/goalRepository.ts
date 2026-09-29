@@ -1,10 +1,12 @@
+import * as connection from '../database'
+import { withTransaction, type DatabaseExecutor } from '../database'
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Goal, GoalCreateInput, GoalUpdateInput, Transaction } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
 import { walletRepository } from './walletRepository'
 import { accountRepository } from './accountRepository'
-import { transactionRepository } from './transactionRepository'
-import { tagReferences } from './tagReferences'
+import { transactionRepository, createTransactionRepository } from './transactionRepository'
+import { tagReferences, createTagReferences } from './tagReferences'
 import { inheritWalletTypeTags } from './accountTypeTags'
 import { toIntFrac, fromIntFrac } from '../../utils/amount'
 
@@ -99,7 +101,12 @@ async function findByWalletId(walletId: number): Promise<Goal | null> {
 // tag references for every deleted `trx_base` row first since the cascade
 // bypasses application-level bookkeeping. Shared by remove() and the
 // Convert-to-Goal conflict path (see design.md Decisions 3 and 4).
-async function deleteTransactionsTouchingAccounts(accountIds: number[]): Promise<void> {
+async function deleteTransactionsTouchingAccounts(accountIds: number[], db?: DatabaseExecutor): Promise<void> {
+  if (db) {
+    const ids = await db.querySQL<{ trx_id: Uint8Array }>(`SELECT DISTINCT trx_id FROM trx_base WHERE account_id IN (${accountIds.map(() => '?').join(',')})`, accountIds)
+    for (const { trx_id } of ids) await createTransactionRepository(db).delete(trx_id)
+    return
+  }
   if (accountIds.length === 0) return
   const placeholders = accountIds.map(() => '?').join(',')
   const trxIds = await querySQL<{ trx_id: Uint8Array }>(
@@ -121,11 +128,11 @@ async function deleteTransactionsTouchingAccounts(accountIds: number[]): Promise
 // present in the wallet at this point (it's moved/removed only afterward —
 // see convertWalletToGoal's ordering note), which addAccount would otherwise
 // reject as a duplicate.
-async function createMirrorAccount(walletId: number, currencyId: number): Promise<{ id: number }> {
-  await execSQL('INSERT INTO account (wallet_id, currency_id) VALUES (?, ?)', [walletId, currencyId])
-  const id = await getLastInsertId()
-  await inheritWalletTypeTags(id, walletId)
-  return { id }
+async function createMirrorAccount(walletId: number, currencyId: number, db: DatabaseExecutor = connection): Promise<{ id: number }> {
+  const row = await db.queryOne<{ id: number }>('INSERT INTO account (wallet_id, currency_id) VALUES (?, ?) RETURNING id', [walletId, currencyId])
+  if (!row) throw new Error('Failed to create mirror account')
+  await inheritWalletTypeTags(row.id, walletId, db)
+  return row
 }
 
 export interface ConvertAccountPlanEntry {
@@ -457,8 +464,10 @@ export const goalRepository = {
   // (history lost, by design — see design.md Decision 3). One transaction;
   // rolled back entirely on any failure.
   async convertWalletToGoal(input: ConvertWalletToGoalInput): Promise<Goal> {
-    try {
-      await execSQL('BEGIN TRANSACTION')
+    await withTransaction(async db => {
+      const { execSQL, querySQL, queryOne } = db
+      const tagReferences = createTagReferences(db)
+      const transactionRepository = createTransactionRepository(db)
 
       await execSQL(`UPDATE wallet SET name = 'goal_' || hex(randomblob(8)), color = ? WHERE id = ?`, [input.color ?? null, input.walletId])
       const alreadySystem = await queryOne<Record<string, unknown>>(
@@ -478,20 +487,21 @@ export const goalRepository = {
       const mirrorAccountsByCurrency = new Map<number, number>()
 
       for (const entry of input.plan) {
-        const account = await accountRepository.findById(entry.accountId)
+        const account = await accountRepository.findById(entry.accountId, db)
         if (!account) throw new Error('Account not found')
 
         const existingDestAccount = await walletRepository.findAccountByCurrencyAndType(
           entry.destinationWalletId,
           account.currency_id,
-          account.account_type ?? 'plain'
+          account.account_type ?? 'plain',
+          db
         )
 
         // Mirror account is always created BEFORE the source account is moved/removed,
         // so the goal wallet never transiently drops to zero accounts (which would
         // trigger moveAccountToWallet's "delete empty wallet" cleanup on the goal
         // wallet itself).
-        const mirrorAccount = await createMirrorAccount(input.walletId, account.currency_id)
+        const mirrorAccount = await createMirrorAccount(input.walletId, account.currency_id, db)
         mirrorAccountsByCurrency.set(account.currency_id, mirrorAccount.id)
 
         if (!existingDestAccount) {
@@ -510,11 +520,11 @@ export const goalRepository = {
             await tagReferences.increment(SYSTEM_TAGS.TRANSFER)
           }
 
-          await accountRepository.moveAccountToWallet(entry.accountId, entry.destinationWalletId)
+          await accountRepository.moveAccountToWallet(entry.accountId, entry.destinationWalletId, db)
         } else {
           const sourceBalance = fromIntFrac(account.balance_int, account.balance_frac)
 
-          await deleteTransactionsTouchingAccounts([entry.accountId])
+          await deleteTransactionsTouchingAccounts([entry.accountId], db)
           const accountTags = await querySQL<{ tag_id: number }>(
             'SELECT tag_id FROM account_to_tags WHERE account_id = ?',
             [entry.accountId]
@@ -547,14 +557,10 @@ export const goalRepository = {
 
       const defaultMirrorId = mirrorAccountsByCurrency.get(input.defaultCurrencyId)
       if (defaultMirrorId) {
-        await accountRepository.setDefault(defaultMirrorId)
+        await accountRepository.setDefault(defaultMirrorId, db)
       }
 
-      await execSQL('COMMIT')
-    } catch (err) {
-      await execSQL('ROLLBACK').catch(() => { })
-      throw err
-    }
+    })
 
     const goal = await findByWalletId(input.walletId)
     if (!goal) throw new Error('Failed to create goal')

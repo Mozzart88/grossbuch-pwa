@@ -172,7 +172,7 @@ export function resetTestDatabase(): void {
 export function createDatabaseMock() {
   const database = getTestDatabase()
 
-  return {
+  const executor = {
     execSQL: vi.fn(async (sql: string, bind?: unknown[]) => {
       database.run(sql, bind as (string | number | null | Uint8Array)[])
     }),
@@ -240,6 +240,28 @@ export function createDatabaseMock() {
     initDatabase: vi.fn(async () => { }),
     closeDatabase: vi.fn(async () => { }),
   }
+  let tail: Promise<unknown> = Promise.resolve()
+  return {
+    ...executor,
+    withDatabaseOperation<T>(action: (db: typeof executor & { invalidate(): Promise<void> }) => Promise<T>): Promise<T> {
+      const result = tail.then(() => action({ ...executor, async invalidate() { throw new Error('Database invalidated') } }))
+      tail = result.catch(() => {})
+      return result
+    },
+    withTransaction<T>(action: (db: typeof executor) => Promise<T>): Promise<T> {
+      const result = tail.then(async () => {
+        database.run('BEGIN IMMEDIATE')
+        try {
+          const value = await action(executor)
+          database.run('COMMIT')
+          return value
+        } catch (error) { database.run('ROLLBACK'); throw error }
+      })
+      tail = result.catch(() => {})
+      return result
+    },
+  }
+
 }
 
 // Helper to insert test data

@@ -525,20 +525,21 @@ END`,
 
 /**
  * Drop all updated_at triggers.
- * Must be called BEFORE BEGIN TRANSACTION in sync import.
+ * Sync drops and restores these within its owned transaction so rollback
+ * restores the original schema, including after failed cleanup.
  */
-export async function dropUpdatedAtTriggers(): Promise<void> {
+export async function dropUpdatedAtTriggers(run = execSQL): Promise<void> {
   for (const trigger of UPDATED_AT_TRIGGERS) {
-    await execSQL(`DROP TRIGGER IF EXISTS ${trigger.schema}.${trigger.name}`)
+    await run(`DROP TRIGGER IF EXISTS ${trigger.schema}.${trigger.name}`)
   }
 }
 
 /**
  * Restore all updated_at triggers with exact original SQL.
- * Must be called in finally block after sync import completes.
+ * Sync restores these before COMMIT; foreign keys are restored afterward.
  */
-export async function restoreUpdatedAtTriggers(): Promise<void> {
+export async function restoreUpdatedAtTriggers(run = execSQL): Promise<void> {
   for (const trigger of UPDATED_AT_TRIGGERS) {
-    await execSQL(`CREATE TRIGGER IF NOT EXISTS ${trigger.schema}.${trigger.name}${trigger.sql}`)
+    await run(`CREATE TRIGGER IF NOT EXISTS ${trigger.schema}.${trigger.name}${trigger.sql}`)
   }
 }

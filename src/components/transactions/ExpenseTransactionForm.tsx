@@ -126,6 +126,7 @@ export function ExpenseTransactionForm({
   const [activeCommons, setActiveCommons] = useState<CommonEntry[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const submissionPending = useRef(false)
   const [localAddAnother, setLocalAddAnother] = useState(false)
   const isEditing = !!initialData && !createFromInitialData
   const addAnother = controlledAddAnother ?? localAddAnother
@@ -499,7 +500,8 @@ export function ExpenseTransactionForm({
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!validate()) return
+    if (submissionPending.current || !validate()) return
+    submissionPending.current = true
     setSubmitting(true)
     try {
       // Resolve sub-entry tag IDs (create new tags if pending)
@@ -688,6 +690,7 @@ export function ExpenseTransactionForm({
     } catch (error) {
       console.error('Failed to save transaction:', error)
     } finally {
+      submissionPending.current = false
       setSubmitting(false)
     }
   }

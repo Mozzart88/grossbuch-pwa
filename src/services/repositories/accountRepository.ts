@@ -1,3 +1,6 @@
+import * as connection from '../database'
+import type { DatabaseExecutor } from '../database'
+import { createTagReferences } from './tagReferences'
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Account, AccountInput, AccountType } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
@@ -119,7 +122,8 @@ export const accountRepository = {
     return querySQL<AccountView>('SELECT * FROM accounts')
   },
 
-  async findById(id: number): Promise<Account | null> {
+  async findById(id: number, db: DatabaseExecutor = connection): Promise<Account | null> {
+    const { queryOne } = db
     const account = await queryOne<Account>(`
       SELECT
         a.*,
@@ -141,7 +145,8 @@ export const accountRepository = {
     return account
   },
 
-  async findByWalletId(walletId: number): Promise<Account[]> {
+  async findByWalletId(walletId: number, db: DatabaseExecutor = connection): Promise<Account[]> {
+    const { querySQL } = db
     return querySQL<Account>(`
       SELECT
         a.*,
@@ -245,7 +250,9 @@ export const accountRepository = {
     return account
   },
 
-  async setDefault(id: number): Promise<void> {
+  async setDefault(id: number, db: DatabaseExecutor = connection): Promise<void> {
+    const { execSQL } = db
+    const tagReferences = createTagReferences(db)
     // The trigger handles removing default from other accounts in same wallet
     await execSQL('INSERT INTO account_to_tags (account_id, tag_id) VALUES (?, ?)', [id, SYSTEM_TAGS.DEFAULT])
     await tagReferences.increment(SYSTEM_TAGS.DEFAULT)
@@ -374,7 +381,9 @@ export const accountRepository = {
   // fires here — see design.md's Decision 2 correction), deleting the source
   // wallet once it's empty, and defaulting the moved account in a
   // previously-empty target wallet without ever displacing an existing one.
-  async moveAccountToWallet(accountId: number, targetWalletId: number): Promise<void> {
+  async moveAccountToWallet(accountId: number, targetWalletId: number, db: DatabaseExecutor = connection): Promise<void> {
+    const { execSQL, querySQL, queryOne } = db
+    const tagReferences = createTagReferences(db)
     const account = await queryOne<{ wallet_id: number }>('SELECT wallet_id FROM account WHERE id = ?', [accountId])
     if (!account) throw new Error('Account not found')
     const sourceWalletId = account.wallet_id

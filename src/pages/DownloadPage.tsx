@@ -1,3 +1,5 @@
+import { runDatabaseActivity } from '../services/restore/lifecycle'
+import { RestoreDatabase } from '../components/RestoreDatabase'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Button, Card, useToast, DropdownMenu, PinPromptModal, TextInputModal } from '../components/ui'
@@ -77,6 +79,7 @@ export function DownloadPage() {
 
   const handleDelete = async (filename: string, fileHandler: FileSystemFileHandle) => {
     try {
+      await runDatabaseActivity(async () => {
       if ('remove' in fileHandler) {
         // @ts-expect-error FileSystemFileHandle.remove() is not in TS types yet
         await fileHandler.remove()
@@ -84,6 +87,7 @@ export function DownloadPage() {
         const d = await navigator.storage.getDirectory()
         await d.removeEntry(filename)
       }
+      })
       showToast('DB File removed', 'success')
       refreshFileList()
     } catch (error) {
@@ -242,6 +246,8 @@ export function DownloadPage() {
         submitLabel="Rename"
         placeholder="Enter new filename"
       />
+
+      <RestoreDatabase />
 
       {/* Upload Filename Modal */}
       <TextInputModal

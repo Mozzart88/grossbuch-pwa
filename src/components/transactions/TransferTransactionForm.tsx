@@ -64,6 +64,7 @@ export function TransferTransactionForm({
   const [note, setNote] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
+  const submissionPending = useRef(false)
   const [localAddAnother, setLocalAddAnother] = useState(false)
   const isEditing = !!initialData && !createFromInitialData
   const addAnother = controlledAddAnother ?? localAddAnother
@@ -157,7 +158,8 @@ export function TransferTransactionForm({
 
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!validate()) return
+    if (submissionPending.current || !validate()) return
+    submissionPending.current = true
     setSubmitting(true)
     try {
       const { int: amountInt, frac: amountFrac } = toAmountIntFrac(amount)
@@ -229,6 +231,7 @@ export function TransferTransactionForm({
     } catch (error) {
       console.error('Failed to save transaction:', error)
     } finally {
+      submissionPending.current = false
       setSubmitting(false)
     }
   }
