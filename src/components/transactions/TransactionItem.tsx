@@ -106,7 +106,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         // Prefer whichever leg carries the real (non-zero) amount: a Put/Take's
         // zero-amount counterparty leg can land at transaction[0] depending on
         // query ordering, which would otherwise display as $0.00.
-        const transferLine = transaction.find(l => getUnsignedAmount(l) !== 0) ?? transaction[0]
+        const transferLine = transaction.find(l => l.tags === 'transfer' && getUnsignedAmount(l) !== 0) ?? transaction[0]
         const goalLeg = getGoalLeg(transaction)
         const color = goalLeg
           ? goalLeg.sign === '+' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
@@ -117,8 +117,8 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         }
       }
       case 'exchange': {
-        const from = transaction.find(l => l.sign === '-' && l.tags.includes('exchange'))!
-        const to = transaction.find(l => l.sign === '+' && l.tags.includes('exchange'))!
+        const from = transaction.find(l => l.sign === '-' && l.tags === 'exchange')!
+        const to = transaction.find(l => l.sign === '+' && l.tags === 'exchange')!
         return {
           text: `${formatCurrencyValue(getUnsignedAmount(from), from.symbol)} → ${formatCurrencyValue(getUnsignedAmount(to), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
