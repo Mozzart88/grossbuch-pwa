@@ -79,6 +79,12 @@ const getTransactionType = (trx: TransactionLog[]): transactionT => {
 //   )
 // }
 
+const getFees = (transaction: TransactionLog[]): string | undefined => {
+
+  const feeLine = transaction.find(l => l.tags.toLocaleLowerCase() === 'fees')
+  return feeLine ? formatCurrencyValue(getUnsignedAmount(feeLine), feeLine.symbol) : undefined
+}
+
 export function TransactionItem({ transaction, onClick }: TransactionItemProps) {
   const getAmountDisplay = () => {
     const transactionType = getTransactionType(transaction)
@@ -106,7 +112,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         // Prefer whichever leg carries the real (non-zero) amount: a Put/Take's
         // zero-amount counterparty leg can land at transaction[0] depending on
         // query ordering, which would otherwise display as $0.00.
-        const transferLine = transaction.find(l => getUnsignedAmount(l) !== 0) ?? transaction[0]
+        const transferLine = transaction.find(l => l.tags === 'transfer' && getUnsignedAmount(l) !== 0) ?? transaction[0]
         const goalLeg = getGoalLeg(transaction)
         const color = goalLeg
           ? goalLeg.sign === '+' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
@@ -114,14 +120,16 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
         return {
           text: formatCurrencyValue(getUnsignedAmount(transferLine), transferLine.symbol),
           color,
+          fee: getFees(transaction)
         }
       }
       case 'exchange': {
-        const from = transaction.find(l => l.sign === '-' && l.tags.includes('exchange'))!
-        const to = transaction.find(l => l.sign === '+' && l.tags.includes('exchange'))!
+        const from = transaction.find(l => l.sign === '-' && l.tags === 'exchange')!
+        const to = transaction.find(l => l.sign === '+' && l.tags === 'exchange')!
         return {
           text: `${formatCurrencyValue(getUnsignedAmount(from), from.symbol)} → ${formatCurrencyValue(getUnsignedAmount(to), to.symbol)}`,
           color: 'text-purple-600 dark:text-purple-400',
+          fee: getFees(transaction)
         }
       }
       case 'initial':
@@ -231,11 +239,11 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
 
     // For expense/income: collect all non-common, non-system tag names
     // System/special tag names to exclude from display
-    const systemTagNames = new Set(['exchange', 'transfer', 'initial', 'adjustment', 'fee'])
+    const systemTagNames = new Set(['exchange', 'transfer', 'initial', 'adjustment'])
 
     // Lines to search for display tags (for multi-currency expense, exclude exchange/transfer lines)
     const relevantLines = transactionType === 'expense' && isMultiCurrencyExpense(transaction)
-      ? transaction.filter(l => !l.tags.includes('exchange') && l.tags !== 'transfer')
+      ? transaction.filter(l => !['exchange', 'transfer'].includes(l.tags))
       : transaction
 
     // Primary (non-add-on) category tags
@@ -310,7 +318,7 @@ export function TransactionItem({ transaction, onClick }: TransactionItemProps) 
       {/* Amount and time */}
       <div className="shrink-0 text-right">
         <p className={`text-sm font-semibold ${amount.color}`}>{amount.text}</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">{formatTime(transaction[0].date_time)}</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">{amount.fee ? `${amount.fee} ` : ''}{formatTime(transaction[0].date_time)}</p>
       </div>
     </div>
   )

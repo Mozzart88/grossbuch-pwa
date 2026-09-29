@@ -183,7 +183,7 @@ export function AmountInput({
           ref={inputRef}
           id={inputId}
           type={useTextType ? 'text' : 'number'}
-          pattern="[0-9()+\-*/,. ]*"
+          pattern="[0-9\(\)+\-*\/,. ]*"
           value={isValidNumber ? formatDisplayValue(value, decimalPlaces) : value}
           onChange={handleChange}
           placeholder={placeholder}
