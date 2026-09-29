@@ -1,3 +1,5 @@
+import * as connection from '../database'
+import type { DatabaseExecutor } from '../database'
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Currency, CurrencyInput, ExchangeRate } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
@@ -27,8 +29,8 @@ export const currencyRepository = {
     return currencies
   },
 
-  async findById(id: number): Promise<Currency | null> {
-    return queryOne<Currency>(`
+  async findById(id: number, db: DatabaseExecutor = connection): Promise<Currency | null> {
+    return db.queryOne<Currency>(`
       SELECT
         *
       FROM currencies
@@ -158,8 +160,8 @@ export const currencyRepository = {
   },
 
   // Exchange rate methods
-  async getExchangeRate(currencyId: number): Promise<ExchangeRate | null> {
-    return queryOne<ExchangeRate>(
+  async getExchangeRate(currencyId: number, db: DatabaseExecutor = connection): Promise<ExchangeRate | null> {
+    return db.queryOne<ExchangeRate>(
       'SELECT * FROM exchange_rate WHERE currency_id = ? ORDER BY updated_at DESC LIMIT 1',
       [currencyId]
     )
@@ -217,8 +219,8 @@ export const currencyRepository = {
    * - {int: 1, frac: 0} for USD (the immutable App base currency) or if no rate exists
    * - Latest rate from exchange_rate table for all other currencies (including system currency)
    */
-  async getRateForCurrency(currencyId: number): Promise<IntFrac> {
-    const currency = await this.findById(currencyId)
+  async getRateForCurrency(currencyId: number, db: DatabaseExecutor = connection): Promise<IntFrac> {
+    const currency = await this.findById(currencyId, db)
     if (!currency) {
       return { int: 1, frac: 0 }
     }
@@ -229,7 +231,7 @@ export const currencyRepository = {
     }
 
     // Get latest rate from exchange_rate table (rate = currency units per 1 USD)
-    const rate = await this.getExchangeRate(currencyId)
+    const rate = await this.getExchangeRate(currencyId, db)
     if (rate) {
       return { int: rate.rate_int, frac: rate.rate_frac }
     }

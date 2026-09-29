@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock all dependencies
 const mockQueryOne = vi.fn()
-const mockSetSuppressWriteNotifications = vi.fn()
+const mockOperation = vi.fn()
+const timestampExecutor = { execSQL: vi.fn() }
 
 vi.mock('../../../../services/database/connection', () => ({
   queryOne: (...args: unknown[]) => mockQueryOne(...args),
   querySQL: vi.fn().mockResolvedValue([]),
-  setSuppressWriteNotifications: (...args: unknown[]) => mockSetSuppressWriteNotifications(...args),
+  withDatabaseOperation: (...args: unknown[]) => mockOperation(...args),
 }))
 
 const mockSettingsGet = vi.fn()
@@ -90,6 +91,7 @@ const { pushSync, pullSync, hasUnpushedChanges, sendUnlinkCommand, sendUnlinkCon
 describe('sync index', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockOperation.mockImplementation((action) => action(timestampExecutor))
     mockDropTriggers.mockResolvedValue(undefined)
     mockRestoreTriggers.mockResolvedValue(undefined)
     mockLinkedDeviceFindAll.mockResolvedValue([])
@@ -169,7 +171,7 @@ describe('sync index', () => {
       expect(mockExportSyncPackage).toHaveBeenCalledWith(100, 'inst-1')
       expect(mockEncryptSyncPackage).toHaveBeenCalledWith(mockPkg, [{ installation_id: 'other-id', public_key: 'public-key', name: 'x' }])
       expect(mockApiPush).toHaveBeenCalledWith({ package: mockEncrypted }, 'token')
-      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number))
+      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number), timestampExecutor)
     })
 
     it('suppresses write notifications around updatePushTimestamp', async () => {
@@ -187,11 +189,7 @@ describe('sync index', () => {
 
       await pushSync()
 
-      const suppressCalls = mockSetSuppressWriteNotifications.mock.calls.map((c: unknown[]) => c[0])
-      const trueIdx = suppressCalls.indexOf(true)
-      const falseIdx = suppressCalls.lastIndexOf(false)
-      expect(trueIdx).toBeGreaterThanOrEqual(0)
-      expect(falseIdx).toBeGreaterThan(trueIdx)
+      expect(mockOperation).toHaveBeenCalledWith(expect.any(Function), { notify: false })
     })
 
     it('restores write notifications even if updatePushTimestamp throws', async () => {
@@ -210,8 +208,7 @@ describe('sync index', () => {
 
       await expect(pushSync()).rejects.toThrow('db error')
 
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+      expect(mockOperation).toHaveBeenCalledWith(expect.any(Function), { notify: false })
     })
 
     it('full-history push: encrypts for target only and skips hasChanges check', async () => {
@@ -375,8 +372,8 @@ describe('sync index', () => {
       await pullSync()
 
       // Triggers should be dropped/restored exactly once, not once per package
-      expect(mockDropTriggers).toHaveBeenCalledTimes(1)
-      expect(mockRestoreTriggers).toHaveBeenCalledTimes(1)
+      expect(mockDropTriggers).not.toHaveBeenCalled()
+      expect(mockRestoreTriggers).not.toHaveBeenCalled()
       // But import should be called twice (once per package)
       expect(mockImportSyncPackage).toHaveBeenCalledTimes(2)
     })
@@ -398,8 +395,8 @@ describe('sync index', () => {
 
       await pullSync()
 
-      expect(mockDropTriggers).toHaveBeenCalledTimes(1)
-      expect(mockRestoreTriggers).toHaveBeenCalledTimes(1)
+      expect(mockDropTriggers).not.toHaveBeenCalled()
+      expect(mockRestoreTriggers).not.toHaveBeenCalled()
     })
 
     it('does not drop triggers when no packages', async () => {
@@ -441,14 +438,8 @@ describe('sync index', () => {
 
       await pullSync()
 
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+      expect(mockOperation).toHaveBeenCalledWith(expect.any(Function), { notify: false })
 
-      // true must be called before false
-      const calls = mockSetSuppressWriteNotifications.mock.calls.map((c: unknown[]) => c[0])
-      const trueIdx = calls.indexOf(true)
-      const falseIdx = calls.lastIndexOf(false)
-      expect(trueIdx).toBeLessThan(falseIdx)
     })
 
     it('restores write notifications even on import failure', async () => {
@@ -468,8 +459,7 @@ describe('sync index', () => {
 
       await pullSync()
 
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+      expect(mockOperation).not.toHaveBeenCalled()
     })
 
     it('continues processing on individual package failure', async () => {
@@ -582,7 +572,7 @@ describe('sync index', () => {
 
       await pullSync()
 
-      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number))
+      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number), timestampExecutor)
       expect(mockSettingsDelete).toHaveBeenCalledWith('pending_initial_sync')
     })
 
@@ -606,7 +596,7 @@ describe('sync index', () => {
       await pullSync()
 
       // Must update push timestamp even when flag is not set (prevents echo)
-      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number))
+      expect(mockUpdatePushTimestamp).toHaveBeenCalledWith('inst-1', expect.any(Number), timestampExecutor)
       // Flag was not set, so delete should NOT be called
       expect(mockSettingsDelete).not.toHaveBeenCalled()
     })
@@ -671,7 +661,7 @@ describe('sync index', () => {
       expect(mockSettingsDelete).not.toHaveBeenCalled()
     })
 
-    it('setSuppressWriteNotifications(false) is called when restoreUpdatedAtTriggers throws', async () => {
+    it('does not acknowledge a package whose import restore cleanup fails', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
         if (key === 'installation_id') return 'inst-1'
         if (key === 'jwt') return 'token'
@@ -682,15 +672,14 @@ describe('sync index', () => {
       mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: {} }] })
       mockDecryptSyncPackage.mockResolvedValue({ version: 1 })
       mockImportSyncPackage.mockResolvedValue({ imported: {}, newAccountCurrencyIds: [], conflicts: 0, errors: [] })
-      mockRestoreTriggers.mockRejectedValueOnce(new Error('restore error'))
+      mockImportSyncPackage.mockRejectedValueOnce(new Error('restore error'))
 
-      await expect(pullSync()).rejects.toThrow('restore error')
+      await pullSync()
 
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+      expect(mockApiAck).not.toHaveBeenCalled()
     })
 
-    it('setSuppressWriteNotifications(false) is called when dropUpdatedAtTriggers throws', async () => {
+    it('does not acknowledge a package whose import drop cleanup fails', async () => {
       mockSettingsGet.mockImplementation((key: string) => {
         if (key === 'installation_id') return 'inst-1'
         if (key === 'jwt') return 'token'
@@ -699,12 +688,11 @@ describe('sync index', () => {
       mockQueryOne.mockResolvedValue({ value: 'private-key-data' })
       mockEnsureSyncState.mockResolvedValue({ installation_id: 'inst-1', last_sync_at: 0, last_push_at: 0 })
       mockApiPull.mockResolvedValue({ packages: [{ id: 'pkg-1', package: {} }] })
-      mockDropTriggers.mockRejectedValueOnce(new Error('drop error'))
+      mockImportSyncPackage.mockRejectedValueOnce(new Error('drop error'))
 
-      await expect(pullSync()).rejects.toThrow('drop error')
+      await pullSync()
 
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(true)
-      expect(mockSetSuppressWriteNotifications).toHaveBeenCalledWith(false)
+      expect(mockApiAck).not.toHaveBeenCalled()
     })
 
     it('deduplicates currency IDs across multiple packages', async () => {

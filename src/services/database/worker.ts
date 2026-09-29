@@ -17,8 +17,9 @@ declare type SqlValue =
 
 interface WorkerMessage {
   id: number
+  owner?: string
   exportRequest?: DecryptedExportRequest
-  type: 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'export_session' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
+  type: 'acquire_operation' | 'release_operation' | 'invalidate_operation' | 'init' | 'init_encrypted' | 'exec' | 'exec_batch' | 'query' | 'close' | 'check_db_exists' | 'check_encrypted' | 'migrate_to_encrypted' | 'rekey' | 'wipe' | 'export_decrypted' | 'export_session' | 'attach' | 'detach' | 'rekey_schema' | 'finalize_main_rebuild' | 'delete_file'
   sql?: string
   bind?: SqlValue[]
   statements?: { sql: string; bind?: SqlValue[] }[]
@@ -35,6 +36,8 @@ interface WorkerResponse {
   error?: string
 }
 
+let operationOwner: string | null = null
+let unusable = false
 let db: OpfsDatabase | null = null
 let exportSession = 0
 const exportInstance = crypto.randomUUID()
@@ -417,14 +420,41 @@ async function handleMessage(event: MessageEvent<WorkerMessage>) {
   const response: WorkerResponse = { id, success: false }
 
   try {
+    if (event.data.owner && event.data.owner !== operationOwner) throw new Error('Database operation expired')
+    if (unusable && !['init', 'init_encrypted', 'close'].includes(type)) throw new Error('Database connection requires reinitialization')
     switch (type) {
+      case 'acquire_operation':
+        if (!db || operationOwner) throw new Error('Database operation unavailable')
+        if (sqlite3Module!.wasm.exports.sqlite3_get_autocommit(db.pointer) === 0) throw new Error('Database transaction already active')
+        operationOwner = `${exportSessionToken()}:${crypto.randomUUID()}`
+        response.data = operationOwner
+        response.success = true
+        break
+
+      case 'release_operation':
+        if (!operationOwner || event.data.owner !== operationOwner) throw new Error('Database operation expired')
+        if (!db || sqlite3Module!.wasm.exports.sqlite3_get_autocommit(db.pointer) === 0) throw new Error('Database transaction still active')
+        operationOwner = null
+        response.success = true
+        break
+
+      case 'invalidate_operation':
+        if (!operationOwner || event.data.owner !== operationOwner) throw new Error('Database operation expired')
+        unusable = true
+        operationOwner = null
+        try { closeDatabase() } finally { db = null }
+        response.success = true
+        break
+
       case 'init':
         await initDatabase()
+        unusable = false
         response.success = true
         break
 
       case 'init_encrypted':
         await initDatabase(key)
+        unusable = false
         response.success = true
         break
 
@@ -534,11 +564,33 @@ async function handleMessage(event: MessageEvent<WorkerMessage>) {
   self.postMessage(response)
 }
 
-// Reserve exports on arrival, including while waiting behind an earlier request.
-// Serial dispatch prevents asynchronous OPFS work from racing logout, workspace
-// switches or writes. Multi-message transactions keep their existing ownership.
-let requestQueue: Promise<void> = Promise.resolve()
+// Owner requests bypass deferred callers, while each admitted request still runs
+// serially. A FIFO promise chain alone deadlocks when a waiter precedes COMMIT.
+const requests: MessageEvent<WorkerMessage>[] = []
+let draining = false
 let exportPending = false
+async function drainRequests() {
+  if (draining) return
+  draining = true
+  try {
+    while (requests.length) {
+      const index = operationOwner
+        ? requests.findIndex(event => event.data.owner !== undefined)
+        : 0
+      if (index < 0) break
+      const [event] = requests.splice(index, 1)
+      try {
+        if (event.data.owner && !['exec', 'exec_batch', 'query', 'release_operation', 'invalidate_operation'].includes(event.data.type)) {
+          self.postMessage({ id: event.data.id, success: false, error: 'Topology changes are not allowed inside a database operation' })
+        } else {
+          await handleMessage(event)
+        }
+      } finally {
+        if (event.data.type === 'export_decrypted') exportPending = false
+      }
+    }
+  } finally { draining = false }
+}
 self.onmessage = (event: MessageEvent<WorkerMessage>) => {
   const isExport = event.data.type === 'export_decrypted'
   if (isExport && exportPending) {
@@ -546,10 +598,6 @@ self.onmessage = (event: MessageEvent<WorkerMessage>) => {
     return
   }
   if (isExport) exportPending = true
-  const run = async () => {
-    try { await handleMessage(event) } finally {
-      if (isExport) exportPending = false
-    }
-  }
-  requestQueue = requestQueue.then(run, run)
+  requests.push(event)
+  void drainRequests()
 }

@@ -55,12 +55,12 @@ function placeholders(values: unknown[]): string {
 // incoming item's lookup into one SELECT ... IN (...) observes exactly the same untouched
 // local state a per-item query loop would (see design.md Decision 3). Returns, for each
 // incoming item that has a conflict, the conflicting local row's id.
-async function detectConflicts(config: ConflictConfig, incoming: ConflictIncomingItem[]): Promise<Map<number, number>> {
+async function detectConflicts(config: ConflictConfig, incoming: ConflictIncomingItem[], queryRows = querySQL): Promise<Map<number, number>> {
   const conflictingLocalIdByItemId = new Map<number, number>()
 
   if (config.skipIfIdExistsLocally) {
     const ids = incoming.map(i => i.id)
-    const existingIdRows = await querySQL<{ id: number }>(
+    const existingIdRows = await queryRows<{ id: number }>(
       `SELECT id FROM ${config.table} WHERE id IN (${placeholders(ids)})`, ids
     )
     const existingIds = new Set(existingIdRows.map(r => r.id))
@@ -68,7 +68,7 @@ async function detectConflicts(config: ConflictConfig, incoming: ConflictIncomin
     if (candidates.length === 0) return conflictingLocalIdByItemId
 
     const codes = candidates.map(i => i.code as string)
-    const codeRows = await querySQL<{ id: number; code: string }>(
+    const codeRows = await queryRows<{ id: number; code: string }>(
       `SELECT id, ${config.conflictColumn} FROM ${config.table} WHERE ${config.conflictColumn} IN (${placeholders(codes)})`, codes
     )
     const localIdByCode = new Map(codeRows.map(r => [r.code, r.id]))
@@ -78,7 +78,7 @@ async function detectConflicts(config: ConflictConfig, incoming: ConflictIncomin
     }
   } else {
     const names = incoming.map(i => i.name as string)
-    const rows = await querySQL<{ id: number; name: string }>(
+    const rows = await queryRows<{ id: number; name: string }>(
       `SELECT id, ${config.conflictColumn} FROM ${config.table} WHERE ${config.conflictColumn} IN (${placeholders(names)})`, names
     )
     const localIdByName = new Map(rows.map(r => [r.name, r.id]))
@@ -134,11 +134,12 @@ export async function resolveConflicts(
   config: ConflictConfig,
   incoming: ConflictIncomingItem[],
   runBatch: RunBatch,
+  queryRows = querySQL,
 ): Promise<void> {
   if (incoming.length === 0) return
 
   const incomingById = new Map(incoming.map(i => [i.id, i]))
-  const conflictingLocalIdByItemId = await detectConflicts(config, incoming)
+  const conflictingLocalIdByItemId = await detectConflicts(config, incoming, queryRows)
   if (conflictingLocalIdByItemId.size === 0) return
 
   const toRename: { id: number; finalValue: string; finalUpdatedAt: number }[] = []
@@ -184,7 +185,7 @@ export async function resolveConflicts(
     if (conditionalSteps.length > 0) {
       const newIds = toMerge.map(m => m.newId)
       for (const step of conditionalSteps) {
-        const rows = await querySQL<{ id: number }>(
+        const rows = await queryRows<{ id: number }>(
           `SELECT id FROM ${step.existsCheckTable} WHERE id IN (${placeholders(newIds)})`, newIds
         )
         existsByStep.set(step, new Set(rows.map(r => r.id)))

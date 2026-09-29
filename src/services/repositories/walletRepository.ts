@@ -1,3 +1,5 @@
+import * as connection from '../database'
+import type { DatabaseExecutor } from '../database'
 import { querySQL, queryOne, execSQL, getLastInsertId } from '../database'
 import type { Wallet, WalletInput, Account, AccountType } from '../../types'
 import { SYSTEM_TAGS } from '../../types'
@@ -424,8 +426,8 @@ export const walletRepository = {
   // can legitimately hold a plain USD account and a savings USD account side
   // by side). Used where currency-only matching would misidentify a same-
   // currency-but-different-type account as a conflict (e.g. Convert-to-Goal).
-  async findAccountByCurrencyAndType(walletId: number, currencyId: number, accountType: AccountType): Promise<Account | null> {
-    return queryOne<Account>(`
+  async findAccountByCurrencyAndType(walletId: number, currencyId: number, accountType: AccountType, db: DatabaseExecutor = connection): Promise<Account | null> {
+    return db.queryOne<Account>(`
       SELECT
         a.*,
         c.code as currency,

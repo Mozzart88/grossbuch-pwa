@@ -33,7 +33,7 @@ export function onDbWrite(listener: DbWriteListener): () => void {
 function notifyWriteListeners() {
   if (suppressWriteNotifications) return
   for (const listener of writeListeners) {
-    listener()
+    try { listener() } catch (error) { console.error('Database write observer failed:', error) }
   }
 }
 
@@ -57,6 +57,11 @@ function getWorker(): Worker {
 
     worker.onerror = (error) => {
       console.error('Worker error:', error)
+      for (const pending of pendingRequests.values()) pending.reject(new Error('Database worker failed; reinitialize the connection'))
+      pendingRequests.clear()
+      worker?.terminate()
+      worker = null
+      initPromise = null
     }
   }
 
@@ -64,6 +69,7 @@ function getWorker(): Worker {
 }
 
 interface SendMessageOptions {
+  owner?: string
   exportRequest?: DecryptedExportRequest
   sql?: string
   bind?: unknown[]
@@ -78,7 +84,10 @@ function sendMessage(type: string, options: SendMessageOptions = {}): Promise<un
   return new Promise((resolve, reject) => {
     const id = ++messageId
     pendingRequests.set(id, { resolve, reject })
-    getWorker().postMessage({ id, type, ...options })
+    try { getWorker().postMessage({ id, type, ...options }) } catch (error) {
+      pendingRequests.delete(id)
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
   })
 }
 
@@ -199,5 +208,88 @@ export async function closeDatabase(): Promise<void> {
     worker.terminate()
     worker = null
     initPromise = null
+    for (const pending of pendingRequests.values()) pending.reject(new Error('Database connection closed'))
+    pendingRequests.clear()
   }
+}
+
+
+export interface DatabaseExecutor {
+  execSQL(sql: string, bind?: unknown[]): Promise<void>
+  execBatch(statements: { sql: string; bind?: unknown[] }[]): Promise<void>
+  querySQL<T>(sql: string, bind?: unknown[]): Promise<T[]>
+  queryOne<T>(sql: string, bind?: unknown[]): Promise<T | null>
+}
+
+export interface DatabaseOperation extends DatabaseExecutor {
+  invalidate(): Promise<void>
+}
+
+// Ownership is carried explicitly, never inherited by unrelated async callers.
+export async function withDatabaseOperation<T>(
+  action: (db: DatabaseOperation) => Promise<T>,
+  options: { notify?: boolean } = {},
+): Promise<T> {
+  const owner = await sendMessage('acquire_operation') as string
+  const operationWorker = worker
+  let active = true
+  let dirty = false
+  const send = (type: string, args: SendMessageOptions) => {
+    if (!active || worker !== operationWorker) return Promise.reject(new Error('Database operation expired'))
+    return sendMessage(type, { ...args, owner })
+  }
+  const scope: DatabaseOperation = {
+    async execSQL(sql, bind) {
+      await send('exec', { sql, bind })
+      dirty = true
+    },
+    async execBatch(statements) {
+      if (statements.length) {
+        await send('exec_batch', { statements })
+        dirty = true
+      }
+    },
+    async querySQL<T>(sql: string, bind?: unknown[]) {
+      const rows = await send('query', { sql, bind }) as T[]
+      if (/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql)) dirty = true
+      return rows
+    },
+    async queryOne<T>(sql: string, bind?: unknown[]) { return (await scope.querySQL<T>(sql, bind))[0] ?? null },
+    async invalidate() {
+      if (!active) return
+      try {
+        if (worker === operationWorker) await sendMessage('invalidate_operation', { owner })
+      } finally {
+        active = false
+        initPromise = null
+      }
+    },
+  }
+  let outcome: { value: T } | { error: unknown }
+  try { outcome = { value: await action(scope) } } catch (error) { outcome = { error } }
+  if (active) {
+    try { await send('release_operation', {}) } catch (error) {
+      await scope.invalidate()
+      throw error
+    } finally { active = false }
+  }
+  if ('error' in outcome) throw outcome.error
+  if (dirty && options.notify !== false) notifyWriteListeners()
+  return outcome.value
+}
+
+export async function withTransaction<T>(action: (db: DatabaseExecutor) => Promise<T>): Promise<T> {
+  return withDatabaseOperation(async db => {
+    await db.execSQL('BEGIN IMMEDIATE')
+    try {
+      const result = await action(db)
+      await db.execSQL('COMMIT')
+      return result
+    } catch (error) {
+      try { await db.execSQL('ROLLBACK') } catch {
+        await db.invalidate()
+      }
+      throw error
+    }
+  })
 }

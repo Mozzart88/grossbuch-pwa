@@ -10,11 +10,10 @@ import type {
 import { SYSTEM_TAGS } from '../../../types'
 
 // Mock the database module
-vi.mock('../../../services/database', () => ({
-  execSQL: vi.fn(),
-  querySQL: vi.fn(),
-  queryOne: vi.fn(),
-}))
+vi.mock('../../../services/database', () => {
+  const db = { execSQL: vi.fn(), execBatch: vi.fn(), querySQL: vi.fn(), queryOne: vi.fn() }
+  return { ...db, withTransaction: (action: (db: unknown) => Promise<unknown>) => action(db) }
+})
 
 // Mock the accountRepository (used by addLine for rate lookup)
 vi.mock('../../../services/repositories/accountRepository', () => ({
@@ -717,7 +716,7 @@ describe('transactionRepository', () => {
 
       await transactionRepository.create(input)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx'),
         expect.anything()
       )
@@ -748,7 +747,7 @@ describe('transactionRepository', () => {
 
       await transactionRepository.create(input)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([1, 10, '-', 50])
       )
@@ -773,7 +772,7 @@ describe('transactionRepository', () => {
       await transactionRepository.create(input)
 
       // Should create three lines
-      const insertCalls = mockExecSQL.mock.calls.filter(
+      const insertCalls = mockQueryOne.mock.calls.filter(
         call => call[0].includes('INSERT INTO trx_base')
       )
       expect(insertCalls.length).toBe(3)
@@ -869,7 +868,7 @@ describe('transactionRepository', () => {
 
       await transactionRepository.create(input)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx'),
         expect.arrayContaining([1704800000])
       )
@@ -930,7 +929,7 @@ describe('transactionRepository', () => {
 
       await transactionRepository.addLine(mockId(), line)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([1, 10, '-', 50])
       )
@@ -1174,7 +1173,7 @@ describe('transactionRepository', () => {
         expect.stringContaining('DELETE FROM trx_base WHERE trx_id = ?'),
         [mockId()]
       )
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([mockId(), 1, 10, '-', 50])
       )
@@ -1602,7 +1601,7 @@ describe('transactionRepository', () => {
       await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
 
       // Should use ADJUSTMENT tag when account already has INITIAL
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([SYSTEM_TAGS.ADJUSTMENT, '+', 50])
       )
@@ -1621,7 +1620,7 @@ describe('transactionRepository', () => {
       await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
 
       // Should use INITIAL tag when account has no INITIAL
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([SYSTEM_TAGS.INITIAL, '+', 50])
       )
@@ -1641,7 +1640,7 @@ describe('transactionRepository', () => {
       const after = Math.floor(Date.now() / 1000)
 
       // Timestamp should be roughly current time
-      const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
+      const insertCall = mockQueryOne.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
       expect(insertCall![1]![0]).toBeGreaterThanOrEqual(before)
       expect(insertCall![1]![0]).toBeLessThanOrEqual(after)
     })
@@ -1665,7 +1664,7 @@ describe('transactionRepository', () => {
       await transactionRepository.createBalanceAdjustment(1, 100, 0, 150, 0)
 
       // Timestamp should be start of day of first transaction
-      const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
+      const insertCall = mockQueryOne.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
       expect(insertCall![1]![0]).toBe(expectedTimestamp)
     })
 
@@ -1684,7 +1683,7 @@ describe('transactionRepository', () => {
       const after = Math.floor(Date.now() / 1000)
 
       // Should use current timestamp when no transactions exist
-      const insertCall = mockExecSQL.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
+      const insertCall = mockQueryOne.mock.calls.find(call => call[0].includes('INSERT INTO trx ('))
       expect(insertCall![1]![0]).toBeGreaterThanOrEqual(before)
       expect(insertCall![1]![0]).toBeLessThanOrEqual(after)
     })
@@ -1701,7 +1700,7 @@ describe('transactionRepository', () => {
       await transactionRepository.createBalanceAdjustment(1, 50, 0, 80, 0)
 
       // Difference is 30, sign is +
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining(['+', 30])
       )
@@ -1719,7 +1718,7 @@ describe('transactionRepository', () => {
       await transactionRepository.createBalanceAdjustment(1, 80, 0, 50, 0)
 
       // Difference is -30, sign is -, amount is 30
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining(['-', 30])
       )
@@ -1908,7 +1907,7 @@ describe('transactionRepository', () => {
 
       await transactionRepository.addImportLine(mockId(), line)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([1, 10, '-', 50])
       )
@@ -1925,7 +1924,7 @@ describe('transactionRepository', () => {
 
       await transactionRepository.addImportLine(mockId(), line)
 
-      expect(mockExecSQL).toHaveBeenCalledWith(
+      expect(mockQueryOne).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO trx_base'),
         expect.arrayContaining([0, 0])
       )

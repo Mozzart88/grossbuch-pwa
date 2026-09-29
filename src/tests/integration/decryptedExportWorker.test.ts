@@ -287,3 +287,40 @@ it('rejects a session captured before the worker was replaced even with the same
   expect(result.success).toBe(false)
   expect(result.error).toMatch(/session/i)
 })
+
+it('an operation defers unrelated reads and topology changes while admitting its owner', async () => {
+  const owner = await successful('acquire_operation')
+  await successful('exec', { owner, sql: 'BEGIN; INSERT INTO workspace.lines VALUES(88,0,0,0,0)' })
+  let readFinished = false
+  const read = request('query', { sql: 'SELECT count(*) AS n FROM workspace.lines WHERE id=88' }).then(result => { readFinished = true; return result })
+  const detach = request('detach', { schema: 'workspace' })
+  await successful('query', { owner, sql: 'SELECT 1' })
+  expect(readFinished).toBe(false)
+  await successful('exec', { owner, sql: 'ROLLBACK' })
+  await successful('release_operation', { owner })
+  expect((await read).data).toEqual([{ n: 0 }])
+  expect((await detach).success).toBe(true)
+  expect((await request('query', { owner, sql: 'SELECT 1' })).success).toBe(false)
+})
+
+it('a failed operation cleanup rejects queued work until the database is reopened', async () => {
+  const owner = await successful('acquire_operation')
+  await successful('exec', { owner, sql: 'BEGIN' })
+  const queued = request('query', { sql: 'SELECT 1' })
+  await successful('invalidate_operation', { owner })
+  expect((await queued).success).toBe(false)
+  expect((await request('query', { sql: 'SELECT 1' })).success).toBe(false)
+})
+
+it('an export waits outside an owned transaction and succeeds after commit', async () => {
+  const session = await successful('export_session')
+  const owner = await successful('acquire_operation')
+  await successful('exec', { owner, sql: 'BEGIN; INSERT INTO workspace.lines VALUES(88,0,0,0,0)' })
+  let finished = false
+  const exporting = exported({ kind: 'workspace', workspaceId: 1 }, session).then(result => { finished = true; return result })
+  await successful('query', { owner, sql: 'SELECT 1' })
+  expect(finished).toBe(false)
+  await successful('exec', { owner, sql: 'COMMIT' })
+  await successful('release_operation', { owner })
+  expect((await exporting).success).toBe(true)
+})

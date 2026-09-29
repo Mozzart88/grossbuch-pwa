@@ -5,12 +5,19 @@ const mockExecBatch = vi.fn()
 const mockQueryOne = vi.fn()
 const mockQuerySQL = vi.fn()
 
-vi.mock('../../../../services/database/connection', () => ({
+vi.mock('../../../../services/database/connection', () => {
+  const db = {
   execSQL: (...args: unknown[]) => mockExecSQL(...args),
   execBatch: (...args: unknown[]) => mockExecBatch(...args),
   queryOne: (...args: unknown[]) => mockQueryOne(...args),
   querySQL: (...args: unknown[]) => mockQuerySQL(...args),
-}))
+  }
+  return { ...db, withDatabaseOperation: (action: (db: unknown) => Promise<unknown>) => action({
+    ...db,
+    queryOne: (sql: string, ...args: unknown[]) => sql === 'PRAGMA foreign_keys' ? Promise.resolve({ foreign_keys: 1 }) : db.queryOne(sql, ...args),
+    invalidate: vi.fn().mockResolvedValue(undefined),
+  }) }
+})
 
 vi.mock('../../../../utils/blobUtils', () => ({
   hexToBlob: (hex: string) => `blob:${hex}`,

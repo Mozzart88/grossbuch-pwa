@@ -3,12 +3,19 @@ import { execSQL, execBatch, queryOne, querySQL } from '../../../../services/dat
 import { importSyncPackage } from '../../../../services/sync/syncImport'
 import type { SyncPackage } from '../../../../services/sync/syncTypes'
 
-vi.mock('../../../../services/database/connection', () => ({
+vi.mock('../../../../services/database/connection', () => {
+  const db = {
   execSQL: vi.fn(),
   execBatch: vi.fn(),
   queryOne: vi.fn(),
   querySQL: vi.fn(),
-}))
+  }
+  return { ...db, withDatabaseOperation: (action: (db: unknown) => Promise<unknown>) => action({
+    ...db,
+    queryOne: (sql: string, ...args: unknown[]) => sql === 'PRAGMA foreign_keys' ? Promise.resolve({ foreign_keys: 1 }) : db.queryOne(sql, ...args),
+    invalidate: vi.fn().mockResolvedValue(undefined),
+  }) }
+})
 
 vi.mock('../../../../services/repositories/settingsRepository', () => ({
   settingsRepository: {
