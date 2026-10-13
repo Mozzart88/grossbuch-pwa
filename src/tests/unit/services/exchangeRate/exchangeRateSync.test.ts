@@ -69,6 +69,32 @@ describe('exchangeRateSync', () => {
     date: '2025-01-28',
   })
 
+  it('drains a delayed rate response before restore may replace its currency records', async () => {
+    const { pauseDatabaseActivities } = await import('../../../../services/restore/lifecycle')
+    mockFindById.mockResolvedValue(createCurrency({ id: 2, code: 'EUR' }))
+    mockFindSystem.mockResolvedValue(createCurrency({ is_system: true }))
+    let respond!: () => void
+    let entered!: () => void
+    const requested = new Promise<void>(resolve => { entered = resolve })
+    mockGetLatestRates.mockImplementationOnce(async () => {
+      entered()
+      await new Promise<void>(resolve => { respond = resolve })
+      return { rates: [createApiRate('EUR', 2), createApiRate('USD', 1)] }
+    })
+    const stored = new Map<number, number>()
+    mockSetExchangeRate.mockImplementationOnce(async (id, value) => { stored.set(id, value) })
+    const syncing = syncSingleRate(2)
+    await requested
+    let paused = false
+    const pause = pauseDatabaseActivities().then(resume => { paused = true; return resume })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    try {
+      expect(paused).toBe(false)
+      expect(stored.size).toBe(0)
+    } finally { respond(); await syncing; (await pause)() }
+    expect(stored.get(2)).toBe(2)
+  })
+
   describe('syncRates', () => {
     it('returns offline result when offline', async () => {
       Object.defineProperty(global.navigator, 'onLine', { value: false })

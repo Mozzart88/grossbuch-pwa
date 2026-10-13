@@ -195,7 +195,7 @@ it('drains a workspace switch before restore can inspect the installation', asyn
   await detached
   let paused = false
   const pause = pauseDatabaseActivities().then(resume => { paused = true; return resume })
-  await Promise.resolve()
+  await new Promise(resolve => setTimeout(resolve, 0))
   try { expect(paused).toBe(false) } finally { release(); await switching; (await pause)() }
   expect(getActiveWorkspaceId()).toBe(7)
 })

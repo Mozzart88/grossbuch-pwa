@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { attachDatabase, detachDatabase, querySQL, queryOne } from '../database/connection'
 import { workspaceDbFilename } from '../database/paths'
 import { getActiveWorkspaceId, getSessionDekShared } from '../database/workspace'
@@ -34,7 +35,7 @@ function splitNames(raw: string): string[] {
  * devices, key material, session/auth state) by construction — it never
  * touches `main` at all.
  */
-export async function exportWorkspacePackage(workspaceId: number): Promise<WorkspacePackage> {
+async function exportWorkspacePackageOperation(workspaceId: number): Promise<WorkspacePackage> {
   const workspaceRow = await queryOne<{ name: string }>(
     `SELECT name FROM shared.workspace WHERE id = ?`,
     [workspaceId]
@@ -327,4 +328,8 @@ async function exportCounterparties(names: string[]): Promise<WorkspaceCounterpa
 async function exportIcons(tags: WorkspaceTag[]): Promise<WorkspaceIcon[]> {
   const values = [...new Set(tags.map(t => t.icon).filter((v): v is string => v !== null))]
   return values.map(value => ({ value }))
+}
+
+export function exportWorkspacePackage(workspaceId: number, activity?: DatabaseActivity): Promise<WorkspacePackage> {
+  return runDatabaseActivity(() => exportWorkspacePackageOperation(workspaceId), activity)
 }

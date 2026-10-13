@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { execSQL, queryOne, getLastInsertId, validateReferenceExists } from '../database/connection'
 import { getActiveWorkspaceId, switchWorkspace } from '../database/workspace'
 import { reconcileIcons, reconcileTags, reconcileCurrencies, reconcileCounterparties } from './sharedEntityReconciliation'
@@ -32,9 +33,10 @@ async function resolveTagId(name: string, tagIdByName: Map<string, number>): Pro
  * transactions/budgets always get fresh local ids, since a merge target may
  * already have its own data occupying the package's original id space.
  */
-export async function importWorkspacePackage(
+async function importWorkspacePackageOperation(
   pkg: WorkspacePackage,
-  options: { mergeIntoWorkspaceId?: number } = {}
+  options: { mergeIntoWorkspaceId?: number },
+  activity: DatabaseActivity
 ): Promise<WorkspaceImportResult> {
   const originalActiveWorkspaceId = getActiveWorkspaceId()
 
@@ -51,14 +53,14 @@ export async function importWorkspacePackage(
 
   const needsSwitch = targetWorkspaceId !== originalActiveWorkspaceId
   if (needsSwitch) {
-    await switchWorkspace(targetWorkspaceId)
+    await switchWorkspace(targetWorkspaceId, activity)
   }
 
   try {
     return await importIntoActiveWorkspace(pkg, targetWorkspaceId)
   } finally {
     if (needsSwitch && originalActiveWorkspaceId !== null) {
-      await switchWorkspace(originalActiveWorkspaceId)
+      await switchWorkspace(originalActiveWorkspaceId, activity)
     }
   }
 }
@@ -211,4 +213,12 @@ async function importIntoActiveWorkspace(pkg: WorkspacePackage, workspaceId: num
       budgets: budgetsImported,
     },
   }
+}
+
+export function importWorkspacePackage(
+  pkg: WorkspacePackage,
+  options: { mergeIntoWorkspaceId?: number } = {},
+  activity?: DatabaseActivity
+): Promise<WorkspaceImportResult> {
+  return runDatabaseActivity(owner => importWorkspacePackageOperation(pkg, options, owner), activity)
 }
