@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { rsaEncrypt, rsaDecrypt, arrayBufferToBase64Url, base64UrlToArrayBuffer } from '../auth/crypto'
 import { getPublicKey } from '../auth/authService'
 import { saveLinkedInstallation } from '../installation/installationStore'
@@ -8,7 +9,7 @@ import * as syncApi from './syncApi'
  * Send an init handshake package to a target device.
  * Encrypts our {uuid, publicKey} with the target's RSA public key.
  */
-export async function sendInit(targetUuid: string, targetPublicKey: string): Promise<void> {
+async function sendInitOperation(targetUuid: string, targetPublicKey: string): Promise<void> {
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) {
     throw new Error('Installation not registered')
@@ -39,7 +40,7 @@ export async function sendInit(targetUuid: string, targetPublicKey: string): Pro
  * Poll for init packages, process them (save linked installations, push full history,
  * introduce new devices to existing linked devices), and acknowledge.
  */
-export async function pollAndProcessInit(): Promise<{ newDevices: string[], done: boolean }> {
+async function pollAndProcessInitOperation(activity: DatabaseActivity): Promise<{ newDevices: string[], done: boolean }> {
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) return { newDevices: [], done: false }
 
@@ -94,7 +95,7 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
         let pushSuccess = false
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            const ok = await pushSync({ targetUuid: uuid })
+            const ok = await pushSync({ targetUuid: uuid }, activity)
             if (ok) {
               pushSuccess = true
               break
@@ -166,4 +167,12 @@ export async function pollAndProcessInit(): Promise<{ newDevices: string[], done
   }
 
   return { newDevices, done: false }
+}
+
+export function sendInit(targetUuid: string, targetPublicKey: string, activity?: DatabaseActivity): Promise<void> {
+  return runDatabaseActivity(() => sendInitOperation(targetUuid, targetPublicKey), activity)
+}
+
+export function pollAndProcessInit(activity?: DatabaseActivity): Promise<{ newDevices: string[], done: boolean }> {
+  return runDatabaseActivity(pollAndProcessInitOperation, activity)
 }

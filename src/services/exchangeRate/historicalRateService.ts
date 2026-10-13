@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { currencyRepository } from '../repositories/currencyRepository'
 import { getInstallationData } from '../sync'
 import { getHistoricalRates } from './exchangeRateApi'
@@ -82,7 +83,7 @@ async function searchNearbyDates(
  * Get the exchange rate for a currency on a specific date (YYYY-MM-DD).
  * Falls back progressively: local DB → API exact date → nearby dates (±3 expanding) → latest stored rate.
  */
-export async function getRateForDate(currencyId: number, date: string): Promise<IntFrac> {
+async function getRateForDateOperation(currencyId: number, date: string): Promise<IntFrac> {
   // If not a past date, use the standard latest-rate flow
   if (date >= todayString()) {
     return currencyRepository.getRateForCurrency(currencyId)
@@ -122,4 +123,8 @@ export async function getRateForDate(currencyId: number, date: string): Promise<
 
   // 7. Final fallback: latest stored rate
   return currencyRepository.getRateForCurrency(currencyId)
+}
+
+export function getRateForDate(currencyId: number, date: string, activity?: DatabaseActivity): Promise<IntFrac> {
+  return runDatabaseActivity(() => getRateForDateOperation(currencyId, date), activity)
 }

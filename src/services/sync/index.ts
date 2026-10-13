@@ -1,4 +1,4 @@
-import { runDatabaseActivity } from '../restore/lifecycle'
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { queryOne, withDatabaseOperation } from '../database/connection'
 import { settingsRepository } from '../repositories/settingsRepository'
 import { linkedDeviceRepository } from '../repositories/linkedDeviceRepository'
@@ -111,7 +111,7 @@ async function pushSyncOperation(options: PushSyncOptions = {}): Promise<boolean
 /**
  * Pull pending sync packages from the server, decrypt, import, and acknowledge.
  */
-async function pullSyncOperation(): Promise<ImportResult[]> {
+async function pullSyncOperation(activity: DatabaseActivity): Promise<ImportResult[]> {
   const installData = await getInstallationData()
   if (!installData?.jwt || !installData.id) return []
 
@@ -165,7 +165,7 @@ async function pullSyncOperation(): Promise<ImportResult[]> {
         [currencyId]
       )
       if (!hasRate) {
-        await syncSingleRate(currencyId)
+        await syncSingleRate(currencyId, activity)
       }
     } catch (err) {
       console.warn('[pullSync] Failed to sync exchange rate for currency:', currencyId, err)
@@ -293,10 +293,10 @@ export async function sendRenameCommand(targetId: string, name: string): Promise
 
 export type { ImportResult } from './syncTypes'
 
-export function pushSync(options: PushSyncOptions = {}): Promise<boolean> {
-  return runDatabaseActivity(() => pushSyncOperation(options))
+export function pushSync(options: PushSyncOptions = {}, activity?: DatabaseActivity): Promise<boolean> {
+  return runDatabaseActivity(() => pushSyncOperation(options), activity)
 }
 
-export function pullSync(): Promise<ImportResult[]> {
-  return runDatabaseActivity(pullSyncOperation)
+export function pullSync(activity?: DatabaseActivity): Promise<ImportResult[]> {
+  return runDatabaseActivity(pullSyncOperation, activity)
 }

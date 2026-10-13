@@ -26,3 +26,18 @@ it('allows an admitted operation to finish its nested work while restore drains'
   finish()
   try { await expect(pending).resolves.toBe('nested complete') } finally { (await pause)() }
 })
+
+it('drains explicitly owned nested work and expires its admission after completion', async () => {
+  let finish!: () => void
+  const ready = new Promise<void>(resolve => { finish = resolve })
+  let owner: Parameters<typeof runDatabaseActivity>[1]
+  const pending = runDatabaseActivity(async activity => {
+    owner = activity
+    await ready
+    return runDatabaseActivity(async () => 'nested complete', activity)
+  })
+  const pause = pauseDatabaseActivities()
+  finish()
+  try { await expect(pending).resolves.toBe('nested complete') } finally { (await pause)() }
+  await expect(runDatabaseActivity(async () => 'expired', owner)).rejects.toThrow(/expired/)
+})

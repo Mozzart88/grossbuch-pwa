@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { execSQL, queryOne, querySQL } from '../database'
 import type {
   NotificationTransactionMode,
@@ -198,7 +199,8 @@ function draftForDate(draft: TransactionInput, date: string): TransactionInput {
 async function resolvePinnedExchangePair(
   lines: TransactionInput['lines'],
   pin: RecurringPaymentPin,
-  dueDate: string
+  dueDate: string,
+  activity: DatabaseActivity
 ): Promise<TransactionInput['lines']> {
   const exchangeLines = lines.filter(line => line.tag_id === SYSTEM_TAGS.EXCHANGE)
   if (exchangeLines.length !== 2) return lines
@@ -218,8 +220,8 @@ async function resolvePinnedExchangePair(
   if (otherCurrencyId === null) return lines
 
   const [pinnedRate, otherRate] = await Promise.all([
-    getRateForDate(pin.currency_id, dueDate),
-    getRateForDate(otherCurrencyId, dueDate),
+    getRateForDate(pin.currency_id, dueDate, activity),
+    getRateForDate(otherCurrencyId, dueDate, activity),
   ])
 
   const pinnedRateValue = fromIntFrac(pinnedRate.int, pinnedRate.frac)
@@ -638,64 +640,66 @@ export const recurringRepository = {
   },
 
   async processDue(today = todayLocal(), max = MAX_DUE_PER_RUN): Promise<number> {
-    const plans = await querySQL<RecurringPlanRow>(
-      `SELECT * FROM recurring_plan
-       WHERE status = 'active' AND next_due_date IS NOT NULL
-       ORDER BY next_due_date ASC`
-    )
-    const globalDefaultLeadDaysRaw = await settingsRepository.get('recurring_default_notify_days_before')
-    const globalDefaultLeadDays = Number(globalDefaultLeadDaysRaw ?? 0) || 0
+    return runDatabaseActivity(async activity => {
+      const plans = await querySQL<RecurringPlanRow>(
+        `SELECT * FROM recurring_plan
+         WHERE status = 'active' AND next_due_date IS NOT NULL
+         ORDER BY next_due_date ASC`
+      )
+      const globalDefaultLeadDaysRaw = await settingsRepository.get('recurring_default_notify_days_before')
+      const globalDefaultLeadDays = Number(globalDefaultLeadDaysRaw ?? 0) || 0
 
-    let created = 0
-    for (const row of plans) {
-      let plan = mapPlan(row)
-      const leadDays = plan.notify_days_before ?? globalDefaultLeadDays
-      while (plan.next_due_date && isSurfaced(plan.next_due_date, leadDays, today) && created < max) {
-        const dueDate = plan.next_due_date
-        const existing = await queryOne<{ id: Uint8Array }>(
-          `SELECT id FROM recurring_occurrence WHERE plan_id = ? AND due_date = ?`,
-          [plan.id, dueDate]
-        )
-        if (!existing) {
-          let draft = draftForDate(plan.transaction_draft, dueDate)
-          if (plan.payment_pin) {
-            // Re-normalize: the resolved rate/amount fields come straight from a
-            // fresh SQLite read (getRateForDate), which can return BigInt for
-            // INTEGER columns — normalizeDraft converts those back to plain
-            // numbers so the notification payload can be JSON.stringify'd.
-            draft = normalizeDraft({ ...draft, lines: await resolvePinnedExchangePair(draft.lines, plan.payment_pin, dueDate) })
+      let created = 0
+      for (const row of plans) {
+        let plan = mapPlan(row)
+        const leadDays = plan.notify_days_before ?? globalDefaultLeadDays
+        while (plan.next_due_date && isSurfaced(plan.next_due_date, leadDays, today) && created < max) {
+          const dueDate = plan.next_due_date
+          const existing = await queryOne<{ id: Uint8Array }>(
+            `SELECT id FROM recurring_occurrence WHERE plan_id = ? AND due_date = ?`,
+            [plan.id, dueDate]
+          )
+          if (!existing) {
+            let draft = draftForDate(plan.transaction_draft, dueDate)
+            if (plan.payment_pin) {
+              // Re-normalize: the resolved rate/amount fields come straight from a
+              // fresh SQLite read (getRateForDate), which can return BigInt for
+              // INTEGER columns — normalizeDraft converts those back to plain
+              // numbers so the notification payload can be JSON.stringify'd.
+              draft = normalizeDraft({ ...draft, lines: await resolvePinnedExchangePair(draft.lines, plan.payment_pin, dueDate, activity) })
+            }
+            const hydration = await this.hydrateDraft(draft)
+            const title = buildNotificationTitle(hydration, Math.max(0, daysBetween(today, dueDate)))
+            const notification = await notificationRepository.createTransactionDraft(
+              title,
+              plan.mode,
+              draft,
+              Math.floor(parseDate(dueDate).getTime() / 1000)
+            )
+            await execSQL(
+              `INSERT INTO recurring_occurrence (id, plan_id, due_date, notification_id)
+               VALUES (randomblob(8), ?, ?, ?)`,
+              [plan.id, dueDate, notification.id]
+            )
+            created++
           }
-          const hydration = await this.hydrateDraft(draft)
-          const title = buildNotificationTitle(hydration, Math.max(0, daysBetween(today, dueDate)))
-          const notification = await notificationRepository.createTransactionDraft(
-            title,
-            plan.mode,
-            draft,
-            Math.floor(parseDate(dueDate).getTime() / 1000)
-          )
-          await execSQL(
-            `INSERT INTO recurring_occurrence (id, plan_id, due_date, notification_id)
-             VALUES (randomblob(8), ?, ?, ?)`,
-            [plan.id, dueDate, notification.id]
-          )
-          created++
-        }
 
-        const occurrenceCount = plan.occurrence_count + 1
-        const nextDue = shouldStop(plan.until_policy, dueDate, occurrenceCount)
-          ? null
-          : this.getNextDueDate(plan.schedule, dueDate, plan.start_date)
-        await execSQL(
-          `UPDATE recurring_plan SET occurrence_count = ?, next_due_date = ? WHERE id = ?`,
-          [occurrenceCount, nextDue, plan.id]
-        )
-        const updated = await this.findById(plan.id)
-        if (!updated) break
-        plan = updated
+          const occurrenceCount = plan.occurrence_count + 1
+          const nextDue = shouldStop(plan.until_policy, dueDate, occurrenceCount)
+            ? null
+            : this.getNextDueDate(plan.schedule, dueDate, plan.start_date)
+          await execSQL(
+            `UPDATE recurring_plan SET occurrence_count = ?, next_due_date = ? WHERE id = ?`,
+            [occurrenceCount, nextDue, plan.id]
+          )
+          const updated = await this.findById(plan.id)
+          if (!updated) break
+          plan = updated
+        }
+        if (created >= max) break
       }
-      if (created >= max) break
-    }
-    return created
+      return created
+    })
   },
 
   async syncDraftFromBudget(budgetId: Uint8Array, amountInt: number, amountFrac: number): Promise<void> {

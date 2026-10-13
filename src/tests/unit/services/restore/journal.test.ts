@@ -99,3 +99,34 @@ it('restores the previous biometric payload after an uncommitted full restore', 
   expect(f.biometric()).toBe('wrapped-old-biometric')
   expect(f.salt()).toBe('old-salt')
 })
+
+it.each([
+  { selection: [] },
+  { selection: [{ destination: 'main.db', bytes: bytes('a') }, { destination: 'main.db', bytes: bytes('b') }] },
+  { selection: [{ destination: 'main-decrypted.db', bytes: bytes('a') }] },
+])('rejects an invalid install selection without changing installed files', async ({ selection }) => {
+  const f = fixture()
+  await expect(installRestore(f.storage, selection)).rejects.toThrow(/destination/)
+  expect(f.files).toEqual(new Map([['main.db', bytes('old-main')], ['shared.db', bytes('old-shared')]]))
+  expect(f.salt()).toBe('old-salt')
+})
+it.each(['missing', 'damaged'])('retains the journal and all installed files when a rollback backup is %s', async fault => {
+  const f = fixture(7)
+  await expect(installRestore(f.storage, [{ destination: 'main.db', bytes: bytes('new-main') }, { destination: 'shared.db', bytes: bytes('new-shared') }], 'new-salt')).rejects.toThrow()
+  const backup = [...f.files.keys()].find(name => name.endsWith('-1.backup'))!
+  if (fault === 'missing') f.files.delete(backup)
+  else f.files.set(backup, bytes('corrupt backup'))
+  const interrupted = new Map(f.files)
+  await expect(recoverRestore(f.storage)).rejects.toThrow(/missing or damaged/)
+  expect(f.files).toEqual(interrupted)
+})
+it('refuses ambiguous simultaneous restore journals before modifying either installation', async () => {
+  const first = fixture(4), second = fixture(4)
+  for (const f of [first, second]) {
+    await expect(installRestore(f.storage, [{ destination: 'main.db', bytes: bytes('replacement') }])).rejects.toThrow()
+  }
+  for (const [name, value] of second.files) if (name.startsWith('gb-restore-')) first.files.set(name, value)
+  const interrupted = new Map(first.files)
+  await expect(recoverRestore(first.storage)).rejects.toThrow(/Multiple restore journals/)
+  expect(first.files).toEqual(interrupted)
+})

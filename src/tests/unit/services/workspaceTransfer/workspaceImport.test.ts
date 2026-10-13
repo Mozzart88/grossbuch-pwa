@@ -123,7 +123,7 @@ describe('importWorkspacePackage', () => {
 
     await importWorkspacePackage(emptyPackage(), { mergeIntoWorkspaceId: 2 })
 
-    expect(mockSwitchWorkspace.mock.calls).toEqual([[2], [1]])
+    expect(mockSwitchWorkspace.mock.calls.map(([id]) => [id])).toEqual([[2], [1]])
   })
 
   it('switches to the newly created workspace and restores the original active one afterward', async () => {
@@ -132,7 +132,7 @@ describe('importWorkspacePackage', () => {
 
     await importWorkspacePackage(emptyPackage())
 
-    expect(mockSwitchWorkspace.mock.calls).toEqual([[77], [1]])
+    expect(mockSwitchWorkspace.mock.calls.map(([id]) => [id])).toEqual([[77], [1]])
   })
 
   it('still restores the original workspace when the import throws partway through', async () => {
@@ -145,7 +145,7 @@ describe('importWorkspacePackage', () => {
       importWorkspacePackage(emptyPackage({ wallets: [{ id: 1, name: 'Cash', color: null, tags: [] }] }), { mergeIntoWorkspaceId: 2 })
     ).rejects.toThrow('boom')
 
-    expect(mockSwitchWorkspace.mock.calls).toEqual([[2], [1]])
+    expect(mockSwitchWorkspace.mock.calls.map(([id]) => [id])).toEqual([[2], [1]])
   })
 
   it('reports import counts from the reconciliation and insert results', async () => {

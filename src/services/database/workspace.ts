@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { attachDatabase, detachDatabase, execSQL, queryOne, validateReferenceExists } from './connection'
 import { workspaceDbFilename } from './paths'
 import { runWorkspaceMigrations } from './workspaceMigrations'
@@ -71,7 +72,7 @@ export async function attachActiveWorkspace(dekShared: string): Promise<void> {
  * Switch to a different workspace: detach the current one, attach the
  * selected one (creating its file/schema if needed), and persist it as active.
  */
-export async function switchWorkspace(workspaceId: number): Promise<void> {
+async function switchWorkspaceOperation(workspaceId: number): Promise<void> {
   if (!sessionDekShared) throw new Error('No active session — log in first')
   if (!(await validateReferenceExists('shared.workspace', 'id', workspaceId))) {
     throw new Error('Workspace not found')
@@ -109,4 +110,8 @@ export function getSessionDekShared(): string | null {
 export function clearWorkspaceSession(): void {
   sessionDekShared = null
   activeWorkspaceId = null
+}
+
+export function switchWorkspace(workspaceId: number, activity?: DatabaseActivity): Promise<void> {
+  return runDatabaseActivity(() => switchWorkspaceOperation(workspaceId), activity)
 }

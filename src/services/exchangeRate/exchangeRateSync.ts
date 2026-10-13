@@ -1,3 +1,4 @@
+import { runDatabaseActivity, type DatabaseActivity } from '../restore/lifecycle'
 import { currencyRepository } from '../repositories/currencyRepository'
 import { readInstallationData } from '../sync/installationData'
 import { getLatestRates } from './exchangeRateApi'
@@ -14,7 +15,7 @@ export interface SyncSingleRateResult {
   rate?: number
 }
 
-export async function syncSingleRate(currencyId: number): Promise<SyncSingleRateResult> {
+async function syncSingleRateOperation(currencyId: number): Promise<SyncSingleRateResult> {
   if (!navigator.onLine) {
     return { success: false }
   }
@@ -64,7 +65,7 @@ export async function syncSingleRate(currencyId: number): Promise<SyncSingleRate
   }
 }
 
-export async function syncRates(): Promise<SyncRatesResult> {
+async function syncRatesOperation(): Promise<SyncRatesResult> {
   // Skip if offline
   if (!navigator.onLine) {
     console.warn('[ExchangeRateSync] Offline, skipping sync')
@@ -137,4 +138,12 @@ export async function syncRates(): Promise<SyncRatesResult> {
 
   console.log(`[ExchangeRateSync] Synced rates for ${syncedCount} currencies`)
   return { success: true, syncedCount }
+}
+
+export function syncSingleRate(currencyId: number, activity?: DatabaseActivity): Promise<SyncSingleRateResult> {
+  return runDatabaseActivity(() => syncSingleRateOperation(currencyId), activity)
+}
+
+export function syncRates(activity?: DatabaseActivity): Promise<SyncRatesResult> {
+  return runDatabaseActivity(syncRatesOperation, activity)
 }

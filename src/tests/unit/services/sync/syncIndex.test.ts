@@ -520,7 +520,7 @@ describe('sync index', () => {
 
       await pullSync()
 
-      expect(mockSyncSingleRate).toHaveBeenCalledWith(5)
+      expect(mockSyncSingleRate).toHaveBeenCalledWith(5, expect.objectContaining({ run: expect.any(Function) }))
     })
 
     it('does not call syncSingleRate when rate already exists', async () => {
@@ -725,7 +725,7 @@ describe('sync index', () => {
 
       // Should only call syncSingleRate once for currency 5, not twice
       expect(mockSyncSingleRate).toHaveBeenCalledTimes(1)
-      expect(mockSyncSingleRate).toHaveBeenCalledWith(5)
+      expect(mockSyncSingleRate).toHaveBeenCalledWith(5, expect.objectContaining({ run: expect.any(Function) }))
     })
   })
 

@@ -174,7 +174,7 @@ describe('syncInit', () => {
       expect(mockSaveLinkedInstallation).toHaveBeenCalledWith('new-device', 'new-pub-key', 'New Phone')
 
       // Verify full push to new device
-      expect(mockPushSync).toHaveBeenCalledWith({ targetUuid: 'new-device' })
+      expect(mockPushSync).toHaveBeenCalledWith({ targetUuid: 'new-device' }, expect.objectContaining({ run: expect.any(Function) }))
 
       // Verify our own name is sent back to the new device — it only learned our
       // uuid+publicKey from the share link, never our device_name (bug: inviter
